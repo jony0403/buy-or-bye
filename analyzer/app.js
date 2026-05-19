@@ -207,16 +207,28 @@ function escapeAttr(s) {
   return escapeHtml(s);
 }
 
-window.addEventListener('message', (ev) => {
-  if (ev.source !== window) return;
-  const d = ev.data;
-  if (!d || d.type !== 'MARKET_SCRAPE_BRIDGE') return;
-  applyPayload({ latest: d.latest, history: d.history });
-});
+let __appStarted = false;
+function initMain() {
+  if (__appStarted) return;
+  __appStarted = true;
 
-$btnRefresh.addEventListener('click', () => {
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window) return;
+    const d = ev.data;
+    if (!d || d.type !== 'MARKET_SCRAPE_BRIDGE') return;
+    applyPayload({ latest: d.latest, history: d.history });
+  });
+
+  $btnRefresh.addEventListener('click', () => {
+    window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+    $status.textContent = '불러오는 중…';
+  });
+
   window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
-  $status.textContent = '불러오는 중…';
-});
+}
 
-window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+function bootstrapApp() {
+  window.addEventListener('ulsa:ai-ready', () => initMain(), { once: true });
+  if (globalThis.__ulsaAiReady) initMain();
+}
+bootstrapApp();

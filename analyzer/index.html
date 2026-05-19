@@ -7,13 +7,45 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header class="top">
-      <div>
-        <h1>매물 정리</h1>
-        <p class="sub">확장 프로그램에서 뽑은 데이터가 여기에 쌓입니다.</p>
+    <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
+      <div class="ai-gate__panel">
+        <h2 id="aiGateTitle" class="ai-gate__title">Gemini API 설정</h2>
+          <p class="ai-gate__desc">
+          유사 매물 검색어 정규화 등 AI 기능을 쓰려면
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>
+          에서 발급한 API 키를 입력하세요. 키는 이 브라우저에만 저장됩니다.
+          <strong>저장할 때마다 서버가 Google API로 연결을 테스트합니다.</strong>
+        </p>
+        <form id="aiGateForm" class="ai-gate__form">
+          <label class="ai-gate__label" for="aiApiKey">API 키</label>
+          <input
+            id="aiApiKey"
+            name="apiKey"
+            type="password"
+            autocomplete="off"
+            class="ai-gate__input"
+            placeholder="여기에 API 키 붙여넣기"
+            required
+          />
+          <label class="ai-gate__label" for="aiModel">Gemini 모델</label>
+          <select id="aiModel" name="model" class="ai-gate__select"></select>
+          <p id="aiGateError" class="ai-gate__error" role="alert"></p>
+          <button type="submit" class="btn ai-gate__submit">저장하고 시작</button>
+        </form>
       </div>
-      <button type="button" id="btnRefresh" class="btn">불러오기</button>
-    </header>
+    </div>
+
+    <div id="appShell" class="app-shell app-shell--locked" inert>
+      <header class="top">
+        <div>
+          <h1>매물 정리</h1>
+          <p class="sub">확장 프로그램에서 뽑은 데이터가 여기에 쌓입니다.</p>
+        </div>
+        <div class="top-actions">
+          <button type="button" id="btnAiSettings" class="btn btn-secondary btn-small">AI 설정</button>
+          <button type="button" id="btnRefresh" class="btn">불러오기</button>
+        </div>
+      </header>
 
     <p id="status" class="status">분석 페이지를 연 상태에서, 번개/당근에서 «데이터 다시 불러오기»를 누르세요.</p>
 
@@ -34,7 +66,11 @@
       <button type="button" class="lightbox-close" id="lightboxClose" aria-label="닫기">×</button>
       <img id="lightboxImg" alt="" />
     </div>
+    </div>
 
+    <script src="ai/config.js"></script>
+    <script src="ai/client.js"></script>
+    <script src="ai/gate.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

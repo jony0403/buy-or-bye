@@ -341,6 +341,7 @@
     const MS = globalThis.MarketScrape;
     const items = [];
     const seen = new Set();
+    const query = MS.getSearchQueryFromUrl?.(location.href) || '';
 
     for (const a of document.querySelectorAll('a[href*="/kr/buy-sell/"]')) {
       if (MS.isInsideNoiseSection(a)) continue;
@@ -355,12 +356,15 @@
 
       const card = a.closest('article, li, div') || a;
       const text = (card.innerText || '').trim();
-      if (/판매완료|예약중|거래완료/i.test(text)) continue;
+      const title = (a.getAttribute('aria-label') || text.split('\n')[0] || '').trim().slice(0, 120);
+      if (!MS.listingTitleMatchesSearchQuery?.(title, query)) continue;
+
+      const statusM = text.match(/판매완료|예약중|거래완료/);
+      const saleStatus = statusM ? statusM[0] : '';
 
       seen.add(m[1]);
       const priceM = text.match(/([\d,]+)\s*원/);
       const price = MS.parsePriceNumber(priceM?.[1]);
-      const title = (a.getAttribute('aria-label') || text.split('\n')[0] || '').trim().slice(0, 120);
 
       items.push({
         platform: 'daangn',
@@ -370,6 +374,7 @@
         price,
         priceLabel: price != null ? formatWon(price) : priceM?.[0] || '—',
         url: a.href.split('?')[0],
+        ...(saleStatus ? { saleStatus } : {}),
       });
     }
     return items;

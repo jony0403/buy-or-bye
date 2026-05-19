@@ -37,6 +37,50 @@ function setStatus(msg, kind = '') {
   if (kind === 'ok') $status.classList.add('ok');
 }
 
+/**
+ * 분석 웹(localStorage)에만 있는 Gemini 설정을 chrome.storage로 복사합니다.
+ * postMessage/CustomEvent가 확장에 안 닿는 경우에도 유사 매물 검색이 동작하게 합니다.
+ */
+async function syncGeminiFromAnalyzerTabs() {
+  const urlPatterns = ['http://127.0.0.1:3920/*', 'http://localhost:3920/*'];
+  let tabs = await chrome.tabs.query({ url: urlPatterns });
+  let openedTabId = null;
+  if (!tabs.length) {
+    const t = await chrome.tabs.create({ url: 'http://127.0.0.1:3920/', active: false });
+    openedTabId = t.id ?? null;
+    await new Promise((r) => setTimeout(r, 2200));
+    tabs = openedTabId ? [{ id: openedTabId }] : await chrome.tabs.query({ url: urlPatterns });
+  }
+
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    try {
+      const injected = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => ({
+          api: localStorage.getItem('ulsa_gemini_api_key'),
+          model: localStorage.getItem('ulsa_gemini_model'),
+          v: localStorage.getItem('ulsa_gemini_verified_at'),
+        }),
+      });
+      const d = injected[0]?.result;
+      if (d?.api && String(d.api).trim()) {
+        const verifiedAt = d.v ? Number(d.v) : Date.now();
+        await chrome.storage.local.set({
+          ulsaGeminiApiKey: String(d.api).trim(),
+          ulsaGeminiModel: d.model || 'gemini-2.5-flash',
+          ulsaGeminiVerifiedAt:
+            Number.isFinite(verifiedAt) && verifiedAt > 0 ? verifiedAt : Date.now(),
+        });
+        return true;
+      }
+    } catch {
+      /* 페이지 미로드·권한 등 */
+    }
+  }
+  return false;
+}
+
 function isInjectable(url) {
   return typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'));
 }
@@ -295,20 +339,86 @@ async function openSearchTabs(tab) {
     setStatus('먼저 매물 정보를 불러올 수 없습니다', 'err');
     return;
   }
-  const title = res.listing.title;
-  const query = title.replace(/\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+
+  let st = await chrome.storage.local.get(['ulsaGeminiApiKey', 'ulsaGeminiModel', 'ulsaGeminiVerifiedAt']);
+  let apiKey = typeof st.ulsaGeminiApiKey === 'string' ? st.ulsaGeminiApiKey.trim() : '';
+  if (!apiKey) {
+    setStatus('분석 웹에서 API 설정 가져오는 중…', '');
+    await syncGeminiFromAnalyzerTabs();
+    st = await chrome.storage.local.get(['ulsaGeminiApiKey', 'ulsaGeminiModel', 'ulsaGeminiVerifiedAt']);
+    apiKey = typeof st.ulsaGeminiApiKey === 'string' ? st.ulsaGeminiApiKey.trim() : '';
+  }
+  if (!apiKey) {
+    setStatus(
+      '확장에 API 키가 없습니다. `127.0.0.1:3920` 분석 웹을 열고 「저장하고 시작」으로 연결 테스트까지 완료하세요. (로컬 서버 `node analyzer-server.mjs` 필요)',
+      'err'
+    );
+    return;
+  }
+
+  const model = st.ulsaGeminiModel || 'gemini-2.5-flash';
+
+  try {
+    const ver = await fetch('http://127.0.0.1:3920/api/verify-gemini', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({}),
+    });
+    const verData = await ver.json().catch(() => ({}));
+    if (!ver.ok) {
+      throw new Error(verData.error || verData.message || `연결 테스트 실패 HTTP ${ver.status}`);
+    }
+    await chrome.storage.local.set({ ulsaGeminiVerifiedAt: Date.now() });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    setStatus(`API 연결 실패 — 분석 서버 실행 후 분석 웹에서 키·모델을 다시 저장하세요 (${msg})`, 'err');
+    return;
+  }
+
+  let query;
+  try {
+    const r = await fetch('http://127.0.0.1:3920/api/search-query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        title: res.listing.title,
+        body: res.listing.body || '',
+        imageUrls: Array.isArray(res.listing.imageUrls) ? res.listing.imageUrls : [],
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      throw new Error(data.error || `HTTP ${r.status}`);
+    }
+    query = typeof data.query === 'string' ? data.query.trim() : '';
+    if (!query) throw new Error('검색어가 비었습니다.');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    setStatus(`AI 검색어 생성 실패 — 분석 서버 실행 후 재시도 (${msg})`, 'err');
+    return;
+  }
 
   const bunjangUrl = `https://m.bunjang.co.kr/search/products?q=${encodeURIComponent(query)}&order=score`;
   const daangnUrl = `https://www.daangn.com/kr/buy-sell/?search=${encodeURIComponent(query)}`;
 
+  const bunTab = await chrome.tabs.create({ url: bunjangUrl, active: false });
+  const dangTab = await chrome.tabs.create({ url: daangnUrl, active: false });
+  const closeIds = [bunTab?.id, dangTab?.id].filter((x) => typeof x === 'number');
+
   await chrome.storage.local.set({
     marketScrapeAutoCollect: { bunjang: true, daangn: true, at: Date.now() },
+    ...(closeIds.length ? { marketScrapeCloseTabs: closeIds } : {}),
   });
 
-  await chrome.tabs.create({ url: bunjangUrl, active: false });
-  await chrome.tabs.create({ url: daangnUrl, active: false });
-
-  setStatus('검색 탭 2개를 열었어요. 잠시 후 자동 수집됩니다…');
+  setStatus(`검색어 「${query}」로 탭 2개를 열었어요. 잠시 후 자동 수집됩니다…`);
   startCompsPoll();
   setTimeout(() => void refreshCompsLine(), 2500);
   setTimeout(() => void refreshCompsLine(), 5000);

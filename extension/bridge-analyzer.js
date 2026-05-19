@@ -10,6 +10,25 @@
 
   if (!isAnalyzerPage()) return;
 
+  document.addEventListener('ulsa-ai-settings', (ev) => {
+    const d = ev.detail;
+    if (!d || !d.apiKey) return;
+    chrome.storage.local.set({
+      ulsaGeminiApiKey: d.apiKey,
+      ulsaGeminiModel: d.model || 'gemini-2.5-flash',
+      ulsaGeminiVerifiedAt: d.verifiedAt || Date.now(),
+    });
+  });
+
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window || !ev.data || ev.data.type !== 'ULSA_AI_SETTINGS' || !ev.data.apiKey) return;
+    chrome.storage.local.set({
+      ulsaGeminiApiKey: ev.data.apiKey,
+      ulsaGeminiModel: ev.data.model || 'gemini-2.5-flash',
+      ulsaGeminiVerifiedAt: ev.data.verifiedAt || Date.now(),
+    });
+  });
+
   function attachComps(latest, comps) {
     if (!latest || !comps?.forItemKey) return latest;
     const key = `${latest.platform}:${latest.itemId}`;

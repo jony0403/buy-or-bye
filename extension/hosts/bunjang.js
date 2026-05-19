@@ -205,9 +205,12 @@
   function harvestSearchListings() {
     const items = [];
     const seen = new Set();
+    const query = MS.getSearchQueryFromUrl?.(location.href) || '';
     const add = (href, titleHint, priceHint) => {
       const m = String(href || '').match(/\/(?:products|posts)\/(\d+)/);
       if (!m || seen.has(m[1])) return;
+      const title = String(titleHint || '').trim().slice(0, 120) || `매물 ${m[1]}`;
+      if (!MS.listingTitleMatchesSearchQuery?.(title, query)) return;
       seen.add(m[1]);
       const price = MS.parsePriceNumber(priceHint);
       const url = href.split('?')[0];
@@ -215,7 +218,7 @@
         platform: 'bunjang',
         platformLabel: '번개장터',
         itemId: m[1],
-        title: String(titleHint || '').trim().slice(0, 120) || `매물 ${m[1]}`,
+        title,
         price,
         priceLabel: price != null ? formatWon(price) : priceHint || '—',
         url: url.startsWith('http') ? url : `https://m.bunjang.co.kr/products/${m[1]}`,

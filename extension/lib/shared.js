@@ -373,7 +373,7 @@
     if (!flags?.[ad.id]) return;
     if (flags.at && Date.now() - flags.at > 3 * 60 * 1000) return;
 
-    await new Promise((r) => setTimeout(r, 1200));
+    await new Promise((r) => setTimeout(r, 2000));
     const items = ad.harvestSearchListings();
     const q =
       new URL(location.href).searchParams.get('q') ||

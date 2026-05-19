@@ -16,13 +16,15 @@
     return u.href;
   };
 
+  /** 제목만으로 만드는 폴백 검색어 — `analyzer-server.mjs` MAX_SEARCH_QUERY_CHARS(96) 와 동일 상한 */
   Root.guessSearchQuery = (title) => {
+    const maxLen = 96;
     let q = String(title || '')
       .replace(/\[[^\]]*\]/g, ' ')
       .replace(/[|｜]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (q.length > 40) q = q.slice(0, 40).replace(/\s+\S*$/, '').trim();
+    if (q.length > maxLen) q = q.slice(0, maxLen).replace(/\s+\S*$/, '').trim() || q.slice(0, maxLen);
     return q || '중고';
   };
 
@@ -47,4 +49,37 @@
   };
 
   Root.isMarketSearchUrl = (url) => Root.isBunjangSearchUrl(url) || Root.isDaangnSearchUrl(url);
+
+  /**
+   * 검색 URL에서 q / search 파라미터.
+   * @param {string} [url]
+   */
+  Root.getSearchQueryFromUrl = (url) => {
+    try {
+      const u = new URL(url || (typeof location !== 'undefined' ? location.href : ''), 'https://example.com');
+      return (u.searchParams.get('q') || u.searchParams.get('search') || '').trim();
+    } catch {
+      return '';
+    }
+  };
+
+  /**
+   * 검색 결과 카드가 현재 검색과 관련 있어 보이는지(느슨한 필터).
+   * - 검색어에 한글이 없으면 필터 안 함(영문 전용 검색 오탐 방지).
+   * - 한글 검색이면 2자 이상 토큰 중 하나라도 제목에 부분 문자열로 나오면 통과.
+   */
+  Root.listingTitleMatchesSearchQuery = (title, query) => {
+    const q = String(query || '').trim();
+    if (!q) return true;
+    if (!/[\uAC00-\uD7A3]/.test(q)) return true;
+
+    const t = String(title || '').toLowerCase();
+    const tokens = q
+      .toLowerCase()
+      .split(/\s+/)
+      .map((x) => x.replace(/[^\p{L}\p{N}]+/gu, ''))
+      .filter((x) => x.length >= 2);
+    if (!tokens.length) return true;
+    return tokens.some((tok) => t.includes(tok));
+  };
 })();
