@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "중고 매물 스크랩 (번개장터·당근)",
+  "version": "2.3.0",
+  "description": "번개장터·당근마켓 매물 상세에서 가격·제목·사진·본문·판매자 정보를 모읍니다. 개인 참고용.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "https://*.bunjang.co.kr/*",
+    "https://bunjang.co.kr/*",
+    "https://api.bunjang.co.kr/*",
+    "https://www.daangn.com/*",
+    "https://*.daangn.com/*",
+    "http://127.0.0.1:3920/*",
+    "http://localhost:3920/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.bunjang.co.kr/*",
+        "https://bunjang.co.kr/*",
+        "https://www.daangn.com/*",
+        "https://*.daangn.com/*"
+      ],
+      "js": [
+        "lib/shared.js",
+        "lib/search-urls.js",
+        "lib/images.js",
+        "lib/storage.js",
+        "lib/comps.js",
+        "hosts/bunjang.js",
+        "hosts/daangn.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://127.0.0.1:3920/*", "http://localhost:3920/*"],
+      "js": ["bridge-analyzer.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "중고 매물 스크랩",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  }
+}

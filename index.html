@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>번개장터 매물 사진 보기 (로컬)</title>
+    <style>
+      :root {
+        font-family:
+          Pretendard,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        color: #1a1a1a;
+        background: #f4f5f7;
+      }
+      body {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 1.25rem;
+      }
+      h1 {
+        font-size: 1.125rem;
+        font-weight: 700;
+        margin: 0 0 0.75rem;
+      }
+      label {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+      input[type='text'] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #cfd4dc;
+        border-radius: 8px;
+        font-size: 0.9375rem;
+      }
+      input[type='text']:focus {
+        outline: 2px solid #3b6cff;
+        outline-offset: 1px;
+        border-color: #3b6cff;
+      }
+      .row {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 0.75rem;
+      }
+      label.inline {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: #3a4149;
+        cursor: pointer;
+      }
+      label.inline input {
+        width: auto;
+        margin: 0;
+      }
+      button {
+        cursor: pointer;
+        border: none;
+        border-radius: 8px;
+        padding: 0.55rem 1rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        background: #1a1a1a;
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .note {
+        font-size: 0.75rem;
+        line-height: 1.5;
+        color: #5c6470;
+        margin: 1rem 0 0;
+        padding: 0.75rem 0.85rem;
+        background: #fff;
+        border-radius: 8px;
+        border: 1px solid #e5e8ed;
+      }
+      .err {
+        margin-top: 0.75rem;
+        padding: 0.65rem 0.75rem;
+        background: #fff0f0;
+        border: 1px solid #f0b4b4;
+        border-radius: 8px;
+        color: #8a1f1f;
+        font-size: 0.8125rem;
+        display: none;
+      }
+      .err.show {
+        display: block;
+      }
+      .meta {
+        margin-top: 1rem;
+        font-size: 0.875rem;
+      }
+      .meta strong {
+        font-weight: 700;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 0.65rem;
+        margin-top: 1rem;
+      }
+      .grid a {
+        display: block;
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        border: 1px solid #e5e8ed;
+        aspect-ratio: 1;
+      }
+      .grid img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .status {
+        font-size: 0.8125rem;
+        color: #5c6470;
+        margin-top: 0.5rem;
+        min-height: 1.25em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>번개장터 매물 사진 (로컬 도구)</h1>
+    <label for="url">매물 링크 또는 상품 번호</label>
+    <input
+      id="url"
+      type="text"
+      placeholder="예: https://m.bunjang.co.kr/products/123456789"
+      autocomplete="off"
+    />
+    <div class="row">
+      <label class="inline"
+        ><input type="checkbox" id="browserFirst" /> 처음부터 헤드리스 브라우저로 열기 (API가 막힐 때)</label
+      >
+    </div>
+    <div class="row">
+      <button type="button" id="go">사진 가져오기</button>
+    </div>
+    <p class="note">
+      이 페이지는 개인 참고용으로만 로컬에서 동작합니다. 이용약관·저작권을 지키고, 무단 재배포나 상업적 이용은 하지
+      마세요. API가 차단되면 서버가 <strong>Playwright 헤드리스 브라우저</strong>로 접속해 이미지 주소를 모읍니다(
+      최초 1회 터미널에서 <code style="background:#eef1f6;padding:0.1rem 0.35rem;border-radius:4px"
+        >npm install</code
+      >
+      후
+      <code style="background:#eef1f6;padding:0.1rem 0.35rem;border-radius:4px">npm run install-browser</code>).
+      크롬이 이미 깔려 있으면 시작 시 환경변수
+      <code style="background:#eef1f6;padding:0.1rem 0.35rem;border-radius:4px">CHROME_CHANNEL=chrome</code> 로 Chromium
+      대신 사용할 수 있습니다.
+    </p>
+    <div id="err" class="err"></div>
+    <p id="status" class="status"></p>
+    <div id="meta" class="meta" hidden></div>
+    <div id="grid" class="grid"></div>
+
+    <script>
+      const $url = document.getElementById('url');
+      const $go = document.getElementById('go');
+      const $err = document.getElementById('err');
+      const $status = document.getElementById('status');
+      const $meta = document.getElementById('meta');
+      const $grid = document.getElementById('grid');
+      const $browserFirst = document.getElementById('browserFirst');
+
+      function showError(msg) {
+        $err.textContent = msg || '';
+        $err.classList.toggle('show', Boolean(msg));
+      }
+
+      async function load() {
+        showError('');
+        const q = $url.value.trim();
+        if (!q) {
+          showError('링크 또는 상품 번호를 입력해 주세요.');
+          return;
+        }
+        $go.disabled = true;
+        $status.textContent = $browserFirst.checked
+          ? '헤드리스 브라우저로 여는 중… (10~40초 걸릴 수 있음)'
+          : '불러오는 중…';
+        $meta.hidden = true;
+        $grid.innerHTML = '';
+        try {
+          const api =
+            '/api/bunjang-images?url=' +
+            encodeURIComponent(q) +
+            ($browserFirst.checked ? '&browser=1' : '');
+          const res = await fetch(api);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || `요청 실패 (${res.status})`);
+          const { pid, name, imageUrls, source, apiError } = data;
+          const srcLabel =
+            source === 'api'
+              ? 'API'
+              : source === 'browser-network'
+                ? '브라우저(페이지 속 API 응답)'
+                : source === 'browser-dom'
+                  ? '브라우저(DOM)'
+                  : source || '';
+          let metaHtml = `<strong>상품</strong> ${escapeHtml(name || '(제목 없음)')} <span style="color:#5c6470">· pid ${escapeHtml(
+            String(pid || '')
+          )}</span>`;
+          if (srcLabel) metaHtml += ` <span style="color:#5c6470">· ${escapeHtml(srcLabel)}</span>`;
+          if (apiError) {
+            metaHtml += `<br /><span style="color:#856404;font-size:0.8rem">API는 실패했고 브라우저 폴백으로 가져왔습니다: ${escapeHtml(
+              String(apiError)
+            )}</span>`;
+          }
+          $meta.innerHTML = metaHtml;
+          $meta.hidden = false;
+          $status.textContent = `이미지 ${imageUrls.length}장`;
+          for (const src of imageUrls) {
+            const a = document.createElement('a');
+            a.href = src;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = '매물 사진';
+            img.loading = 'lazy';
+            a.appendChild(img);
+            $grid.appendChild(a);
+          }
+        } catch (e) {
+          showError(e instanceof Error ? e.message : String(e));
+          $status.textContent = '';
+        } finally {
+          $go.disabled = false;
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      $go.addEventListener('click', load);
+      $url.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') load();
+      });
+    </script>
+  </body>
+</html>

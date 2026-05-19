@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>매물 정리 · 가격 분석</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>매물 정리</h1>
+        <p class="sub">확장 프로그램에서 뽑은 데이터가 여기에 쌓입니다.</p>
+      </div>
+      <button type="button" id="btnRefresh" class="btn">불러오기</button>
+    </header>
+
+    <p id="status" class="status">분석 페이지를 연 상태에서, 번개/당근에서 «데이터 다시 불러오기»를 누르세요.</p>
+
+    <main class="layout">
+      <section class="card main-card" id="current">
+        <p class="empty">아직 데이터가 없습니다.</p>
+      </section>
+
+      <aside class="side">
+        <h2>최근 매물</h2>
+        <ul id="history" class="history">
+          <li class="empty-item">비어 있음</li>
+        </ul>
+      </aside>
+    </main>
+
+    <div id="lightbox" class="lightbox" hidden aria-hidden="true">
+      <button type="button" class="lightbox-close" id="lightboxClose" aria-label="닫기">×</button>
+      <img id="lightboxImg" alt="" />
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

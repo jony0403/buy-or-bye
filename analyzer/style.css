@@ -1,0 +1,252 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: Pretendard, system-ui, -apple-system, sans-serif;
+  background: #f6f7f9;
+  color: #1a1a1a;
+  line-height: 1.5;
+}
+.top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0.5rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+.sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: #5c6470;
+}
+.status {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #3b6cff;
+}
+.layout {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.5rem 2rem;
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+.card {
+  background: #fff;
+  border: 1px solid #e5e8ed;
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+}
+.badge {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+.badge.bunjang {
+  background: #1a1a1a;
+  color: #fff;
+}
+.badge.daangn {
+  background: #ff6f0f;
+  color: #fff;
+}
+.item-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+  word-break: break-word;
+}
+.price {
+  font-size: 1.35rem;
+  font-weight: 800;
+  margin: 0 0 0.75rem;
+}
+.meta {
+  font-size: 0.8125rem;
+  color: #5c6470;
+  margin-bottom: 0.75rem;
+}
+.block-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #8f96a3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0.75rem 0 0.35rem;
+}
+.body-text {
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  max-height: 200px;
+  overflow: auto;
+}
+.imgs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  margin-top: 0.35rem;
+}
+.imgs img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #eef1f6;
+  cursor: zoom-in;
+}
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.82);
+}
+.lightbox[hidden] {
+  display: none;
+}
+.lightbox img {
+  max-width: min(calc(100vw - 32px), 1200px);
+  max-height: calc(100vh - 32px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+.lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.link {
+  display: inline-block;
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+  color: #3b6cff;
+  text-decoration: none;
+}
+.link:hover {
+  text-decoration: underline;
+}
+.side h2 {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  color: #5c6470;
+}
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.history li {
+  margin-bottom: 0.35rem;
+}
+.history button {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e5e8ed;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8125rem;
+}
+.history button:hover {
+  border-color: #c5cad3;
+  background: #fafbfc;
+}
+.history button.active {
+  border-color: #1a1a1a;
+  background: #f4f5f7;
+}
+.hist-title {
+  font-weight: 600;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-meta {
+  font-size: 0.75rem;
+  color: #8f96a3;
+}
+.empty,
+.empty-item {
+  color: #8f96a3;
+  font-size: 0.875rem;
+}
+.comp-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.comp-list li {
+  margin-bottom: 0.4rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+.comp-list a {
+  color: #3b6cff;
+  text-decoration: none;
+  word-break: break-word;
+}
+.comp-list a:hover {
+  text-decoration: underline;
+}
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-weight: 600;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  background: #1a1a1a;
+  color: #fff;
+  white-space: nowrap;
+}
+.btn:hover {
+  opacity: 0.9;
+}
