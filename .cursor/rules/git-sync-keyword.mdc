@@ -14,15 +14,22 @@ alwaysApply: true
 
 ## 수행 순서
 
-1. `git status`로 변경 사항 확인.
-2. `git fetch origin` 후 `git pull origin main`으로 원격 최신 반영. 충돌이 나면 중단하고 충돌 해결을 돕는다.
-3. 커밋할 변경이 있으면:
+1. **`git pull` 직전** 저장소의 `HEAD` 커밋 해시를 기록해 둔다 (`git rev-parse HEAD`, 이름은 `SYNC_START` 등 자유). 이번 `깃동기화`에서 pull·로컬 커밋·push까지 끝난 **최종 `HEAD`**와 비교할 때 쓴다.
+2. `git status`로 변경 사항 확인.
+3. `git fetch origin` 후 `git pull origin main`으로 원격 최신 반영. 충돌이 나면 중단하고 충돌 해결을 돕는다.
+4. 커밋할 변경이 있으면:
    - 사용자가 이번 턴에 커밋 메시지를 정했으면 그걸 쓴다.
    - 없으면 변경 요약에 맞는 **짧은 한 줄** 메시지(`chore: …`, `docs: …` 등)를 임의로 정해 커밋한다.
-4. **스테이징:** `git add` — 일반적으로 `git add -A` 또는 의미 있는 파일만. **`.env`, 비밀 파일, `node_modules`는 절대 커밋하지 않는다** (`.gitignore` 준수).
-5. 스테이징된 내용이 있을 때만 `git commit`. 커밋 실패 시 **저장소의 `user.name` / `user.email`은 바꾸지 말고**, 필요하면 **그 커밋 한 번만** `git -c user.name="…" -c user.email="…" commit` 한다. 이름은 `git remote get-url origin`의 GitHub 사용자(예: `jony0403`)와 맞춘다.
-6. `git push origin main`
-7. 결과를 요약한다: pull/커밋/푸시 여부, 최종 `git status`, 오류 시 원인.
+5. **스테이징:** `git add` — 일반적으로 `git add -A` 또는 의미 있는 파일만. **`.env`, 비밀 파일, `node_modules`는 절대 커밋하지 않는다** (`.gitignore` 준수).
+6. 스테이징된 내용이 있을 때만 `git commit`. 커밋 실패 시 **저장소의 `user.name` / `user.email`은 바꾸지 말고**, 필요하면 **그 커밋 한 번만** `git -c user.name="…" -c user.email="…" commit` 한다. 이름은 `git remote get-url origin`의 GitHub 사용자(예: `jony0403`)와 맞춘다.
+7. `git push origin main`
+8. **인수인계(`PROJECT.md`) 변경 요약 (필수):** `push`까지 포함해 **이번 `깃동기화` 흐름이 모두 끝난 뒤**, 위에서 기록한 **시작 시점 `HEAD`**와 **최종 `HEAD`**를 비교한다.  
+   터미널로 `git diff <시작_HEAD> HEAD -- PROJECT.md` 를 실행한다.  
+   - 출력이 **비어 있지 않으면** (이번 동기화로 인수인계에 **추가·수정·삭제**가 반영된 경우): **사용자에게 한국어로 직접** 무엇이 바뀌었는지 **정리해서 말한다**.  
+     - 원격에서 받아온 내용만 바뀐 경우·로컬에서 커밋한 경우·둘 다 섞인 경우를 가리지 않고, **최종적으로 저장소에 반영된 `PROJECT.md` 변화**를 기준으로 요약한다.  
+     - 형식: 짧은 도입 1문장 + **불릿**으로 (예: 새 키워드, §번호, 표 항목, 상단 요약 변경 등) **구체적으로** 적는다. diff가 길면 **섹션·의미 단위**로 묶어도 된다.  
+   - 출력이 **비어 있으면**: `PROJECT.md`는 이번 동기화 구간에서 바뀌지 않았다고 **한 줄로** 알리거나, 전체 요약에서 생략해도 된다.
+9. 그 밖에 결과를 요약한다: pull/커밋/푸시 여부, 최종 `git status`, 오류 시 원인. (**8**의 인수인계 요약과 겹치지 않게 간결히.)
 
 ## 원격 저장소
 

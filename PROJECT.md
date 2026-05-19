@@ -8,7 +8,7 @@
 - **워크스페이스:** `used-listing-analyzer`
 
 **맥북 ↔ 윈도우:** 이쪽(윈도우 등)에서도 프로젝트 맥락은 이해한 상태로 맞춰 두었으니, 앞으로 맥북·윈도우를 오가며 할 때 `@PROJECT.md`와 저장소를 기준으로 서로 잘 맞춰가자.  
-**Git 동기화:** 두 PC 모두 이 저장소를 Cursor로 연 뒤 채팅에 **`깃동기화`**(또는 **`sync-repo`**)라고 입력하면 에이전트가 `pull`·(필요 시 `commit`/`push`)를 수행한다. 규칙 파일은 `.cursor/rules/git-sync-keyword.mdc`(저장소에 포함) — **다른 PC에서는 반드시 `git pull`로 최신을 받은 다음** 쓰면 된다. 자세한 절은 **§12.5**.  
+**Git 동기화:** 두 PC 모두 이 저장소를 Cursor로 연 뒤 채팅에 **`깃동기화`**(또는 **`sync-repo`**)라고 입력하면 에이전트가 `pull`·(필요 시 `commit`/`push`)를 수행한다. 규칙 파일은 `.cursor/rules/git-sync-keyword.mdc`(저장소에 포함) — **다른 PC에서는 반드시 `git pull`로 최신을 받은 다음** 쓰면 된다. 자세한 절은 **§12.5**. 동기화 후 **`PROJECT.md`에 반영된 추가·수정이 있으면 에이전트가 한국어로 요약해 말해 준다** (diff 기준).  
 **분석 서버:** 채팅에 **`분석서버켜`** / **`서버켜`** / **`analyzer-up`** 으로 로컬 분석 웹을 띄우고, **`분석서버꺼`** / **`서버꺼`** / **`analyzer-down`** 으로 끈다(기본 포트 3920). 규칙 `.cursor/rules/analyzer-server-keyword.mdc` — **§12.6**.  
 **규칙·인수인계:** `.cursor/rules` 를 추가·수정할 때마다 **이 문서(§12.6·§15)도 같이 고치고**, 작업 후 **`깃동기화`** 해서 맥/윈도에 규칙을 맞출 것. 에이전트는 규칙 변경 시 이 점을 안내한다(`.cursor/rules/handover-on-rule-changes.mdc`).
 
@@ -409,6 +409,7 @@ git commit -m "중고 매물 스크랩 v2.3"
 | 전제 | 이 워크스페이스가 **`https://github.com/jony0403/used-listing-analyzer`** 를 연 상태이고, 프로젝트 안에 **`.cursor/rules/git-sync-keyword.mdc`** 가 있어야 함 |
 | 맥/다른 PC에서 처음 | 터미널에서 `git clone …` 또는 기존 폴더면 **`git pull origin main`** 으로 최신 받기 → 그 다음부터 Cursor에서 **`깃동기화`** 가능 |
 | 동작(요약) | 에이전트가 `fetch` / `pull origin main` 으로 **원격 변경을 먼저 반영**한 뒤, 이 PC에 로컬 변경이 있으면 `commit`·`push` 를 처리함 |
+| 인수인계 요약 | 이번 동기화 구간에서 **`PROJECT.md`가 바뀌면**(pull·로컬 커밋 포함) `git diff <시작_HEAD> HEAD -- PROJECT.md` 기준으로 **에이전트가 한국어로 변경점을 정리**해 줌(규칙 참고) |
 | “받아오기”만 하면 될 때 | 상대가 이미 push 했고 내 쪽 수정이 없으면, 실질적으로 **`pull`만** 이루어지고 커밋/푸시는 생략될 수 있음 |
 
 **주의:** 예전에 USB로 폴더만 복사한 사본에는 `.cursor` 규칙이 없을 수 있음 → **GitHub에서 clone/pull 한 쪽**을 Cursor로 열 것.
@@ -417,7 +418,7 @@ git commit -m "중고 매물 스크랩 v2.3"
 
 | 트리거 | 동작 | 규칙 파일 |
 |--------|------|-----------|
-| `깃동기화` / `sync-repo` | `fetch`·`pull main`·로컬 변경 시 `commit`·`push` | `.cursor/rules/git-sync-keyword.mdc` |
+| `깃동기화` / `sync-repo` | `fetch`·`pull main`·로컬 변경 시 `commit`·`push` · 끝난 뒤 **`PROJECT.md` 변경 시 요약 안내** | `.cursor/rules/git-sync-keyword.mdc` |
 | `분석서버켜` / `서버켜` / `analyzer-up` | `node analyzer-server.mjs` (백그라운드) → **http://127.0.0.1:3920/** (`ANALYZER_PORT` 없을 때) | `.cursor/rules/analyzer-server-keyword.mdc` |
 | `분석서버꺼` / `서버꺼` / `analyzer-down` | 포트 3920(또는 설정한 `ANALYZER_PORT`) Listen 프로세스 종료 | 동일 |
 
