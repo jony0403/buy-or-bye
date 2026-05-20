@@ -119,4 +119,71 @@
     }
     return data;
   };
+
+  /**
+   * @param {{ title: string, body?: string, imageUrls?: string[], productName?: string, summary?: object, apiKey: string, model?: string }} p
+   * @returns {Promise<{ analysis: { relatedIssues: Array<{ title: string, detail: string, level?: string }>, chronicDefects: Array<{ title: string, detail: string, level?: string }>, verdict?: string } }>}
+   */
+  UlsaAi.fetchProductRisk = async (p) => {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(`http://${location.hostname}:${port}/api/product-risk`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': p.apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        title: p.title || '',
+        body: p.body || '',
+        imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : [],
+        productName: p.productName || '',
+        summary: p.summary || null,
+      }),
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(text.slice(0, 200) || `HTTP ${res.status}`);
+    }
+    if (!res.ok) {
+      throw new Error(data.error || data.message || `HTTP ${res.status}`);
+    }
+    return data;
+  };
+
+  /**
+   * @param {{ prompt: string, apiKey: string, model?: string }} p
+   * @returns {Promise<{ answer: string, model: string, pipeline: string }>}
+   */
+  UlsaAi.askDirect = async (p) => {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(`http://${location.hostname}:${port}/api/ai-chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': p.apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        prompt: p.prompt || '',
+      }),
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(text.slice(0, 200) || `HTTP ${res.status}`);
+    }
+    if (!res.ok) {
+      throw new Error(data.error || data.message || `HTTP ${res.status}`);
+    }
+    return data;
+  };
+
 })();

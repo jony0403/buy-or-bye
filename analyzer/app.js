@@ -2,11 +2,13 @@ const $current = document.getElementById('current');
 const $history = document.getElementById('history');
 const $status = document.getElementById('status');
 const $btnRefresh = document.getElementById('btnRefresh');
+const $btnDirectAi = document.getElementById('btnDirectAi');
 const $btnHistory = document.getElementById('btnHistory');
 const $btnHistoryClose = document.getElementById('btnHistoryClose');
 const $btnHistoryClear = document.getElementById('btnHistoryClear');
 const $recentDrawer = document.getElementById('recentDrawer');
 const $drawerBackdrop = document.getElementById('drawerBackdrop');
+const $directAiPanel = document.getElementById('directAiPanel');
 const $lightbox = document.getElementById('lightbox');
 const $lightboxImg = document.getElementById('lightboxImg');
 const $lightboxClose = document.getElementById('lightboxClose');
@@ -21,6 +23,8 @@ const photoDirections = new Map();
 const relatedRequestedKeys = new Set();
 const productImageSearches = new Set();
 const stageTwoActiveKeys = new Set();
+const productRiskAnalyses = new Map();
+const directAiChat = { open: false, status: 'idle', messages: [] };
 
 function itemKey(item) {
   return `${item.platform}:${item.itemId}`;
@@ -190,32 +194,139 @@ function stepTwoProductName(item) {
   return state?.summary?.productName || fallbackSearchQuery(item) || '식별된 제품';
 }
 
-function renderStageTwoMini(title, desc) {
+function renderStageTwoMini(title, desc, level = '') {
+  const levelText = String(level || '').trim();
   return `
-    <div class="stage-two-mini is-disabled">
+    <div class="stage-two-mini${levelText ? ` risk-${escapeAttr(levelText)}` : ''}">
       <strong>${escapeHtml(title)}</strong>
       <span>${escapeHtml(desc)}</span>
     </div>
   `;
 }
 
-function renderStageTwoGroup(title, items) {
+function renderStageTwoLoading(title, delay = 0) {
   return `
-    <article class="stage-two-card stage-two-card--stack is-disabled" aria-disabled="true">
-      <div class="stage-two-card-head">
-        <p class="stage-two-card-label">AI 기능 추가 예정</p>
-        <h3>${escapeHtml(title)}</h3>
-      </div>
-      <div class="stage-two-mini-list">
-        ${items.map((item) => renderStageTwoMini(item.title, item.desc)).join('')}
+    <article class="mini-card stage-two-risk-card is-loading" style="--stage-delay:${delay}ms">
+      <div class="summary-loading summary-loading--skeleton">
+        <div class="ai-loading-copy">
+          <p class="stage-two-card-label">AI 분석 중</p>
+          <h3>${escapeHtml(title)}</h3>
+          <p class="mini-muted">제품 정보를 기반으로 구매 전 확인할 리스크를 정리합니다.</p>
+        </div>
+        <div class="risk-loader">
+          <span></span><span></span><span></span>
+        </div>
       </div>
     </article>
   `;
 }
 
-function renderStageTwoSimple(title, desc) {
+function renderStageTwoLoadingCards() {
+  return ['관련 이슈 검색 중', '고질병 검색 중']
+    .map((title, idx) => renderStageTwoLoading(title, idx * 70))
+    .join('');
+}
+
+function renderStageTwoRiskCard(kind, item, delay = 0) {
+  const level = String(item?.level || 'caution').trim();
   return `
-    <article class="stage-two-card is-disabled" aria-disabled="true">
+    <article class="mini-card stage-two-risk-card risk-${escapeAttr(level)}" style="--stage-delay:${delay}ms">
+      <p class="stage-two-card-label">${escapeHtml(kind)}</p>
+      <h3>${escapeHtml(item?.title || '확인 필요')}</h3>
+      <p>${escapeHtml(item?.detail || item?.desc || '구매 전 추가 확인이 필요합니다.')}</p>
+    </article>
+  `;
+}
+
+function renderStageTwoRiskCards(analysis) {
+  const related = Array.isArray(analysis?.relatedIssues) ? analysis.relatedIssues : [];
+  const defects = Array.isArray(analysis?.chronicDefects) ? analysis.chronicDefects : [];
+  const cards = [
+    ...related.slice(0, 3).map((item, idx) => renderStageTwoRiskCard('관련 이슈', item, idx * 70)),
+    ...defects.slice(0, 3).map((item, idx) =>
+      renderStageTwoRiskCard('고질병', item, (related.length + idx) * 70)
+    ),
+  ];
+  if (cards.length) return cards.join('');
+  const verdict = String(analysis?.verdict || '').trim();
+  return `
+    <article class="mini-card stage-two-card stage-two-card--empty">
+      <p class="stage-two-card-label">검색 결과 부족</p>
+      <h3>제품 이슈·고질병</h3>
+      <p>웹 검색에서 뚜렷한 항목을 찾지 못했습니다. 다시 분석하거나 다른 검색·커뮤니티에서 직접 확인해 주세요.</p>
+      ${verdict ? `<p class="stage-two-verdict">${escapeHtml(verdict)}</p>` : ''}
+    </article>
+  `;
+}
+
+function renderDirectAiPanel() {
+  if (!$directAiPanel) return;
+  const messages = Array.isArray(directAiChat.messages) ? directAiChat.messages : [];
+  const productName = latest ? stepTwoProductName(latest) : '스팀덱 OLED 512GB';
+  const defaultPrompt = `${productName} 중고매물을 사려는데 고질병이나 관련 이슈를 알려줘.`;
+  const rows = messages.length
+    ? messages
+        .map(
+          (msg) => `
+            <div class="direct-chat-msg direct-chat-msg--${escapeAttr(msg.role || 'ai')}">
+              <span>${msg.role === 'user' ? '나' : 'AI'}</span>
+              <p>${escapeHtml(msg.text || '')}</p>
+            </div>
+          `
+        )
+        .join('')
+    : `<p class="direct-chat-empty">여기에 직접 물어보면 입력한 문장 그대로 Gemini에 보냅니다.</p>`;
+  $directAiPanel.hidden = !directAiChat.open;
+  $directAiPanel.setAttribute('aria-hidden', directAiChat.open ? 'false' : 'true');
+  $directAiPanel.innerHTML = `
+    <article class="direct-chat-card">
+      <div class="direct-chat-head">
+        <div>
+          <p class="stage-two-card-label">직접 대화</p>
+          <h3>AI 모델에게 그대로 물어보기</h3>
+        </div>
+        <div class="direct-chat-actions">
+          <button type="button" class="chip-btn direct-chat-clear">지우기</button>
+          <button type="button" class="chip-btn direct-chat-close">닫기</button>
+        </div>
+      </div>
+      <div class="direct-chat-log">${rows}</div>
+      <form class="direct-chat-form">
+        <textarea name="prompt" rows="3" placeholder="${escapeAttr(defaultPrompt)}"${directAiChat.status === 'loading' ? ' disabled' : ''}></textarea>
+        <button type="submit" class="btn btn-small"${directAiChat.status === 'loading' ? ' disabled' : ''}>${directAiChat.status === 'loading' ? '질문 중...' : '보내기'}</button>
+      </form>
+    </article>
+  `;
+  bindDirectAiChat();
+}
+
+function stripChatMarkdown(text) {
+  return String(text || '')
+    .replace(/\*\*/g, '')
+    .replace(/__/g, '')
+    .replace(/`/g, '')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '');
+}
+
+function renderStageTwoGroup(title, items, label = 'AI 분석 완료', delay = 0) {
+  const safeItems = Array.isArray(items) && items.length ? items : [{ title: '확인 필요', detail: '검색 결과가 부족해 추가 확인이 필요합니다.' }];
+  return `
+    <article class="mini-card stage-two-card stage-two-card--stack" style="--stage-delay:${delay}ms">
+      <div class="stage-two-card-head">
+        <p class="stage-two-card-label">${escapeHtml(label)}</p>
+        <h3>${escapeHtml(title)}</h3>
+      </div>
+      <div class="stage-two-mini-list">
+        ${safeItems.map((item) => renderStageTwoMini(item.title, item.detail || item.desc || '', item.level)).join('')}
+      </div>
+    </article>
+  `;
+}
+
+function renderStageTwoSimple(title, desc, delay = 0) {
+  return `
+    <article class="mini-card stage-two-card is-disabled" aria-disabled="true" style="--stage-delay:${delay}ms">
       <div>
         <p class="stage-two-card-label">AI 기능 추가 예정</p>
         <h3>${escapeHtml(title)}</h3>
@@ -227,40 +338,25 @@ function renderStageTwoSimple(title, desc) {
 
 function renderStageTwoSection(item) {
   if (!item) return '';
-  const productName = stepTwoProductName(item);
   const key = summaryKey(item);
   const state = getProductSummaryState(item);
   if (state?.status !== 'done') return '';
-  const active = key && stageTwoActiveKeys.has(key);
+  const riskState = key ? productRiskAnalyses.get(key) : null;
+  const analysis = riskState?.analysis || null;
 
   return `
-    <section class="stage-two-panel${active ? ' is-active' : ''}" data-stage-two-panel aria-label="2단계 제품 리스크 분석">
-      <div class="stage-two-head">
-        <div>
-          <p class="stage-kicker">2단계</p>
-          <h2>제품 리스크 확인</h2>
-        </div>
-        <p class="stage-note">1단계 제품 정리와 분리된 다음 분석 영역입니다.</p>
-      </div>
+    <section class="stage-two-panel is-active" data-stage-two-panel>
       ${
-        active
-          ? `<div class="stage-two-grid">
-              ${renderStageTwoGroup('관련 이슈', [
-                { title: '최근 이슈', desc: `${productName} 관련 뉴스/커뮤니티 이슈 확인` },
-                { title: 'AS·유통', desc: '국내 유통사, 보증, 수리 가능성 확인' },
-                { title: '가격 영향', desc: '이슈가 중고가에 미치는 영향 정리' },
-              ])}
-              ${renderStageTwoGroup('고질병 조사', [
-                { title: '자주 나는 고장', desc: '사용자들이 반복 보고한 고장 유형 확인' },
-                { title: '확인 질문', desc: '판매자에게 물어볼 체크 질문 생성' },
-                { title: '감가 요인', desc: '고질병 가능성에 따른 가격 조정 포인트' },
-              ])}
-              ${renderStageTwoSimple('판매자 본문 분석', '판매글의 표현, 거래 조건, 보증/환불 문구, 사기 의심 신호를 분석할 영역입니다.')}
-              ${renderStageTwoSimple('이미지 하자 조사', '매물 사진에서 외관 하자, 구성품 누락, 추가 사진 요청 포인트를 확인할 영역입니다.')}
-            </div>`
-          : `<div class="stage-two-ready">
-              <button type="button" class="btn btn-small stage-two-start-btn" data-stage-two-start="${escapeAttr(key)}">다음 단계로 넘어가기</button>
-            </div>`
+        riskState?.status === 'error'
+          ? `<article class="mini-card stage-two-card stage-two-card--error">
+                <p class="stage-two-card-label">AI 분석 실패</p>
+                <h3>다음 단계 분석</h3>
+                <p>${escapeHtml(riskState.error || '분석을 불러오지 못했습니다.')}</p>
+                <button type="button" class="chip-btn stage-two-start-btn" data-stage-two-start="${escapeAttr(key)}">다시 분석</button>
+              </article>`
+          : riskState?.status === 'done'
+            ? renderStageTwoRiskCards(analysis)
+            : renderStageTwoLoadingCards()
       }
     </section>
   `;
@@ -275,18 +371,19 @@ function activeCompsForItem(item, rawComps) {
 function renderProductSummaryBlock(item) {
   const state = getProductSummaryState(item);
   const summary = state?.summary;
-  const queries = productSummaryQueries(summary, item);
   const images = productSummaryImages(summary, item);
-  const disabled = queries.length ? '' : ' disabled';
+  const danawaUrl = danawaPriceUrl(summary);
 
   if (state?.status === 'loading') {
     return `
       <article class="mini-card mini-card--product mini-card--compact mini-card--loading" data-product-summary>
-        <div class="summary-loading">
-          <span class="spinner" aria-hidden="true"></span>
-          <div>
+        <div class="summary-loading summary-loading--skeleton">
+          <div class="ai-loading-copy">
             <p class="mini-value">AI가 제품 정보를 정리하는 중...</p>
             <p class="mini-muted">본문과 사진을 기반으로 제품명·신품 시세·대표 이미지를 준비합니다.</p>
+          </div>
+          <div class="risk-loader">
+            <span></span><span></span><span></span>
           </div>
         </div>
       </article>
@@ -299,7 +396,6 @@ function renderProductSummaryBlock(item) {
         <p class="mini-value">제품 정리를 만들지 못했습니다.</p>
         <p class="mini-muted">${escapeHtml(state.error || 'API 설정 또는 서버 상태를 확인하세요.')}</p>
         <button type="button" class="btn btn-small retry-product-summary-btn">제품 정리 다시 시도</button>
-        <button type="button" class="btn btn-small related-search-btn"${disabled}>비슷한 매물 찾기</button>
       </article>
     `;
   }
@@ -307,17 +403,7 @@ function renderProductSummaryBlock(item) {
   return `
     <article class="mini-card mini-card--product mini-card--compact" data-product-summary>
       <div class="summary-actions">
-        ${
-          queries.length
-            ? `<div class="search-query-list" aria-label="검색어">${queries
-                .map(
-                  (q) =>
-                    `<button type="button" class="search-query-chip related-query-btn" data-query="${escapeAttr(q)}" title="이 검색어로 비슷한 매물 찾기">${escapeHtml(q)}</button>`
-                )
-                .join('')}</div>`
-            : ''
-        }
-        <button type="button" class="btn btn-small related-search-btn"${disabled}>비슷한 매물 찾기</button>
+        ${danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
       </div>
       <div class="product-summary-layout">
         <div class="product-image-strip">
@@ -337,15 +423,11 @@ function renderProductSummaryBlock(item) {
           <h2 class="hover-full" title="${escapeAttr(summary?.productName || '제품 정리 대기')}">${escapeHtml(summary?.productName || '제품 정리 대기')}</h2>
           ${
             summary?.newPrice
-              ? `<p class="mini-value">AI 추정 신품 시세: ${escapeHtml(summary.newPrice)}${
-                  danawaPriceUrl(summary)
-                    ? ` <a class="price-source-link" href="${escapeAttr(danawaPriceUrl(summary))}" target="_blank" rel="noopener">다나와 검색 ↗</a>`
-                    : ''
-                }</p>`
+              ? `<p class="mini-value">AI 추정 신품 시세: ${escapeHtml(summary.newPrice)}</p>`
               : ''
           }
           ${summary?.makerOrSeller ? `<p class="mini-muted">제조사/판매처: ${escapeHtml(summary.makerOrSeller)}</p>` : ''}
-          ${renderScrollableText(productSummaryDescription(summary, item), 'product-desc', `summary-desc-${summaryKey(item)}`, 58)}
+          ${renderScrollableText(productSummaryDescription(summary, item), 'product-desc', `summary-desc-${summaryKey(item)}`, 64)}
         </div>
       </div>
     </article>
@@ -521,7 +603,7 @@ function bindScrollText(root) {
         if (card) {
           const cardRect = card.getBoundingClientRect();
           const elRect = el.getBoundingClientRect();
-          max = Math.max(92, Math.floor(cardRect.bottom - elRect.top - 14));
+          max = Math.max(92, Math.floor(cardRect.bottom - elRect.top - 24));
         }
       }
       if (!max) return;
@@ -539,14 +621,62 @@ function bindStageTwoFlow(root, item) {
       const key = btn.getAttribute('data-stage-two-start') || summaryKey(item);
       if (!key) return;
       stageTwoActiveKeys.add(key);
+      productRiskAnalyses.delete(key);
       const panel = root.querySelector('[data-stage-two-panel]');
       if (panel) {
         panel.outerHTML = renderStageTwoSection(item);
         bindStageTwoFlow(root, item);
       }
+      void ensureProductRisk(item);
     });
   });
 }
+
+function bindDirectAiChat() {
+  $directAiPanel?.querySelector('.direct-chat-close')?.addEventListener('click', () => {
+    directAiChat.open = false;
+    renderDirectAiPanel();
+  });
+
+  $directAiPanel?.querySelector('.direct-chat-clear')?.addEventListener('click', () => {
+    directAiChat.status = 'idle';
+    directAiChat.messages = [];
+    renderDirectAiPanel();
+  });
+
+  $directAiPanel?.querySelector('.direct-chat-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const textarea = e.currentTarget.querySelector('textarea[name="prompt"]');
+    const prompt = String(textarea?.value || textarea?.getAttribute('placeholder') || '').trim();
+    if (!prompt) return;
+    const apiKey = getAiApiKey();
+    if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') {
+      $status.textContent = 'AI 설정이 필요합니다.';
+      return;
+    }
+
+    directAiChat.messages.push({ role: 'user', text: prompt });
+    directAiChat.status = 'loading';
+    renderDirectAiPanel();
+
+    try {
+      const data = await globalThis.UlsaAi.askDirect({ prompt, apiKey });
+      directAiChat.messages.push({ role: 'ai', text: stripChatMarkdown(data.answer || '(빈 응답)') });
+      directAiChat.status = 'done';
+      $status.textContent = 'AI 직접 질문 응답을 받았습니다.';
+    } catch (err) {
+      directAiChat.messages.push({ role: 'ai', text: err instanceof Error ? err.message : String(err) });
+      directAiChat.status = 'error';
+      $status.textContent = err instanceof Error ? err.message : String(err);
+    }
+    renderDirectAiPanel();
+  });
+}
+
+$btnDirectAi?.addEventListener('click', () => {
+  directAiChat.open = !directAiChat.open;
+  renderDirectAiPanel();
+});
 
 function refreshPhotoSlider(item) {
   const current = $current.querySelector('[data-photo-slider]');
@@ -619,7 +749,7 @@ function bindProductImageSearch(root, item) {
               productImageUrls: cachedUrls,
             },
           });
-          refreshProductSummaryBlock(item);
+          refreshProductSummaryBlock(item, { refreshStageTwo: false });
           $status.textContent = '다음 제품 이미지로 바꿨습니다.';
           return;
         }
@@ -637,7 +767,7 @@ function bindProductImageSearch(root, item) {
           productImageUrls: imageUrls,
         };
         productSummaries.set(key, { ...(state || {}), status: 'done', summary: nextSummary });
-        refreshProductSummaryBlock(item);
+        refreshProductSummaryBlock(item, { refreshStageTwo: false });
         $status.textContent = `제품 이미지 ${imageUrls.length}장을 찾았습니다.`;
       } catch (e) {
         $status.textContent = e instanceof Error ? e.message : String(e);
@@ -674,7 +804,7 @@ async function ensureProductImage(item) {
         productImageUrls: imageUrls,
       },
     });
-    if (selectedKey === key) refreshProductSummaryBlock(item);
+    if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
   } catch (e) {
     console.warn('제품 이미지 자동 검색 실패:', e);
   }
@@ -724,7 +854,8 @@ function bindCompsActions(root) {
   });
 }
 
-function refreshProductSummaryBlock(item) {
+function refreshProductSummaryBlock(item, opts = {}) {
+  const refreshStageTwo = opts.refreshStageTwo !== false;
   const current = $current.querySelector('[data-product-summary]');
   if (!current) {
     renderItem(item, comps);
@@ -737,6 +868,7 @@ function refreshProductSummaryBlock(item) {
   bindProductSummaryRetry(updated, item);
   bindProductImageSearch(updated, item);
   bindRelatedSearch(updated, item);
+  if (!refreshStageTwo) return;
   const stageTwo = $current.querySelector('[data-stage-two-panel]');
   if (stageTwo) {
     stageTwo.outerHTML = renderStageTwoSection(item);
@@ -777,8 +909,12 @@ $btnHistoryClear?.addEventListener('click', () => {
   selectedKey = null;
   comps = null;
   productSummaries.clear();
+  directAiChat.status = 'idle';
+  directAiChat.messages = [];
   relatedRequestedKeys.clear();
   productImageSearches.clear();
+  stageTwoActiveKeys.clear();
+  productRiskAnalyses.clear();
   renderItem(null);
   renderHistoryList();
   setHistoryOpen(false);
@@ -816,7 +952,8 @@ function renderHistoryList() {
       const found = history.find((h) => itemKey(h) === key);
       if (found) {
         selectedKey = key;
-        renderItem(found, activeCompsForItem(found, comps));
+        comps = activeCompsForItem(found, found.comps) || activeCompsForItem(found, comps);
+        renderItem(found, comps);
         void ensureProductSummary(found);
         renderHistoryList();
       }
@@ -830,7 +967,8 @@ function renderHistoryList() {
       productSummaries.delete(key);
       relatedRequestedKeys.delete(key);
       productImageSearches.delete(key);
-    stageTwoActiveKeys.delete(key);
+      stageTwoActiveKeys.delete(key);
+      productRiskAnalyses.delete(key);
       if (selectedKey === key) {
         latest = history[0] || null;
         selectedKey = latest ? itemKey(latest) : null;
@@ -847,6 +985,10 @@ async function ensureProductSummary(item) {
   const key = summaryKey(item);
   if (!key) return;
   if (productSummaries.has(key)) {
+    if (productSummaries.get(key)?.status === 'done') {
+      stageTwoActiveKeys.add(key);
+      void ensureProductRisk(item);
+    }
     void ensureProductImage(item);
     return;
   }
@@ -869,8 +1011,47 @@ async function ensureProductSummary(item) {
     });
     const summary = await enrichSummaryWithProductImage(data.summary || null, item);
     productSummaries.set(key, { status: 'done', summary });
+    stageTwoActiveKeys.add(key);
+    void ensureProductRisk(item);
   } catch (e) {
     productSummaries.set(key, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
+  if (selectedKey === key) refreshProductSummaryBlock(item);
+}
+
+async function ensureProductRisk(item) {
+  const key = summaryKey(item);
+  if (!key) return;
+  const existing = productRiskAnalyses.get(key);
+  if (existing?.status === 'loading' || existing?.status === 'done') return;
+
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchProductRisk !== 'function') {
+    productRiskAnalyses.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    if (selectedKey === key) refreshProductSummaryBlock(item);
+    return;
+  }
+
+  const summary = getProductSummaryState(item)?.summary || null;
+  productRiskAnalyses.set(key, { status: 'loading' });
+  if (selectedKey === key) refreshProductSummaryBlock(item);
+
+  try {
+    const data = await globalThis.UlsaAi.fetchProductRisk({
+      title: item.title || '',
+      body: item.body || '',
+      imageUrls: item.imageUrls || [],
+      productName: summary?.productName || fallbackSearchQuery(item),
+      summary,
+      apiKey,
+    });
+    productRiskAnalyses.set(key, { status: 'done', analysis: data.analysis || {} });
+  } catch (e) {
+    productRiskAnalyses.set(key, {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
     });
@@ -882,18 +1063,26 @@ async function ensureProductSummary(item) {
 function applyPayload(payload) {
   latest = payload?.latest ?? latest;
   history = Array.isArray(payload?.history) ? payload.history : history;
-  const rawComps = payload?.comps ?? latest?.comps ?? null;
-  const latestKey = latest ? itemKey(latest) : '';
-  comps = latestKey && relatedRequestedKeys.has(latestKey) ? activeCompsForItem(latest, rawComps) : null;
+  const selectedItem =
+    (selectedKey && history.find((item) => itemKey(item) === selectedKey)) ||
+    latest ||
+    null;
+  const rawComps = payload?.comps ?? selectedItem?.comps ?? latest?.comps ?? null;
+  const selectedItemKey = selectedItem ? itemKey(selectedItem) : '';
+  comps =
+    selectedItemKey && relatedRequestedKeys.has(selectedItemKey)
+      ? activeCompsForItem(selectedItem, rawComps)
+      : null;
 
-  if (latest) {
-    selectedKey = itemKey(latest);
-    renderItem(latest, comps);
-    void ensureProductSummary(latest);
+  if (selectedItem) {
+    selectedKey = selectedItemKey;
+    renderItem(selectedItem, comps);
+    void ensureProductSummary(selectedItem);
     const bn = comps?.bunjang?.count ?? 0;
     const dn = comps?.daangn?.count ?? 0;
     const compTxt = bn + dn > 0 ? ` · 비교 ${bn + dn}건` : '';
-    $status.textContent = `최신: ${latest.platformLabel}${compTxt} · ${formatTime(latest.exportedAt)}`;
+    const prefix = latest && selectedItemKey === itemKey(latest) ? '최신' : '선택';
+    $status.textContent = `${prefix}: ${selectedItem.platformLabel}${compTxt} · ${formatTime(selectedItem.exportedAt)}`;
   } else if (!history.length) {
     $status.textContent = '데이터 없음 — 확장에서 매물을 «분석 웹으로 보내기» 하세요.';
     renderItem(null);

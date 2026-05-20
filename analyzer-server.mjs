@@ -33,6 +33,8 @@ const PROMPTS = {
   searchQueryCandidates: await loadPrompt('search-query-candidates.txt'),
   productIdentify: await loadPrompt('product-identify.txt'),
   productSummary: await loadPrompt('product-summary.txt'),
+  productRisk: await loadPrompt('product-risk.txt'),
+  productRiskJson: await loadPrompt('product-risk-json.txt'),
 };
 
 function renderPrompt(template, vars) {
@@ -126,6 +128,26 @@ function buildProductIdentifyPrompt(title, body, imageCount) {
     media,
     title: t,
     body: b || '(없음)',
+  });
+}
+
+function buildProductRiskPrompt({ productName, summary }) {
+  const name = String(productName || summary?.productName || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return renderPrompt(PROMPTS.productRisk, {
+    productName: name || '(불명)',
+    description: String(summary?.description || '').replace(/\s+/g, ' ').trim() || '(없음)',
+    makerOrSeller: String(summary?.makerOrSeller || '').replace(/\s+/g, ' ').trim() || '(없음)',
+    newPrice: String(summary?.newPrice || '').replace(/\s+/g, ' ').trim() || '(없음)',
+  });
+}
+
+function buildProductRiskJsonPrompt({ productName, researchText }) {
+  const name = String(productName || '').replace(/\s+/g, ' ').trim();
+  return renderPrompt(PROMPTS.productRiskJson, {
+    productName: name || '(불명)',
+    researchText: String(researchText || '').trim() || '(조사 메모 없음)',
   });
 }
 
@@ -309,9 +331,9 @@ const MAX_IMAGE_BYTES = 1.2 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 6_000;
 const IMAGE_SEARCH_TIMEOUT_MS = 8_000;
 const PRODUCT_IMAGE_VALIDATE_TIMEOUT_MS = 5_000;
-const GEMINI_FAST_TIMEOUT_MS = 18_000;
-const GEMINI_GROUNDED_TIMEOUT_MS = 28_000;
-const GEMINI_PRODUCT_TIMEOUT_MS = 60_000;
+const GEMINI_FAST_TIMEOUT_MS = 30_000;
+const GEMINI_GROUNDED_TIMEOUT_MS = 75_000;
+const GEMINI_PRODUCT_TIMEOUT_MS = 90_000;
 
 function isAllowedListingImageUrl(u) {
   try {
@@ -670,6 +692,51 @@ function parseProductSummary(text, fallbackTitle) {
   };
 }
 
+function normalizeRiskItems(items) {
+  const source = Array.isArray(items) ? items : [];
+  return source
+    .map((item) => {
+      if (typeof item === 'string') {
+        return { title: item, detail: item, level: 'caution' };
+      }
+      const title = String(item?.title || '').replace(/\s+/g, ' ').trim();
+      const detail = String(item?.detail || item?.desc || '').replace(/\s+/g, ' ').trim();
+      const rawLevel = String(item?.level || 'caution').toLowerCase();
+      const level = ['safe', 'caution', 'risk'].includes(rawLevel) ? rawLevel : 'caution';
+      if (!title || !detail) return null;
+      return { title, detail, level };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function parseProductRisk(text, productName = '') {
+  const raw = String(text || '').trim();
+  const name = String(productName || '제품').replace(/\s+/g, ' ').trim();
+  let jsonText = raw
+    .replace(/^\s*```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+  const objMatch = jsonText.match(/\{[\s\S]*\}/);
+  if (objMatch) jsonText = objMatch[0];
+
+  let parsed = {};
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    parsed = {};
+  }
+
+  const relatedIssues = normalizeRiskItems(parsed.relatedIssues);
+  const chronicDefects = normalizeRiskItems(parsed.chronicDefects);
+  return {
+    relatedIssues,
+    chronicDefects,
+    verdict: String(parsed.verdict || '').replace(/\s+/g, ' ').trim(),
+    parseOk: Boolean(relatedIssues.length || chronicDefects.length || parsed.verdict),
+  };
+}
+
 /** @param {object[]} parts Gemini user message parts: { text } 또는 { inline_data } */
 async function geminiGenerateFromParts(apiKey, model, parts, opts = {}) {
   const m = String(model || DEFAULT_GEMINI_MODEL).replace(/^\s+|\s+$/g, '');
@@ -787,6 +854,7 @@ async function runProductIdentify(apiKey, model, title, body, inlineParts) {
   const parts =
     inlineParts.length > 0 ? [{ text: prompt }, ...inlineParts] : [{ text: prompt }];
   return geminiGenerateFromParts(apiKey, model, parts, {
+    useGoogleSearch: true,
     temperature: 0.05,
     timeoutMs: GEMINI_PRODUCT_TIMEOUT_MS,
   });
@@ -829,6 +897,41 @@ searchQueries는 쉼표로 이어 붙이지 말고 배열 항목으로 분리하
     useGoogleSearch: true,
     temperature: 0.15,
     timeoutMs: GEMINI_PRODUCT_TIMEOUT_MS,
+  });
+}
+
+async function runProductRiskAnalysis(apiKey, model, payload) {
+  const researchPrompt = buildProductRiskPrompt(payload);
+  const researchText = await geminiGenerateFromParts(apiKey, model, [{ text: researchPrompt }], {
+    useGoogleSearch: true,
+    temperature: 0.35,
+    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+  });
+  const jsonPrompt = buildProductRiskJsonPrompt({
+    productName: payload.productName,
+    researchText,
+  });
+  const jsonText = await geminiGenerateFromParts(apiKey, model, [{ text: jsonPrompt }], {
+    responseMimeType: 'application/json',
+    temperature: 0.05,
+    timeoutMs: GEMINI_FAST_TIMEOUT_MS,
+  });
+  return { researchText, jsonText };
+}
+
+async function runDirectAiChat(apiKey, model, prompt) {
+  const plainTextPrompt = `
+사용자 질문에 답하세요.
+답변은 일반 텍스트로만 작성하세요. 마크다운 문법을 쓰지 마세요.
+특히 **굵게**, # 제목, 글머리표 마크다운, 코드펜스, 백틱을 사용하지 마세요.
+
+사용자 질문:
+${String(prompt || '')}
+`;
+  return geminiGenerateFromParts(apiKey, model, [{ text: plainTextPrompt }], {
+    useGoogleSearch: true,
+    temperature: 0.35,
+    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
   });
 }
 
@@ -1028,6 +1131,78 @@ const server = http.createServer(async (req, res) => {
         model,
         usedImages: inlineParts.length,
         pipeline: 'identify_then_google_search_lookup',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/product-risk') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
+      const rawOut = await runProductRiskAnalysis(apiKey, model, {
+        productName,
+        summary: body.summary || null,
+      });
+      json(res, 200, {
+        analysis: parseProductRisk(rawOut.jsonText, productName),
+        researchText: rawOut.researchText,
+        model,
+        pipeline: 'gemini_google_search_product_risk_research_then_json',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/ai-chat') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const prompt = String(body.prompt || '').trim();
+      if (!prompt) {
+        json(res, 400, { error: '프롬프트를 입력하세요.' });
+        return;
+      }
+      const answer = await runDirectAiChat(apiKey, model, prompt);
+      json(res, 200, {
+        answer,
+        model,
+        pipeline: 'gemini_google_search_direct_chat',
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });
