@@ -608,7 +608,39 @@ function cleanProductName(raw, fallback = '') {
     .replace(/[({（［\[]+\s*$/g, '')
     .replace(/\s*[,，:：]\s*$/g, '')
     .trim();
-  return s || String(fallback || '').trim();
+  return preserveVariantTokens(s || String(fallback || '').trim(), fallback);
+}
+
+function preserveVariantTokens(productName, fallback = '') {
+  let out = String(productName || '').trim();
+  const source = String(fallback || '').replace(/\s+/g, ' ').trim();
+  if (!out || !source) return out;
+
+  const protectedTokens = [
+    { re: /\bOLED\b/i, token: 'OLED' },
+    { re: /\bPRO\b/i, token: 'Pro' },
+    { re: /\bPLUS\b/i, token: 'Plus' },
+    { re: /\bMAX\b/i, token: 'Max' },
+    { re: /\bLITE\b/i, token: 'Lite' },
+  ];
+  for (const { re, token } of protectedTokens) {
+    if (re.test(source) && !re.test(out)) {
+      out = `${out} ${token}`.replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  const sourceHasSwitch2 = /(?:스위치|switch)\s*2\b/i.test(source);
+  const outputHasSwitch = /(?:스위치|switch)\b/i.test(out);
+  const outputHasSwitch2 = /(?:스위치|switch)\s*2\b/i.test(out);
+  if (sourceHasSwitch2 && outputHasSwitch && !outputHasSwitch2) {
+    out = out
+      .replace(/스위치(?!\s*2\b)/i, '스위치 2')
+      .replace(/\bSwitch(?!\s*2\b)/i, 'Switch 2')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  return out;
 }
 
 function parseProductSummary(text, fallbackTitle) {
