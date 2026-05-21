@@ -1,6 +1,7 @@
 /** @file chrome.storage 에 매물 저장 */
 (() => {
   const Root = globalThis.MarketScrape;
+  const PLATFORM_IDS = ['bunjang', 'daangn', 'joongna'];
   const MAX_HISTORY = 30;
 
   Root.toExportRecord = (data) => {
@@ -14,6 +15,8 @@
       title: data.title,
       price: data.price,
       priceLabel: data.priceLabel,
+      shippingFee: data.shippingFee,
+      shippingFeeLabel: data.shippingFeeLabel || '',
       body: data.body,
       imageUrls: data.imageUrls || [],
       seller,
@@ -38,7 +41,7 @@
         const comps =
           prevComps?.forItemKey === listingKey
             ? prevComps
-            : { forItemKey: listingKey, bunjang: null, daangn: null };
+            : { forItemKey: listingKey, ...Object.fromEntries(PLATFORM_IDS.map((id) => [id, null])) };
 
         chrome.storage.local.set(
           {

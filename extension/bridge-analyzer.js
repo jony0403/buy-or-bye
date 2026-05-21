@@ -63,6 +63,16 @@
     }
   }
 
+  function postSearchTabsResult(payload) {
+    window.postMessage(
+      {
+        type: 'MARKET_SCRAPE_SEARCH_TABS_RESULT',
+        ...payload,
+      },
+      '*'
+    );
+  }
+
   window.addEventListener('message', (ev) => {
     if (ev.source !== window || ev.data?.type !== 'MARKET_SCRAPE_REQUEST') return;
     pushToPage();
@@ -70,22 +80,31 @@
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== window || ev.data?.type !== 'MARKET_SCRAPE_OPEN_SEARCH_TABS') return;
-    const query = String(ev.data.query || '').trim();
-    if (!query) {
+    const queries = Array.isArray(ev.data.queries)
+      ? ev.data.queries.map((q) => String(q || '').trim()).filter(Boolean)
+      : [String(ev.data.query || '').trim()].filter(Boolean);
+    if (!queries.length) {
       window.postMessage({ type: 'MARKET_SCRAPE_SEARCH_TABS_RESULT', ok: false, error: '검색어가 비었습니다.' }, '*');
       return;
     }
-    chrome.runtime.sendMessage({ type: 'OPEN_SEARCH_TABS', query }, (res) => {
-      window.postMessage(
-        {
-          type: 'MARKET_SCRAPE_SEARCH_TABS_RESULT',
-          ok: Boolean(res?.ok),
-          error: res?.error || '',
-          query: res?.query || query,
-        },
-        '*'
-      );
-    });
+    try {
+      chrome.runtime.sendMessage({ type: 'OPEN_SEARCH_TABS', query: queries[0], queries }, (res) => {
+        const runtimeError = chrome.runtime.lastError?.message || '';
+        postSearchTabsResult({
+          ok: Boolean(res?.ok) && !runtimeError,
+          error: runtimeError || res?.error || '',
+          query: res?.query || queries[0],
+          queries: res?.queries || queries,
+        });
+      });
+    } catch (e) {
+      postSearchTabsResult({
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+        query: queries[0],
+        queries,
+      });
+    }
   });
 
   window.addEventListener('message', (ev) => {

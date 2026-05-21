@@ -1,4 +1,4 @@
-/** @file 번개·당근 검색 URL 생성 */
+/** @file 번개·당근·중고나라 검색 URL 생성 */
 (() => {
   const Root = globalThis.MarketScrape;
 
@@ -16,16 +16,19 @@
     return u.href;
   };
 
-  /** 제목만으로 만드는 폴백 검색어 — `analyzer-server.mjs` MAX_SEARCH_QUERY_CHARS(96) 와 동일 상한 */
+  Root.buildJoongnaSearchUrl = (query) => {
+    const q = String(query || '').trim();
+    return `https://web.joongna.com/search/${encodeURIComponent(q)}`;
+  };
+
+  /** 제목만으로 만드는 폴백 검색어 */
   Root.guessSearchQuery = (title) => {
-    const maxLen = 96;
-    let q = String(title || '')
+    const q = String(title || '')
       .replace(/\[[^\]]*\]/g, ' ')
       .replace(/[|｜]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    if (q.length > maxLen) q = q.slice(0, maxLen).replace(/\s+\S*$/, '').trim() || q.slice(0, maxLen);
-    return q || '중고';
+    return q;
   };
 
   Root.isBunjangSearchUrl = (url) => {
@@ -48,7 +51,17 @@
     }
   };
 
-  Root.isMarketSearchUrl = (url) => Root.isBunjangSearchUrl(url) || Root.isDaangnSearchUrl(url);
+  Root.isJoongnaSearchUrl = (url) => {
+    try {
+      const u = new URL(url);
+      if (!u.hostname.includes('joongna.com')) return false;
+      return /^\/search(?:\/|$)/.test(u.pathname);
+    } catch {
+      return false;
+    }
+  };
+
+  Root.isMarketSearchUrl = (url) => Root.isBunjangSearchUrl(url) || Root.isDaangnSearchUrl(url) || Root.isJoongnaSearchUrl(url);
 
   /**
    * 검색 URL에서 q / search 파라미터.
@@ -57,7 +70,13 @@
   Root.getSearchQueryFromUrl = (url) => {
     try {
       const u = new URL(url || (typeof location !== 'undefined' ? location.href : ''), 'https://example.com');
-      return (u.searchParams.get('q') || u.searchParams.get('search') || '').trim();
+      const param = (u.searchParams.get('q') || u.searchParams.get('search') || u.searchParams.get('keyword') || '').trim();
+      if (param) return param;
+      if (u.hostname.includes('joongna.com')) {
+        const m = u.pathname.match(/^\/search\/([^/?#]+)/);
+        if (m) return decodeURIComponent(m[1]).trim();
+      }
+      return '';
     } catch {
       return '';
     }

@@ -34,10 +34,19 @@ const productImageSearches = new Set();
 const imageAnalysisIndexes = new Map();
 const imageAnalysisDirections = new Map();
 const stageTwoActiveKeys = new Set();
+const stageThreeActiveKeys = new Set();
+const stageTwoCompletedKeys = new Set();
+const stageThreeIsolatedRefreshKeys = new Set();
 const productRiskAnalyses = new Map();
 const listingTextAnalyses = new Map();
 const listingImageAnalyses = new Map();
+const comparisonFilters = new Map();
+const comparisonFilterTimers = new Set();
+const usedPriceGuides = new Map();
+const purchaseReceipts = new Map();
 const imageAnalysisPreviewedKeys = new Set();
+const searchQueryRegenerations = new Map();
+const stageThreeAutoQueryRetryCounts = new Map();
 const directAiChat = { open: false, status: 'idle', messages: [] };
 let lightboxAutoPlayTimer = 0;
 let lightboxCloseTimer = 0;
@@ -45,7 +54,11 @@ let photoSliderAutoTimer = 0;
 let imageAnalysisAutoTimer = 0;
 let stageSlideIndex = 0;
 let stageSlideAnimationTimer = 0;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v10';
+let lastStageThreeCompsRenderKey = '';
+const RECEIPT_PRINT_SCROLL_MS = 7800;
+const MIN_PRICE_REFERENCE_MATCHES = 5;
+const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 2;
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v15';
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v3',
@@ -54,6 +67,9 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v6',
   'ulsa_ai_analysis_cache_v7',
   'ulsa_ai_analysis_cache_v8',
+  'ulsa_ai_analysis_cache_v10',
+  'ulsa_ai_analysis_cache_v11',
+  'ulsa_ai_analysis_cache_v13',
 ];
 
 function mapToPersistableObject(map) {
@@ -69,15 +85,35 @@ function restorePersistedMap(map, raw) {
   }
 }
 
+function setToPersistableArray(set) {
+  return [...set].filter(Boolean);
+}
+
+function restorePersistedSet(set, raw) {
+  if (!Array.isArray(raw)) return;
+  for (const value of raw) {
+    if (value) set.add(String(value));
+  }
+}
+
+function listingKeyFromStageCacheKey(key) {
+  return String(key || '').split('::')[0] || '';
+}
+
 function persistAiCaches() {
   try {
     localStorage.setItem(
       AI_CACHE_STORAGE_KEY,
       JSON.stringify({
+        relatedRequestedKeys: setToPersistableArray(relatedRequestedKeys),
+        stageThreeActiveKeys: setToPersistableArray(stageThreeActiveKeys),
         productSummaries: mapToPersistableObject(productSummaries),
         productRiskAnalyses: mapToPersistableObject(productRiskAnalyses),
         listingTextAnalyses: mapToPersistableObject(listingTextAnalyses),
         listingImageAnalyses: mapToPersistableObject(listingImageAnalyses),
+        comparisonFilters: mapToPersistableObject(comparisonFilters),
+        usedPriceGuides: mapToPersistableObject(usedPriceGuides),
+        purchaseReceipts: mapToPersistableObject(purchaseReceipts),
       })
     );
   } catch {
@@ -91,13 +127,27 @@ function loadAiCaches() {
       const raw = localStorage.getItem(storageKey);
       if (!raw) continue;
       const parsed = JSON.parse(raw);
+      restorePersistedSet(relatedRequestedKeys, parsed.relatedRequestedKeys);
+      restorePersistedSet(stageThreeActiveKeys, parsed.stageThreeActiveKeys);
       restorePersistedMap(productSummaries, parsed.productSummaries);
       restorePersistedMap(productRiskAnalyses, parsed.productRiskAnalyses);
       restorePersistedMap(listingTextAnalyses, parsed.listingTextAnalyses);
       restorePersistedMap(listingImageAnalyses, parsed.listingImageAnalyses);
+      restorePersistedMap(comparisonFilters, parsed.comparisonFilters);
+      restorePersistedMap(usedPriceGuides, parsed.usedPriceGuides);
+      restorePersistedMap(purchaseReceipts, parsed.purchaseReceipts);
     } catch {
       /* ignore stale cache */
     }
+  }
+  for (const key of [...comparisonFilters.keys(), ...usedPriceGuides.keys(), ...purchaseReceipts.keys()]) {
+    const listingKey = listingKeyFromStageCacheKey(key);
+    if (!listingKey) continue;
+    relatedRequestedKeys.add(listingKey);
+    stageThreeActiveKeys.add(listingKey);
+  }
+  for (const key of [...usedPriceGuides.keys(), ...purchaseReceipts.keys()]) {
+    if (key && !comparisonFilters.has(key)) comparisonFilters.set(key, { status: 'done', matches: [] });
   }
   persistAiCaches();
 }
@@ -137,8 +187,7 @@ function setLayoutMode(mode, opts = {}) {
 }
 
 function stageSlideCount() {
-  if ($current?.querySelector('[data-stage-three-panel]')) return 3;
-  return $current?.querySelector('[data-stage-two-panel]') ? 2 : 1;
+  return Math.max(1, $current?.querySelectorAll('[data-stage-panel]')?.length || 1);
 }
 
 function currentRenderedItem() {
@@ -150,9 +199,16 @@ function isStepOneDone(item) {
   return Boolean(key && productSummaries.get(key)?.status === 'done');
 }
 
-function isStepTwoDone(item) {
+function isStepTwoStarted(item) {
   const key = summaryKey(item);
-  if (!key || !stageTwoActiveKeys.has(key)) return false;
+  return Boolean(key && stageTwoActiveKeys.has(key));
+}
+
+function isStepTwoFlowComplete(item) {
+  const key = summaryKey(item);
+  if (!key) return false;
+  if (stageTwoCompletedKeys.has(key)) return true;
+  if (!stageTwoActiveKeys.has(key)) return false;
   const riskDone = productRiskAnalyses.get(key)?.status === 'done';
   const textState = listingTextAnalyses.get(key);
   const imageState = listingImageAnalyses.get(key);
@@ -161,11 +217,45 @@ function isStepTwoDone(item) {
   return Boolean(riskDone && textSettled && imageSettled);
 }
 
+function isStepTwoDone(item) {
+  return isStepTwoFlowComplete(item);
+}
+
+function isStepThreeUnlocked(item) {
+  const key = summaryKey(item);
+  return Boolean(key && stageThreeActiveKeys.has(key));
+}
+
+function isStepThreeDone(item) {
+  if (!isStepTwoDone(item) || !isStepThreeUnlocked(item)) return false;
+  if (!comps || !isCompsCollected(comps)) return false;
+  const key = comparisonFilterKey(item, comps);
+  if (!key) return false;
+  return comparisonFilters.get(key)?.status === 'done' && usedPriceGuides.get(key)?.status === 'done';
+}
+
+function maybeMarkStageTwoComplete(item) {
+  const key = summaryKey(item);
+  if (key && isStepTwoFlowComplete(item)) stageTwoCompletedKeys.add(key);
+}
+
+function syncStagePanels(item) {
+  if (!$current || !item) return;
+  if (!isStepTwoDone(item)) {
+    $current.querySelector('[data-stage-three-panel]')?.remove();
+    $current.querySelector('[data-stage-four-panel]')?.remove();
+  } else if (!isStepThreeDone(item)) {
+    $current.querySelector('[data-stage-four-panel]')?.remove();
+  }
+  updateStageSlide();
+}
+
 function canOpenStage(index) {
   const item = currentRenderedItem();
   if (index <= 0) return true;
   if (index === 1) return isStepOneDone(item);
   if (index === 2) return isStepTwoDone(item);
+  if (index === 3) return isStepThreeDone(item);
   return false;
 }
 
@@ -201,7 +291,7 @@ function moveStageSlide(dir) {
   stageSlideAnimationTimer = window.setTimeout(() => {
     $appShell?.classList.remove('is-stage-sliding');
     stageSlideAnimationTimer = 0;
-  }, 420);
+  }, 540);
 }
 
 function renderStageSlideControls() {
@@ -245,11 +335,26 @@ function sellerLine(seller, platform) {
   const name = seller.nickname || seller.shopName || '';
   if (name) bits.push(name);
   if (platform === 'daangn' && seller.mannerScore != null) bits.push(`${seller.mannerScore}°C`);
+  if (platform === 'joongna' && seller.trustScore != null) {
+    bits.push(`신뢰지수 ${Number(seller.trustScore).toLocaleString('ko-KR')}${seller.trustMax != null ? `/${Number(seller.trustMax).toLocaleString('ko-KR')}` : ''}`);
+  }
+  if (platform === 'joongna' && seller.isSafePayment) bits.push('안심결제 가능');
+  if (platform === 'joongna' && seller.safePaymentCount != null) bits.push(`안심결제 ${Number(seller.safePaymentCount).toLocaleString('ko-KR')}건`);
   if (platform !== 'daangn' && seller.reviewRating != null) bits.push(`평점 ${seller.reviewRating}`);
-  if (seller.reviewCount != null) bits.push(`리뷰 ${seller.reviewCount}`);
+  if (seller.reviewCount != null) bits.push(`${platform === 'joongna' ? '거래후기' : '리뷰'} ${Number(seller.reviewCount).toLocaleString('ko-KR')}`);
+  if (platform === 'joongna' && seller.followerCount != null) bits.push(`단골 ${Number(seller.followerCount).toLocaleString('ko-KR')}`);
   if (seller.salesCount != null) bits.push(`판매 ${seller.salesCount}`);
   if (seller.location) bits.push(seller.location);
   return bits.join(' · ') || '—';
+}
+
+function shippingLine(item) {
+  const label = String(item?.shippingFeeLabel || '').trim();
+  if (label) return label;
+  if (Number.isFinite(item?.shippingFee)) {
+    return item.shippingFee > 0 ? `배송비 ${formatWon(item.shippingFee)}` : '배송비 무료';
+  }
+  return '';
 }
 
 function compStats(items) {
@@ -331,16 +436,32 @@ function isTrivialSellerVerdict(text) {
   return repeatsMetrics && !hasActualJudgment;
 }
 
+const LISTING_PURCHASE_JUDGMENT_RE =
+  /구매\s*(?:권장|추천|비추천|권하지|권장하지|추천하지|해도\s*된|하지\s*않는|하지\s*않는\s*게|하지\s*마|보류)|구입\s*(?:권장|추천|비추천|권하지|권장하지|추천하지)|사(?:도|는)\s*(?:된|괜찮|좋|안\s*좋|말)|사지\s*마|안\s*사는\s*게|구매를\s*(?:말|피|보류)/i;
+
+function stripListingPurchaseJudgment(text) {
+  const source = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!source || !LISTING_PURCHASE_JUDGMENT_RE.test(source)) return source;
+  const stripped = source
+    .replace(
+      /(?:따라서|결론적으로|종합하면|전체적으로)?\s*[^.。!?]*(?:구매|구입|사지|사는|사도)[^.。!?]*(?:권장|추천|비추천|권하지|권장하지|추천하지|해도\s*된|하지\s*않는|하지\s*마|보류|괜찮|좋겠다|말)[^.。!?]*(?:[.。!?]|$)/gi,
+      ''
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+  return LISTING_PURCHASE_JUDGMENT_RE.test(stripped) ? '' : stripped;
+}
+
 function meaningfulListingTextAnalysis(analysis) {
   if (!analysis) return null;
   const redFlags = Array.isArray(analysis.redFlags)
-    ? analysis.redFlags.map((x) => String(x || '').trim()).filter(Boolean)
+    ? analysis.redFlags.map((x) => stripListingPurchaseJudgment(x)).filter(Boolean)
     : [];
-  const bodyVerdict = String(analysis.bodyVerdict || '').replace(/\s+/g, ' ').trim();
-  const overall = String(analysis.overall || '').replace(/\s+/g, ' ').trim();
+  const bodyVerdict = stripListingPurchaseJudgment(analysis.bodyVerdict);
+  const overall = stripListingPurchaseJudgment(analysis.overall);
   const sellerVerdict = isTrivialSellerVerdict(analysis.sellerVerdict)
     ? '판매자 지표는 참고할 만하지만, 본문에 빠진 상태 설명을 대신해주지는 못합니다.'
-    : String(analysis.sellerVerdict || '').trim();
+    : stripListingPurchaseJudgment(analysis.sellerVerdict);
   const hasBodyJudgment =
     bodyVerdict.length >= 24 && /누락|부족|언급|대조|리스크|고질병|상태|구성|확인|애매|근거/.test(bodyVerdict);
   const hasFlagJudgment = redFlags.some((x) => x.length >= 8 && !/^판매자 지표/.test(x));
@@ -416,15 +537,9 @@ function splitSearchQueries(value) {
   const out = [];
   const seen = new Set();
   for (const part of parts.length ? parts : [raw]) {
-    const q = part
-      .replace(/(^|\s)중고(?=\s|$)/g, ' ')
-      .replace(/중고$/g, '')
-      .replace(/(^|\s)가격(?=\s|$)/g, ' ')
-      .replace(/가격$/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const q = part.replace(/\s+/g, ' ').trim();
     const key = q.replace(/\s+/g, '').toLowerCase();
-    if (!q || seen.has(key) || !/[\uAC00-\uD7A3]/.test(q)) continue;
+    if (!q || seen.has(key)) continue;
     seen.add(key);
     out.push(q);
     if (out.length >= 4) break;
@@ -590,6 +705,14 @@ function renderAnalysisLoadingCard(title, desc, className = '', delay = 0) {
 function renderListingTextAnalysisCard(item) {
   const key = summaryKey(item);
   const state = key ? listingTextAnalyses.get(key) : null;
+  if (state?.status === 'loading') {
+    return renderAnalysisLoadingCard(
+      '판매자·본문 분석',
+      '판매자 지표와 본문에서 상태·구성품·거래조건 누락을 확인합니다.',
+      'stage-two-card--listing-text',
+      520
+    ).replace('<article ', '<article data-listing-text-analysis ');
+  }
   if (state?.status !== 'done' || state.source !== 'ai') return '';
   const analysis = meaningfulListingTextAnalysis(state?.analysis);
   if (!analysis) return '';
@@ -723,9 +846,10 @@ function renderStageTwoSection(item) {
   if (!item) return '';
   const key = summaryKey(item);
   const state = getProductSummaryState(item);
+  const showStepTwoEntry = isStepOneDone(key) && !stageTwoActiveKeys.has(key);
   if (state?.status !== 'done') {
     return `
-      <section class="stage-two-panel stage-zone stage-two-zone is-active is-locked" data-stage-two-panel>
+      <section class="stage-two-panel stage-zone stage-two-zone is-active is-locked" data-stage-panel data-stage-two-panel>
         <aside class="stage-zone-label">
           <b>Step 2</b>
           <span>리스크 판별</span>
@@ -753,7 +877,7 @@ function renderStageTwoSection(item) {
       ? `${renderListingTextAnalysisCard(item)}${renderListingImageAnalysisCard(item)}`
       : '';
   return `
-    <section class="stage-two-panel stage-zone stage-two-zone is-active" data-stage-two-panel>
+    <section class="stage-two-panel stage-zone stage-two-zone is-active" data-stage-panel data-stage-two-panel>
       <aside class="stage-zone-label">
         <b>Step 2</b>
         <span>리스크 판별</span>
@@ -761,16 +885,16 @@ function renderStageTwoSection(item) {
       <div class="stage-zone-grid stage-two-zone-grid">
         ${
           !isActive
-            ? `<article class="mini-card stage-two-card stage-two-card--ready">
+            ? `<button type="button" class="mini-card stage-two-card stage-two-card--ready stage-start-card" data-stage-two-start="${escapeAttr(key)}">
                   <div class="stage-two-ready">
                     <div>
                       <p class="stage-two-card-label">다음 단계 대기</p>
                       <h3>매물 정리를 확인한 뒤 리스크 판별을 시작하세요.</h3>
-                      <p>고질병·본문 누락·사진 상태 분석은 버튼을 눌러야 실행됩니다.</p>
-                      <button type="button" class="btn btn-small stage-two-start-btn" data-stage-two-start="${escapeAttr(key)}">다음 단계 시작</button>
+                      <p>버튼을 눌러 고질병·본문 누락·사진 상태 분석을 실행합니다.</p>
+                      <span class="stage-start-card__cta">버튼 클릭으로 시작</span>
                     </div>
                   </div>
-                </article>`
+                </button>`
             : riskState?.status === 'error'
             ? `<article class="mini-card stage-two-card stage-two-card--error">
                   <p class="stage-two-card-label">AI 분석 실패</p>
@@ -790,81 +914,111 @@ function renderStageTwoSection(item) {
 
 function renderStageThreeSection(item, comps) {
   if (!item) return '';
-  const state = getProductSummaryState(item);
   if (!isStepTwoDone(item)) {
-    const stepOneDone = state?.status === 'done';
+    return '';
+  }
+  const key = summaryKey(item);
+  const hasCachedStageThree = key
+    ? [...comparisonFilters.keys(), ...usedPriceGuides.keys(), ...purchaseReceipts.keys()].some(
+        (cacheKey) => listingKeyFromStageCacheKey(cacheKey) === key
+      )
+    : false;
+  if (key && hasCachedStageThree) {
+    stageThreeActiveKeys.add(key);
+    relatedRequestedKeys.add(key);
+  }
+  const isActive = key ? stageThreeActiveKeys.has(key) : false;
+  if (!isActive) {
     return `
-      <section class="stage-three-panel stage-zone stage-three-zone is-active is-locked" data-stage-three-panel>
+      <section class="stage-three-panel stage-zone stage-three-zone is-active" data-stage-panel data-stage-three-panel>
         <aside class="stage-zone-label">
           <b>Step 3</b>
-          <span>시세 확인</span>
+          <span>가격 참고</span>
         </aside>
         <div class="stage-zone-grid stage-three-zone-grid">
-          <article class="mini-card stage-three-card stage-lock-card">
+          <button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}">
             <div class="stage-two-ready">
               <div>
-                <p class="stage-two-card-label">잠김</p>
-                <h3>${stepOneDone ? '2단계 리스크 판별이 끝나야 시세 확인을 시작할 수 있습니다.' : '1·2단계를 먼저 완료해야 시세 확인을 시작할 수 있습니다.'}</h3>
-                <p>관련 이슈, 판매글, 사진 상태 확인이 끝난 뒤 키워드 기반 매물 검색을 진행합니다.</p>
+                <p class="stage-two-card-label">다음 단계 대기</p>
+                <h3>리스크 판별을 확인한 뒤 가격 참고자료 수집을 시작하세요.</h3>
+                <p>버튼을 눌러 신품가·번개·당근·중고나라 관련 매물을 모으고 구매 판단용 참고자료로 정리합니다.</p>
+                <span class="stage-start-card__cta">버튼 클릭으로 시작</span>
               </div>
             </div>
-          </article>
+          </button>
         </div>
       </section>
     `;
   }
-  const summary = state.summary || {};
-  const queries = productSummaryQueries(summary, item);
-  const primaryQuery = queries[0] || fallbackSearchQuery(item);
-  const danawaUrl = danawaPriceUrl(summary);
-  const queryButtons = queries.length
-    ? queries
-        .map(
-          (query) =>
-            `<button type="button" class="search-query-chip related-query-btn" data-query="${escapeAttr(query)}">${escapeHtml(query)}</button>`
-        )
-        .join('')
-    : `<button type="button" class="search-query-chip related-query-btn" data-query="${escapeAttr(primaryQuery)}">${escapeHtml(primaryQuery || '검색어 없음')}</button>`;
   return `
-    <section class="stage-three-panel stage-zone stage-three-zone is-active" data-stage-three-panel>
+    <section class="stage-three-panel stage-zone stage-three-zone is-active" data-stage-panel data-stage-three-panel>
       <aside class="stage-zone-label">
         <b>Step 3</b>
-        <span>시세 확인</span>
+        <span>가격 참고</span>
       </aside>
       <div class="stage-zone-grid stage-three-zone-grid">
-        <article class="mini-card stage-three-card">
-          <div class="stage-three-head">
-            <div>
-              <p class="stage-two-card-label">키워드 기반 검색</p>
-              <h3>${escapeHtml(summary.productName || primaryQuery || '관련 매물 검색')}</h3>
-              <p>AI가 정리한 키워드로 신품가와 번개·당근 관련 매물을 확인합니다.</p>
-            </div>
-            <div class="stage-three-actions">
-              ${danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
-              <button type="button" class="btn btn-small related-search-btn" ${primaryQuery ? '' : 'disabled'}>비슷한 매물 찾기</button>
-            </div>
-          </div>
-          <div class="search-query-list">${queryButtons}</div>
-          <div class="stage-three-comps">${renderCompsBlock(comps)}</div>
-        </article>
+        ${renderStageThreeSearchCard(item, comps)}
+        ${renderUsedPriceGuideBlock(item, comps)}
       </div>
     </section>
   `;
 }
 
+function renderStageThreeSearchCard(item, comps) {
+  const key = summaryKey(item);
+  const summary = getProductSummaryState(item)?.summary || {};
+  const queries = productSummaryQueries(summary, item);
+  const primaryQuery = queries[0] || fallbackSearchQuery(item);
+  const danawaUrl = danawaPriceUrl(summary);
+  const queryState = key ? searchQueryRegenerations.get(key) : null;
+  const queryButtons = queries.length
+    ? queries.map((query) => `<span class="search-query-chip">${escapeHtml(query)}</span>`).join('')
+    : `<span class="search-query-chip">${escapeHtml(primaryQuery || '검색어 없음')}</span>`;
+  return `
+    <article class="mini-card stage-three-card" data-stage-three-search-card>
+      <div class="stage-three-head">
+        <div>
+          <p class="stage-two-card-label">자동 매물 검색</p>
+          <h3>${escapeHtml(summary.productName || primaryQuery || '관련 매물 검색')}</h3>
+          <p>AI가 정리한 키워드로 번개·당근·중고나라 관련 매물을 자동 수집해 가격 참고자료로 정리합니다.</p>
+        </div>
+        <div class="stage-three-actions">
+          <button type="button" class="chip-btn" data-stage-three-refresh="${escapeAttr(key)}">다시 검색·정리</button>
+          ${danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
+        </div>
+      </div>
+      <div class="search-query-list">${queryButtons}</div>
+      ${
+        queryState?.status === 'error'
+          ? `<p class="meta empty">검색어 재생성 실패: ${escapeHtml(queryState.error || '다시 시도해 주세요.')}</p>`
+          : ''
+      }
+      <div class="stage-three-comps">${queryState?.status === 'loading' ? renderCompsLoading('AI가 검색어를 다시 만들고 있습니다...') : renderCompsBlock(item, comps)}</div>
+    </article>
+  `;
+}
+
+function stageThreeSearchQueries(item) {
+  const key = summaryKey(item);
+  const state = key ? productSummaries.get(key) : null;
+  const queries = productSummaryQueries(state?.summary, item);
+  return queries.length ? queries : [fallbackSearchQuery(item)].filter(Boolean);
+}
+
 function activeCompsForItem(item, rawComps) {
   if (!item || !rawComps?.forItemKey) return null;
   if (rawComps.forItemKey !== itemKey(item)) return null;
-  return rawComps.bunjang || rawComps.daangn ? rawComps : null;
+  return rawComps.bunjang || rawComps.daangn || rawComps.joongna ? rawComps : null;
 }
 
 function renderProductSummaryBlock(item) {
   const state = getProductSummaryState(item);
   const summary = state?.summary;
   const images = productSummaryImages(summary, item);
+  const danawaUrl = danawaPriceUrl(summary);
 
   if (state?.status === 'loading') {
-    const loadingHint = '현재 선택한 모델로 제품명·신품 시세·대표 이미지를 준비합니다.';
+    const loadingHint = '현재 선택한 모델로 제품명·신품 가격 참고자료·대표 이미지를 준비합니다.';
     return `
       <article class="mini-card mini-card--product mini-card--compact mini-card--loading" data-product-summary>
         <div class="summary-loading summary-loading--skeleton">
@@ -911,9 +1065,12 @@ function renderProductSummaryBlock(item) {
             <h2 class="hover-full" title="${escapeAttr(summary?.productName || '제품 정리 대기')}">${escapeHtml(summary?.productName || '제품 정리 대기')}</h2>
             ${
               summary?.newPrice
-                ? `<p class="mini-value">AI 추정 신품 시세: ${escapeHtml(summary.newPrice)}</p>`
+                ? `<p class="mini-value">AI 추정 신품가 참고: ${escapeHtml(summary.newPrice)}${
+                    danawaUrl ? ` <a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''
+                  }</p>`
                 : ''
             }
+            ${!summary?.newPrice && danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
             ${summary?.makerOrSeller ? `<p class="mini-muted">제조사/판매처: ${escapeHtml(summary.makerOrSeller)}</p>` : ''}
           </div>
           ${renderScrollableText(productSummaryDescription(summary, item), 'product-desc', `summary-desc-${summaryKey(item)}`, 64)}
@@ -924,32 +1081,451 @@ function renderProductSummaryBlock(item) {
   `;
 }
 
-function renderCompsBlock(comps) {
-  const clearButton = '<button type="button" class="icon-btn clear-comps-btn" title="비교 매물 삭제">삭제</button>';
-  if (!comps) {
-    return `<div class="block-head"><p class="block-label">비슷한 매물</p></div><p class="meta empty">제품 정리 후 버튼을 누르면 번개·당근 검색 결과를 수집합니다.</p>`;
+function comparisonItems(comps) {
+  return [...(comps?.bunjang?.items || []), ...(comps?.daangn?.items || []), ...(comps?.joongna?.items || [])].map((item) => ({
+    ...item,
+    key: comparisonItemKey(item),
+  }));
+}
+
+function comparisonPlatformRank(item) {
+  return { joongna: 0, bunjang: 1, daangn: 2 }[item?.platform] ?? 1;
+}
+
+function comparisonItemKey(item) {
+  return String(item?.url || `${item?.platform || ''}:${item?.itemId || item?.title || ''}`).trim();
+}
+
+function scoreComparisonItems(item, comps) {
+  const summary = getProductSummaryState(item)?.summary || null;
+  const queryText = [summary?.productName, summary?.searchQuery, ...(summary?.searchQueries || []), item?.title]
+    .filter(Boolean)
+    .join(' ');
+  const terms = String(queryText)
+    .toLowerCase()
+    .split(/[^0-9a-z가-힣]+/i)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 2);
+  const coreTerms = [...new Set(terms)].slice(0, 12);
+  return comparisonItems(comps)
+    .map((candidate, index) => {
+      const title = String(candidate.title || '').toLowerCase();
+      const score = coreTerms.reduce((sum, term) => sum + (title.includes(term) ? 1 : 0), 0);
+      return { candidate, index, score };
+    })
+    .sort((a, b) => b.score - a.score || comparisonPlatformRank(a.candidate) - comparisonPlatformRank(b.candidate) || a.index - b.index);
+}
+
+function balancedComparisonItems(scoredItems, limit = 16) {
+  const platformOrder = ['joongna', 'bunjang', 'daangn'];
+  const buckets = Object.fromEntries(platformOrder.map((id) => [id, []]));
+  const fallback = [];
+  for (const item of scoredItems) {
+    const id = item.candidate?.platform;
+    if (buckets[id]) buckets[id].push(item);
+    else fallback.push(item);
   }
-  const all = [...(comps.bunjang?.items || []), ...(comps.daangn?.items || [])];
+  const quotas = { joongna: 6, bunjang: 6, daangn: 3 };
+  const selected = [];
+  const seen = new Set();
+  const take = (entry) => {
+    const key = comparisonItemKey(entry?.candidate);
+    if (!key || seen.has(key) || selected.length >= limit) return false;
+    seen.add(key);
+    selected.push(entry);
+    return true;
+  };
+  for (const id of platformOrder) {
+    for (const entry of buckets[id].slice(0, quotas[id])) take(entry);
+  }
+  let cursor = 0;
+  while (selected.length < limit) {
+    let progressed = false;
+    for (const id of platformOrder) {
+      const entry = buckets[id][quotas[id] + cursor];
+      if (entry) progressed = take(entry) || progressed;
+      if (selected.length >= limit) break;
+    }
+    if (!progressed) break;
+    cursor += 1;
+  }
+  for (const entry of fallback) take(entry);
+  return selected.map(({ candidate }) => candidate);
+}
+
+function comparisonFilterCandidates(item, comps, limit = 16) {
+  return balancedComparisonItems(scoreComparisonItems(item, comps), limit);
+}
+
+function comparisonSignature(comps) {
+  return comparisonItems(comps)
+    .map((item) => comparisonItemKey(item))
+    .sort()
+    .join('|');
+}
+
+function comparisonThumbnailSignature(comps) {
+  return comparisonItems(comps)
+    .map((item) => `${comparisonItemKey(item)}:${comparisonImageUrl(item) ? '1' : '0'}`)
+    .sort()
+    .join('|');
+}
+
+function comparisonFilterKey(item, comps) {
+  const key = summaryKey(item);
+  if (!key || !comps || !isCompsCollected(comps)) return '';
+  const signature = comparisonSignature(comps);
+  return signature ? `${key}::${signature}` : `${key}::collected::empty`;
+}
+
+function stageThreeCompsRenderKey(item, nextComps) {
+  const key = summaryKey(item);
+  if (!key) return '';
+  if (!nextComps) return `${key}::empty`;
+  if (!isCompsCollected(nextComps)) return `${key}::collecting`;
+  return `${key}::collected::${comparisonSignature(nextComps)}::thumbs::${comparisonThumbnailSignature(nextComps)}`;
+}
+
+function isCompsCollected(comps) {
+  return comps?.status === 'collected';
+}
+
+function renderCompsLoading(message) {
+  return `
+    <div class="summary-loading summary-loading--skeleton comparison-loading">
+      <div class="ai-loading-copy">
+        <p class="mini-value">${escapeHtml(message)}</p>
+        <p class="mini-muted">완료되면 일치하는 매물만 한 번에 표시합니다.</p>
+      </div>
+      <div class="risk-loader"><span></span><span></span><span></span></div>
+    </div>
+  `;
+}
+
+function filteredComparisonItems(item, comps) {
+  const all = comparisonItems(comps);
+  const filterKey = comparisonFilterKey(item, comps);
+  const state = filterKey ? comparisonFilters.get(filterKey) : null;
+  if (state?.status !== 'done') return null;
+  const accepted = new Set((state.matches || []).map((match) => String(match.key || '').trim()).filter(Boolean));
+  const matched = all.filter((candidate) => accepted.has(comparisonItemKey(candidate)));
+  const scoreMap = new Map(scoreComparisonItems(item, comps).map((entry) => [comparisonItemKey(entry.candidate), entry.score]));
+  return balancedComparisonItems(
+    matched.map((candidate, index) => ({
+      candidate,
+      index,
+      score: scoreMap.get(comparisonItemKey(candidate)) ?? 0,
+    })),
+    matched.length
+  );
+}
+
+function purchaseReceiptKey(item, comps) {
+  return comparisonFilterKey(item, comps);
+}
+
+function usedPriceGuideKey(item, comps) {
+  return comparisonFilterKey(item, comps);
+}
+
+function comparisonImageUrl(item) {
+  const url = String(item?.imageUrl || '').trim();
+  if (!url) return '';
+  let decoded = url.toLowerCase();
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
+  }
+  if (
+    /app[\s._-]*store|google[\s._-]*play|play[\s._-]*store|store[\s._-]*badge|play[\s._-]*badge|apple[\s._-]*badge|download[\s._-]*app|app[\s._-]*download/i.test(
+      decoded
+    )
+  )
+    return '';
+  if (/\.svg(?:$|[?#&])/i.test(decoded)) return '';
+  if (/\/origin\/article\//i.test(decoded) && /karrotmarket|karroter|daangn|cloudfront/i.test(decoded)) return url;
+  if (
+    /\/_next\/static\/|\/static\/media\/|open[\s._-]*graph|opengraph|og[\s._-]*image|share[\s._-]*image|(?:^|[\/_.-])landing(?:[\/_.-]|$)|home[\s._-]*banner|(?:^|[\/_.-])intro(?:[\/_.-]|$)|(?:^|[\/_.-])brand(?:[\/_.-]|$)|(?:^|[\/_.-])marketing(?:[\/_.-]|$)|(?:^|[\/_.-])promotion(?:[\/_.-]|$)|(?:^|[\/_.-])promo(?:[\/_.-]|$)|(?:^|[\/_.-])download(?:[\/_.-]|$)|(?:^|[\/_.-])advert(?:[\/_.-]|$)|(?:^|[\/_.-])banner(?:[\/_.-]|$)/i.test(
+      decoded
+    )
+  )
+    return '';
+  return url;
+}
+
+function renderComparisonList(items, limit = 8) {
+  const rows = items
+    .slice(0, limit)
+    .map((c) => {
+      const imageUrl = comparisonImageUrl(c);
+      return `<li title="${escapeAttr(`[${c.platformLabel || c.platform}] ${c.title || ''} ${c.priceLabel || ''}`)}">
+          ${
+            imageUrl
+              ? `<img class="comp-thumb" src="${escapeAttr(imageUrl)}" alt="" loading="lazy" />`
+              : '<span class="comp-thumb comp-thumb--empty"></span>'
+          }
+          <span class="comp-copy">
+            <a href="${escapeAttr(c.url)}" target="_blank" rel="noopener">[${escapeHtml(c.platformLabel || c.platform)}] ${escapeHtml(c.title || '')}</a>
+            <span class="hist-meta">${escapeHtml(c.priceLabel || '')}${c.saleStatus ? ` · ${escapeHtml(c.saleStatus)}` : ''}</span>
+          </span>
+        </li>`;
+    })
+    .join('');
+  const more = items.length > limit ? `<p class="meta">외 ${items.length - limit}건</p>` : '';
+  return `<ul class="comp-list">${rows}</ul>${more}`;
+}
+
+function receiptVerdictLabel(verdict) {
+  return {
+    buy: '구매 가능',
+    negotiate: '네고 추천',
+    hold: '보류',
+    pass: '패스 권장',
+  }[verdict] || '판단 보류';
+}
+
+function renderPurchaseReceiptBlock(item, comps) {
+  if (!item || !comps || !isCompsCollected(comps)) return '';
+  const filterKey = comparisonFilterKey(item, comps);
+  const filterState = filterKey ? comparisonFilters.get(filterKey) : null;
+  if (filterState?.status !== 'done') return '';
+  const guideState = filterKey ? usedPriceGuides.get(filterKey) : null;
+  if (guideState?.status !== 'done') return '';
+  const key = purchaseReceiptKey(item, comps);
+  const state = key ? purchaseReceipts.get(key) : null;
+  if (state?.status === 'loading') {
+    return `
+      <article class="mini-card stage-three-card purchase-receipt-card is-loading">
+        <p class="stage-two-card-label">최종 판단 영수증</p>
+        <h4>Step 1 · Step 2 · Step 3을 종합해 최종 결론을 만드는 중입니다...</h4>
+        <div class="risk-loader"><span></span><span></span><span></span></div>
+      </article>
+    `;
+  }
+  if (state?.status === 'error') {
+    return `
+      <article class="mini-card stage-three-card purchase-receipt-card">
+        <p class="stage-two-card-label">최종 판단 영수증</p>
+        <h4>영수증 생성 실패</h4>
+        <p>${escapeHtml(state.error || '다시 시도해 주세요.')}</p>
+        <button type="button" class="chip-btn purchase-receipt-btn" data-purchase-receipt-regenerate="${escapeAttr(key)}">다시 만들기</button>
+      </article>
+    `;
+  }
+  if (state?.status === 'done') {
+    const r = state.receipt || {};
+    const positives = Array.isArray(r.positives) ? r.positives : [];
+    const cautions = Array.isArray(r.cautions) ? r.cautions : [];
+    const now = new Date().toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `
+      <article class="stage-three-card purchase-receipt-stage receipt-${escapeAttr(r.verdict || 'hold')}">
+        <div class="receipt-printer">
+          <div class="receipt-slot">
+            <span>최종 판단 영수증 출력</span>
+          </div>
+          <div class="receipt-paper-reveal">
+            <div class="purchase-receipt-paper">
+              <header class="receipt-paper-head">
+                <h4>${escapeHtml(r.headline || '최종 구매 판단')}</h4>
+                <span class="purchase-receipt-verdict">${escapeHtml(receiptVerdictLabel(r.verdict))}</span>
+              </header>
+              <div class="receipt-row"><span>발행</span><b>${escapeHtml(now)}</b></div>
+              <div class="receipt-row"><span>현재가</span><b>${escapeHtml(item.priceLabel || '—')}</b></div>
+              ${shippingLine(item) ? `<div class="receipt-row"><span>택배 거래</span><b>${escapeHtml(shippingLine(item))}</b></div>` : ''}
+              <div class="receipt-divider"></div>
+              <section class="receipt-section receipt-final-section">
+                <b>최종 결론</b>
+                <p class="receipt-summary">${escapeHtml(r.summary || '')}</p>
+              </section>
+              <div class="receipt-price-lines">
+                <div><span>가격 참고 범위</span><b>${escapeHtml(r.fairPriceLabel || '판단 어려움')}</b></div>
+                <div><span>네고 제안</span><b>${escapeHtml(r.negotiationPriceLabel || '판단 어려움')}</b></div>
+                <div><span>구매 상한</span><b>${escapeHtml(r.maxBuyPriceLabel || '판단 어려움')}</b></div>
+              </div>
+              <div class="receipt-divider"></div>
+              <section class="receipt-section">
+                <b>가격 참고 의견</b>
+                <p>${escapeHtml(r.priceReason || '')}</p>
+              </section>
+              <section class="receipt-section">
+                <b>리스크 반영</b>
+                <p>${escapeHtml(r.riskBalance || '')}</p>
+              </section>
+              ${
+                positives.length || cautions.length
+                  ? `<div class="receipt-two-col">
+                      ${positives.length ? `<section><b>좋은 점</b><ul>${positives.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></section>` : ''}
+                      ${cautions.length ? `<section><b>확인할 점</b><ul>${cautions.map((x) => `<li>${escapeHtml(x)}</li>`).join('')}</ul></section>` : ''}
+                    </div>`
+                  : ''
+              }
+              <p class="purchase-receipt-disclaimer">${escapeHtml(r.disclaimer || '')}</p>
+              <footer class="receipt-paper-foot">THANK YOU / CHECK BEFORE BUY</footer>
+            </div>
+          </div>
+          <button type="button" class="chip-btn purchase-receipt-btn receipt-reprint-btn" data-purchase-receipt-regenerate="${escapeAttr(key)}">다시 출력</button>
+        </div>
+      </article>
+    `;
+  }
+  return `
+    <button type="button" class="mini-card stage-three-card purchase-receipt-card stage-start-card stage-four-start-card" data-purchase-receipt="${escapeAttr(key)}">
+      <div class="stage-two-ready">
+        <div>
+          <p class="stage-two-card-label">최종 판단 영수증</p>
+          <h3>Step 1 · Step 2 · Step 3을 종합해 최종 결론을 출력하세요.</h3>
+          <p>제품 식별, 리스크 체크리스트, 판매글·사진 분석, 가격 참고자료를 모아 구매 여부와 확인할 점을 정리합니다.</p>
+          <span class="stage-start-card__cta">영수증 만들기</span>
+        </div>
+      </div>
+    </button>
+  `;
+}
+
+function renderStageFourSection(item, comps) {
+  if (!item || !isStepThreeDone(item)) return '';
+  return `
+    <section class="stage-four-panel stage-zone stage-four-zone is-active" data-stage-panel data-stage-four-panel>
+      <aside class="stage-zone-label">
+        <b>Step 4</b>
+        <span>최종 결론</span>
+      </aside>
+      <div class="stage-zone-grid stage-four-zone-grid">
+        ${renderPurchaseReceiptBlock(item, comps)}
+      </div>
+    </section>
+  `;
+}
+
+function renderCurrentListingCompareCard(item) {
+  const img = Array.isArray(item?.imageUrls) && item.imageUrls.length ? item.imageUrls[0] : '';
+  return `
+    <aside class="current-price-card">
+      <p class="block-label">현재 매물</p>
+      ${
+        img
+          ? `<img class="current-price-card__img zoomable" src="${escapeAttr(img)}" data-full="${escapeAttr(img)}" alt="" loading="lazy" />`
+          : '<div class="current-price-card__placeholder">이미지 없음</div>'
+      }
+      <strong class="current-price-card__price">${escapeHtml(item?.priceLabel || '가격 정보 없음')}</strong>
+      ${shippingLine(item) ? `<p class="hist-meta">${escapeHtml(shippingLine(item))}</p>` : ''}
+      <p class="current-price-card__title" title="${escapeAttr(item?.title || '')}">${escapeHtml(item?.title || '현재 보고 있는 매물')}</p>
+    </aside>
+  `;
+}
+
+function renderCompsBlock(item, comps) {
+  if (!comps || !isCompsCollected(comps)) {
+    return renderCompsLoading('번개·당근·중고나라 검색 결과를 수집 중입니다...');
+  }
+  const all = comparisonItems(comps);
   if (!all.length) {
-    return `<div class="block-head"><p class="block-label">비교 매물 (시세 근거)</p>${clearButton}</div><p class="meta empty">아직 없음 — 비슷한 매물 찾기 버튼을 누르세요.</p>`;
+    const key = summaryKey(item);
+    if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
+      return renderCompsLoading('AI가 검색어를 다시 조정 중입니다...');
+    }
+    return `<p class="meta empty">자동 검색어 조정 후에도 관련 매물을 충분히 찾지 못했습니다.</p>`;
   }
-  const st = compStats(all);
+  const filterKey = comparisonFilterKey(item, comps);
+  const filterState = filterKey ? comparisonFilters.get(filterKey) : null;
+  const allMatched = filteredComparisonItems(item, comps) || [];
+  if (!filterState || filterState.status === 'loading') {
+    return renderCompsLoading('AI가 같은 제품인지 판별 중입니다...');
+  }
+  if (filterState.status === 'error') {
+    return `<p class="meta empty">동일 제품 판별에 실패했습니다.</p>`;
+  }
+  if (!allMatched.length) {
+    const key = summaryKey(item);
+    if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
+      return renderCompsLoading('AI가 더 맞는 검색어를 다시 생각하고 있습니다...');
+    }
+    return `<p class="meta empty">자동 검색어 조정 후에도 같은 제품으로 볼 만한 매물을 찾지 못했습니다.</p>`;
+  }
+  const st = compStats(allMatched);
   const statsTxt = st
     ? `${st.n}건 · 중앙 ${formatWon(st.median)} · ${formatWon(st.min)} ~ ${formatWon(st.max)}`
-    : `${all.length}건`;
-  const rows = all
-    .slice(0, 6)
-    .map(
-      (c) =>
-        `<li title="${escapeAttr(`[${c.platformLabel || c.platform}] ${c.title || ''} ${c.priceLabel || ''}`)}"><a href="${escapeAttr(c.url)}" target="_blank" rel="noopener">[${escapeHtml(c.platformLabel || c.platform)}] ${escapeHtml(c.title || '')}</a> <span class="hist-meta">${escapeHtml(c.priceLabel || '')}</span></li>`
-    )
-    .join('');
-  const more = all.length > 6 ? `<p class="meta">외 ${all.length - 6}건</p>` : '';
+    : `${allMatched.length}건`;
+  const caution =
+    '중고 매물 가격은 상태, 구성품, 보증, 판매완료 여부, 지역, 거래조건에 따라 크게 달라집니다. 가품일 가능성도 있으니 표시된 가격은 참고용 가격 자료로만 보고 그대로 믿고 구매 판단하면 안 됩니다.';
   return `
-    <div class="block-head"><p class="block-label">비교 매물 (시세 근거)</p>${clearButton}</div>
-    <p class="meta"><strong>${escapeHtml(statsTxt)}</strong> · 설정 지역·검색 결과 기준</p>
-    <ul class="comp-list">${rows}</ul>
-    ${more}
+    <div class="comparison-filter-result">
+      <div class="comparison-price-layout">
+        <div class="comparison-price-list">
+          <p class="meta"><strong>${escapeHtml(statsTxt)}</strong> · 같은 제품으로 판별된 매물</p>
+          ${renderComparisonList(allMatched, 8)}
+          <p class="comparison-caution">${escapeHtml(caution)}</p>
+        </div>
+        ${renderCurrentListingCompareCard(item)}
+      </div>
+    </div>
+  `;
+}
+
+function renderUsedPriceGuideBlock(item, comps) {
+  if (!item || !comps || !isCompsCollected(comps)) return '';
+  const filterKey = comparisonFilterKey(item, comps);
+  const filterState = filterKey ? comparisonFilters.get(filterKey) : null;
+  if (filterState?.status !== 'done') return '';
+  const key = usedPriceGuideKey(item, comps);
+  const state = key ? usedPriceGuides.get(key) : null;
+  if (!state || state.status === 'loading') {
+    return `
+      <article class="mini-card stage-three-card used-price-guide-card is-loading">
+        <p class="stage-two-card-label">AI 중고가이드</p>
+        <h4>번개·중고나라 기반 가격표를 정리하는 중입니다...</h4>
+        <p class="mini-muted">검색 결과와 수집 매물을 함께 보고 상태별 참고가를 만듭니다.</p>
+        <div class="risk-loader"><span></span><span></span><span></span></div>
+      </article>
+    `;
+  }
+  if (state.status === 'error') {
+    return `
+      <article class="mini-card stage-three-card used-price-guide-card">
+        <p class="stage-two-card-label">AI 중고가이드</p>
+        <h4>가격표 생성 실패</h4>
+        <p>${escapeHtml(state.error || '다시 시도해 주세요.')}</p>
+        <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">다시 만들기</button>
+      </article>
+    `;
+  }
+  const guide = state.guide || {};
+  const rows = Array.isArray(guide.conditionPrices) ? guide.conditionPrices : [];
+  const rowHtml = rows.length
+    ? rows
+        .slice(0, 6)
+        .map(
+          (row) => `
+            <tr>
+              <td>${escapeHtml(row.condition || '')}</td>
+              <td>${escapeHtml(row.priceLabel || '')}</td>
+              <td>${escapeHtml(row.comment || '')}</td>
+            </tr>`
+        )
+        .join('')
+    : `<tr><td colspan="3">상태별 가격표를 만들 근거가 부족합니다.</td></tr>`;
+  return `
+    <article class="mini-card stage-three-card used-price-guide-card">
+      <div class="mini-card-head">
+        <p class="stage-two-card-label">AI 중고가이드</p>
+        <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">다시 만들기</button>
+      </div>
+      <h4>${escapeHtml(guide.headline || '상태별 중고 가격 참고표')}</h4>
+      <p class="mini-muted">${escapeHtml(guide.summary || '번개·중고나라 등 중고 거래 데이터를 참고한 AI 가격 가이드입니다.')}</p>
+      <div class="comparison-price-table-wrap">
+        <table class="comparison-price-table">
+          <thead><tr><th>상태</th><th>가격 참고</th><th>코멘트</th></tr></thead>
+          <tbody>${rowHtml}</tbody>
+        </table>
+      </div>
+      ${guide.recommendedAction ? `<p class="comparison-caution">${escapeHtml(guide.recommendedAction)}</p>` : ''}
+      ${guide.confidence ? `<p class="hist-meta">신뢰도: ${escapeHtml(guide.confidence)}${guide.sourceNote ? ` · ${escapeHtml(guide.sourceNote)}` : ''}</p>` : ''}
+    </article>
   `;
 }
 
@@ -988,14 +1564,36 @@ function imageAnalysisEntries(item) {
   const key = summaryKey(item);
   const state = key ? listingImageAnalyses.get(key) : null;
   const analysis = state?.analysis || null;
-  return (Array.isArray(analysis?.images) ? analysis.images : [])
-    .map((img, idx) => ({
+  const urls = Array.isArray(item?.imageUrls) ? item.imageUrls : [];
+  const byIndex = new Map();
+  for (const img of Array.isArray(analysis?.images) ? analysis.images : []) {
+    const index = Number(img?.index) || 0;
+    if (!index || byIndex.has(index)) continue;
+    byIndex.set(index, img);
+  }
+  if (!urls.length) {
+    return [...byIndex.values()]
+      .sort((a, b) => (Number(a.index) || 0) - (Number(b.index) || 0))
+      .map((img, idx) => ({
+        ...img,
+        index: Number(img.index) || idx + 1,
+        imageUrl: img.imageUrl || '',
+        label: imageAnalysisLabel(img),
+        comment: img.comment || '사진 상태 확인이 필요합니다.',
+      }))
+      .filter((img) => img.imageUrl || img.comment);
+  }
+  return urls.map((url, idx) => {
+    const index = idx + 1;
+    const img = byIndex.get(index) || {};
+    return {
       ...img,
-      imageUrl: img.imageUrl || item.imageUrls?.[(Number(img.index) || idx + 1) - 1] || '',
+      index,
+      imageUrl: url,
       label: imageAnalysisLabel(img),
       comment: img.comment || '사진 상태 확인이 필요합니다.',
-    }))
-    .filter((img) => img.imageUrl || img.comment);
+    };
+  });
 }
 
 function renderImageAnalysisSlider(item) {
@@ -1062,11 +1660,12 @@ function renderItem(item, comps) {
     `;
     return;
   }
-  const plat = item.platform === 'daangn' ? 'daangn' : 'bunjang';
+  const plat = ['daangn', 'joongna'].includes(item.platform) ? item.platform : 'bunjang';
   const seller = sellerLine(item.seller, item.platform);
+  const shipping = shippingLine(item);
   const hasStageTwo = Boolean(renderStageTwoSection(item));
   $current.innerHTML = `
-    <section class="stage-zone stage-one-zone${hasStageTwo ? ' has-next-stage' : ''}" data-stage-one-zone>
+    <section class="stage-zone stage-one-zone${hasStageTwo ? ' has-next-stage' : ''}" data-stage-panel data-stage-one-zone>
       <aside class="stage-zone-label">
         <b>Step 1</b>
         <span>매물 정리</span>
@@ -1079,8 +1678,11 @@ function renderItem(item, comps) {
           </div>
           <div>
             <h3 class="item-title hover-full" title="${escapeAttr(item.title || '(제목 없음)')}">${escapeHtml(item.title || '(제목 없음)')}</h3>
-            <p class="price">${escapeHtml(item.priceLabel || '—')}</p>
-            <p class="listing-mini-meta">${escapeHtml(seller)} · ${formatTime(item.exportedAt)}</p>
+            <p class="price listing-price-line">
+              <span>${escapeHtml(item.priceLabel || '—')}</span>
+              ${shipping ? `<small>${escapeHtml(shipping)}</small>` : ''}
+            </p>
+            <p class="listing-mini-meta">${escapeHtml([seller, formatTime(item.exportedAt)].filter(Boolean).join(' · '))}</p>
           </div>
         </article>
 
@@ -1101,6 +1703,7 @@ function renderItem(item, comps) {
     </section>
     ${renderStageTwoSection(item)}
     ${renderStageThreeSection(item, comps)}
+    ${renderStageFourSection(item, comps)}
     ${renderStageSlideControls()}
   `;
   bindImageZoom($current);
@@ -1108,11 +1711,19 @@ function renderItem(item, comps) {
   bindScrollText($current);
   bindStageSlideControls($current);
   bindStageTwoFlow($current, item);
+  bindStageThreeFlow($current, item);
+  bindUsedPriceGuide($current, item);
+  bindPurchaseReceipt($current, item);
+  window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
   bindImageAnalysisSlider($current, item);
   bindProductSummaryRetry($current, item);
   bindProductImageSearch($current, item);
-  bindRelatedSearch($current, item);
-  bindCompsActions($current);
+  lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
+  syncStagePanels(item);
+  if (isStepThreeUnlocked(item)) {
+    scheduleComparisonFilter(item);
+    if (comparisonFilters.get(comparisonFilterKey(item, comps))?.status === 'done') void ensureUsedPriceGuide(item);
+  }
 }
 
 function setHistoryOpen(open) {
@@ -1416,9 +2027,9 @@ function refreshImageAnalysisSlider(item) {
 }
 
 function bindStageTwoFlow(root, item) {
-  root?.querySelectorAll('.stage-two-start-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const key = btn.getAttribute('data-stage-two-start') || summaryKey(item);
+  root?.querySelectorAll('[data-stage-two-start]').forEach((el) => {
+    const start = () => {
+      const key = el.getAttribute('data-stage-two-start') || summaryKey(item);
       if (!key) return;
       const shouldRetry = productRiskAnalyses.get(key)?.status === 'error';
       stageTwoActiveKeys.add(key);
@@ -1432,8 +2043,323 @@ function bindStageTwoFlow(root, item) {
         updateStageSlide();
       }
       void ensureProductRisk(item);
+    };
+    el.addEventListener('click', start);
+    if (el.tagName !== 'BUTTON') {
+      el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        start();
+      });
+    }
+  });
+}
+
+function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
+  const key = summaryKey(item);
+  const queryList = splitSearchQueries(queries);
+  if (!key || !queryList.length) return;
+  const isolated = opts.isolated === true;
+  if (!opts.preserveAutoRetryCount) stageThreeAutoQueryRetryCounts.delete(key);
+  relatedRequestedKeys.add(key);
+  if (isolated) stageThreeIsolatedRefreshKeys.add(key);
+  else stageThreeIsolatedRefreshKeys.delete(key);
+  comps = null;
+  lastStageThreeCompsRenderKey = `${key}::empty`;
+  window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
+  for (const filterKey of [...comparisonFilters.keys()]) {
+    if (filterKey.startsWith(`${key}::`)) {
+      comparisonFilters.delete(filterKey);
+      if (!isolated) {
+        usedPriceGuides.delete(filterKey);
+        purchaseReceipts.delete(filterKey);
+      }
+    }
+  }
+  for (const filterKey of [...comparisonFilterTimers]) {
+    if (filterKey.startsWith(`${key}::`)) comparisonFilterTimers.delete(filterKey);
+  }
+  persistAiCaches();
+  if (selectedKey === key) {
+    if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+    else refreshStageThreeSection(item);
+  }
+  if (btn) btn.disabled = true;
+  window.postMessage({ type: 'MARKET_SCRAPE_OPEN_SEARCH_TABS', query: queryList[0], queries: queryList }, '*');
+  if (btn) {
+    setTimeout(() => {
+      btn.disabled = false;
+    }, 2500);
+  }
+}
+
+function bindStageThreeFlow(root, item) {
+  root?.querySelectorAll('[data-stage-three-start]').forEach((el) => {
+    const start = () => {
+      const key = el.getAttribute('data-stage-three-start') || summaryKey(item);
+      if (!key) return;
+      stageThreeActiveKeys.add(key);
+      relatedRequestedKeys.add(key);
+      persistAiCaches();
+      refreshStageThreeSection(item);
+      openRelatedSearchForItem(item, stageThreeSearchQueries(item), el);
+    };
+    el.addEventListener('click', start);
+    if (el.tagName !== 'BUTTON') {
+      el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        start();
+      });
+    }
+  });
+  root?.querySelectorAll('[data-stage-three-refresh]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn, { isolated: true });
     });
   });
+}
+
+function maybeAutoRegenerateStageThreeSearchQueries(item) {
+  const key = summaryKey(item);
+  if (!key) return false;
+  if (searchQueryRegenerations.get(key)?.status === 'loading') return true;
+  const count = stageThreeAutoQueryRetryCounts.get(key) || 0;
+  if (count >= MAX_STAGE_THREE_AUTO_QUERY_RETRIES) return false;
+  stageThreeAutoQueryRetryCounts.set(key, count + 1);
+  void regenerateStageThreeSearchQueries(item, null, { auto: true });
+  return true;
+}
+
+async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
+  const key = summaryKey(item);
+  if (!key) return;
+  if (!opts.auto) stageThreeAutoQueryRetryCounts.delete(key);
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchSearchQuery !== 'function') {
+    searchQueryRegenerations.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    refreshStageThreeSearchCard(item);
+    return;
+  }
+  searchQueryRegenerations.set(key, { status: 'loading' });
+  if (btn) btn.disabled = true;
+  refreshStageThreeSearchCard(item);
+  try {
+    const data = await globalThis.UlsaAi.fetchSearchQuery({
+      title: item.title || '',
+      body: item.body || '',
+      imageUrls: item.imageUrls || [],
+      maxQueries: 3,
+      apiKey,
+    });
+    const queries = splitSearchQueries(data.queries?.length ? data.queries : data.query);
+    if (!queries.length) throw new Error('새 검색어를 만들지 못했습니다.');
+    const current = productSummaries.get(key) || { status: 'done', summary: {} };
+    const summary = current.summary || {};
+    productSummaries.set(key, {
+      ...current,
+      status: 'done',
+      summary: {
+        ...summary,
+        searchQuery: queries[0],
+        searchQueries: queries,
+      },
+    });
+    persistAiCaches();
+    searchQueryRegenerations.delete(key);
+    refreshStageThreeSearchCard(item);
+    openRelatedSearchForItem(item, queries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
+  } catch (e) {
+    searchQueryRegenerations.set(key, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+    refreshStageThreeSearchCard(item);
+  }
+}
+
+function purchaseReceiptComparisonPayload(item, comps) {
+  const matched = filteredComparisonItems(item, comps) || [];
+  const stats = compStats(matched);
+  const pricedSampleCount = stats?.n || 0;
+  const isPriceReliable = pricedSampleCount >= MIN_PRICE_REFERENCE_MATCHES;
+  return {
+    matchedCount: matched.length,
+    pricedSampleCount,
+    candidateCount: comparisonItems(comps).length,
+    minReliableMatchedCount: MIN_PRICE_REFERENCE_MATCHES,
+    isPriceReliable,
+    reliabilityReason: isPriceReliable
+      ? '같은 제품으로 판별된 비교 매물의 가격 표본이 가격 참고자료로 사용할 수 있는 내부 기준을 충족합니다.'
+      : '같은 제품으로 판별된 비교 매물의 가격 표본이 부족해 가격은 제한적인 참고자료로만 볼 수 있습니다.',
+    stats: stats && isPriceReliable
+      ? {
+          count: stats.n,
+          min: stats.min,
+          max: stats.max,
+          median: stats.median,
+          minLabel: formatWon(stats.min),
+          maxLabel: formatWon(stats.max),
+          medianLabel: formatWon(stats.median),
+        }
+      : null,
+    matchedListings: matched.slice(0, 12).map((x) => ({
+      platform: x.platformLabel || x.platform || '',
+      title: x.title || '',
+      price: x.price || null,
+      priceLabel: x.priceLabel || '',
+      saleStatus: x.saleStatus || '',
+      url: x.url || '',
+    })),
+  };
+}
+
+function usedPriceGuidePayload(item, comps) {
+  const matched = filteredComparisonItems(item, comps) || [];
+  const stats = compStats(matched);
+  return {
+    current: {
+      platform: item.platformLabel || item.platform || '',
+      title: item.title || '',
+      price: item.price || null,
+      priceLabel: item.priceLabel || '',
+      shippingFeeLabel: item.shippingFeeLabel || '',
+      body: item.body || '',
+    },
+    summary: getProductSummaryState(item)?.summary || null,
+    comparison: {
+      matchedCount: matched.length,
+      pricedSampleCount: stats?.n || 0,
+      stats: stats
+        ? {
+            count: stats.n,
+            min: stats.min,
+            max: stats.max,
+            median: stats.median,
+            minLabel: formatWon(stats.min),
+            maxLabel: formatWon(stats.max),
+            medianLabel: formatWon(stats.median),
+          }
+        : null,
+      matchedListings: matched.slice(0, 12).map((x) => ({
+        platform: x.platformLabel || x.platform || '',
+        title: x.title || '',
+        price: x.price || null,
+        priceLabel: x.priceLabel || '',
+        saleStatus: x.saleStatus || '',
+        url: x.url || '',
+      })),
+    },
+  };
+}
+
+function bindUsedPriceGuide(root, item) {
+  root?.querySelectorAll('[data-used-price-guide]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = usedPriceGuideKey(item, comps);
+      if (key) {
+        usedPriceGuides.delete(key);
+        purchaseReceipts.delete(key);
+      }
+      void ensureUsedPriceGuide(item);
+    });
+  });
+}
+
+function bindPurchaseReceipt(root, item) {
+  root?.querySelectorAll('[data-purchase-receipt]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void ensurePurchaseReceipt(item);
+    });
+  });
+  root?.querySelectorAll('[data-purchase-receipt-regenerate]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void ensurePurchaseReceipt(item, { regenerate: true });
+    });
+  });
+}
+
+function updatePurchaseReceiptLayout(root = $current, opts = {}) {
+  const stage = root?.querySelector('.purchase-receipt-stage');
+  const reveal = stage?.querySelector('.receipt-paper-reveal');
+  const paper = stage?.querySelector('.purchase-receipt-paper');
+  const zone = stage?.closest?.('[data-stage-four-panel]');
+  if (!stage || !reveal || !paper || !zone) return 0;
+  const printHeight = Math.ceil(paper.scrollHeight + 12);
+  const zoneTarget = printHeight + 348;
+  reveal.style.setProperty('--receipt-print-height', `${printHeight}px`);
+  if (!reveal.classList.contains('is-printing')) {
+    reveal.style.height = 'auto';
+    reveal.style.minHeight = `${printHeight}px`;
+  }
+  if (opts.animate) {
+    zone.classList.add('is-receipt-layout-animating');
+    zone.style.setProperty('--stage-four-receipt-height', `${zoneTarget}px`);
+  } else {
+    zone.classList.remove('is-receipt-layout-animating');
+    zone.style.setProperty('--stage-four-receipt-height', `${zoneTarget}px`);
+  }
+  return printHeight;
+}
+
+function followPurchaseReceiptPrint(root = $current) {
+  const stage = root?.querySelector('.purchase-receipt-stage');
+  const reveal = stage?.querySelector('.receipt-paper-reveal');
+  const paper = stage?.querySelector('.purchase-receipt-paper');
+  if (!stage || !reveal || !paper || stage.dataset.receiptScrollStarted === '1') return;
+  stage.dataset.receiptScrollStarted = '1';
+  const printHeight = updatePurchaseReceiptLayout(root, { animate: true }) || Math.ceil(paper.scrollHeight + 12);
+  reveal.style.height = '';
+  reveal.style.minHeight = '0px';
+
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  if (prefersReducedMotion) {
+    reveal.style.height = 'auto';
+    reveal.style.minHeight = `${printHeight}px`;
+    reveal.scrollIntoView({ block: 'end', behavior: 'auto' });
+    return;
+  }
+
+  reveal.classList.add('is-printing');
+  reveal.addEventListener(
+    'animationend',
+    () => {
+      reveal.style.height = 'auto';
+      reveal.style.minHeight = `${printHeight}px`;
+      reveal.classList.remove('is-printing');
+      updatePurchaseReceiptLayout(root);
+    },
+    { once: true }
+  );
+  const startTop = window.scrollY;
+  const maxScrollTop = () => Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  const targetTop = () => {
+    const rect = reveal.getBoundingClientRect();
+    const bottomPadding = Math.min(140, Math.max(72, window.innerHeight * 0.14));
+    const nextTop = window.scrollY + rect.bottom - window.innerHeight + bottomPadding;
+    return Math.max(startTop, Math.min(maxScrollTop(), nextTop));
+  };
+  const startedAt = performance.now();
+
+  const step = (now) => {
+    const progress = Math.min(1, (now - startedAt) / RECEIPT_PRINT_SCROLL_MS);
+    const desired = targetTop();
+    const catchUp = 0.045 + progress * 0.09;
+    const nextTop = window.scrollY + (desired - window.scrollY) * catchUp;
+    window.scrollTo(0, nextTop);
+    if (progress < 1) {
+      window.requestAnimationFrame(step);
+      return;
+    }
+    window.setTimeout(() => {
+      const finalTop = targetTop();
+      if (Math.abs(finalTop - window.scrollY) > 2) {
+        window.scrollTo({ top: finalTop, behavior: 'smooth' });
+      }
+    }, 120);
+  };
+
+  window.requestAnimationFrame(step);
 }
 
 function hasListingTextAnalysisContent(analysis) {
@@ -1502,38 +2428,6 @@ function refreshPhotoSlider(item) {
   bindImageZoom(updated);
   bindPhotoSlider(updated, item);
   setTimeout(() => photoDirections.delete(itemKey(item)), 260);
-}
-
-function bindRelatedSearch(root, item) {
-  const openRelatedSearch = (query, btn) => {
-    const key = summaryKey(item);
-    if (!query) {
-      return;
-    }
-    relatedRequestedKeys.add(key);
-    comps = null;
-    if (btn) btn.disabled = true;
-    window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
-    window.postMessage({ type: 'MARKET_SCRAPE_OPEN_SEARCH_TABS', query }, '*');
-    if (btn) {
-      setTimeout(() => {
-        btn.disabled = false;
-      }, 2500);
-    }
-  };
-
-  root?.querySelectorAll('.related-search-btn').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const key = summaryKey(item);
-      const state = key ? productSummaries.get(key) : null;
-      const query = productSummaryQueries(state?.summary, item)[0] || '';
-      openRelatedSearch(query, btn);
-    });
-  });
-
-  root?.querySelectorAll('.related-query-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openRelatedSearch(btn.getAttribute('data-query') || '', btn));
-  });
 }
 
 function bindProductImageSearch(root, item) {
@@ -1646,16 +2540,66 @@ function clearProductSummaryCaches(key) {
   imageAnalysisIndexes.delete(key);
   imageAnalysisDirections.delete(key);
   imageAnalysisPreviewedKeys.delete(key);
+  searchQueryRegenerations.delete(key);
+  stageThreeAutoQueryRetryCounts.delete(key);
   productRiskAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
   stageTwoActiveKeys.delete(key);
+  stageThreeActiveKeys.delete(key);
+  stageThreeIsolatedRefreshKeys.delete(key);
+  for (const filterKey of [...comparisonFilters.keys()]) {
+    if (filterKey.startsWith(`${key}::`)) {
+      comparisonFilters.delete(filterKey);
+      usedPriceGuides.delete(filterKey);
+      purchaseReceipts.delete(filterKey);
+    }
+  }
+  for (const filterKey of [...comparisonFilterTimers]) {
+    if (filterKey.startsWith(`${key}::`)) comparisonFilterTimers.delete(filterKey);
+  }
   persistAiCaches();
 }
 
 function clearCurrentAiCaches() {
   const key = selectedKey || (latest ? itemKey(latest) : '');
   if (key) clearProductSummaryCaches(key);
+}
+
+function clearCurrentAnalysisState() {
+  const key = selectedKey || (latest ? itemKey(latest) : '');
+  if (!key) return;
+  clearProductSummaryCaches(key);
+  relatedRequestedKeys.delete(key);
+  imageAnalysisIndexes.delete(key);
+  imageAnalysisDirections.delete(key);
+  stageTwoActiveKeys.delete(key);
+  stageThreeActiveKeys.delete(key);
+  stageTwoCompletedKeys.delete(key);
+  stageThreeIsolatedRefreshKeys.delete(key);
+  productRiskAnalyses.delete(key);
+  listingTextAnalyses.delete(key);
+  listingImageAnalyses.delete(key);
+  imageAnalysisPreviewedKeys.delete(key);
+  searchQueryRegenerations.delete(key);
+  stageThreeAutoQueryRetryCounts.delete(key);
+  for (const cacheKey of [...comparisonFilters.keys()]) {
+    if (listingKeyFromStageCacheKey(cacheKey) === key) comparisonFilters.delete(cacheKey);
+  }
+  for (const cacheKey of [...usedPriceGuides.keys()]) {
+    if (listingKeyFromStageCacheKey(cacheKey) === key) usedPriceGuides.delete(cacheKey);
+  }
+  for (const cacheKey of [...purchaseReceipts.keys()]) {
+    if (listingKeyFromStageCacheKey(cacheKey) === key) purchaseReceipts.delete(cacheKey);
+  }
+  for (const timerKey of [...comparisonFilterTimers]) {
+    if (listingKeyFromStageCacheKey(timerKey) === key) comparisonFilterTimers.delete(timerKey);
+  }
+  comps = null;
+  lastStageThreeCompsRenderKey = '';
+  stageSlideIndex = 0;
+  persistAiCaches();
+  window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
 }
 
 function bindProductSummaryRetry(root, item) {
@@ -1669,16 +2613,205 @@ function bindProductSummaryRetry(root, item) {
   });
 }
 
-function bindCompsActions(root) {
-  root?.querySelectorAll('.clear-comps-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const key = selectedKey;
-      comps = null;
-      if (key) relatedRequestedKeys.delete(key);
-      if (latest) renderItem(latest, null);
-      window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
+function advanceStageThreeAfterComparisonFilter(item, filterKey, matches, isolated = false) {
+  comparisonFilters.set(filterKey, { status: 'done', matches: matches || [] });
+  persistAiCaches();
+  const currentKey = summaryKey(item);
+  if (selectedKey === currentKey) {
+    if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+    else refreshStageThreeSection(item);
+  }
+  if (!isolated) void ensureUsedPriceGuide(item);
+}
+
+async function ensureComparisonFilter(item) {
+  if (!item || !isStepThreeUnlocked(item) || !comps || !isCompsCollected(comps)) return;
+  const filterKey = comparisonFilterKey(item, comps);
+  if (!filterKey) return;
+  const currentKey = summaryKey(item);
+  const isolated = currentKey ? stageThreeIsolatedRefreshKeys.has(currentKey) : false;
+  const existing = comparisonFilters.get(filterKey);
+  if (existing?.status === 'loading' || existing?.status === 'done') return;
+  const candidates = comparisonFilterCandidates(item, comps);
+  if (!candidates.length) {
+    if (maybeAutoRegenerateStageThreeSearchQueries(item)) return;
+    if (!isolated) {
+      usedPriceGuides.delete(filterKey);
+      purchaseReceipts.delete(filterKey);
+    }
+    advanceStageThreeAfterComparisonFilter(item, filterKey, [], isolated);
+    return;
+  }
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.filterComparisonListings !== 'function') {
+    comparisonFilters.set(filterKey, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    persistAiCaches();
+    if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+    else refreshStageThreeSection(item);
+    return;
+  }
+
+  if (!isolated) {
+    usedPriceGuides.delete(filterKey);
+    purchaseReceipts.delete(filterKey);
+  }
+  comparisonFilters.set(filterKey, { status: 'loading' });
+  if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+  else refreshStageThreeSection(item);
+  try {
+    const summary = getProductSummaryState(item)?.summary || null;
+    const data = await globalThis.UlsaAi.filterComparisonListings({
+      title: item.title || '',
+      body: item.body || '',
+      productName: summary?.productName || fallbackSearchQuery(item),
+      summary,
+      candidates,
+      apiKey,
     });
-  });
+    const matches = Array.isArray(data.analysis?.matches) ? data.analysis.matches : [];
+    if (!matches.length && maybeAutoRegenerateStageThreeSearchQueries(item)) {
+      comparisonFilters.set(filterKey, { status: 'done', matches: [] });
+      persistAiCaches();
+      if (selectedKey === currentKey) {
+        if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+        else refreshStageThreeSection(item);
+      }
+      return;
+    }
+    if (matches.length && currentKey) stageThreeAutoQueryRetryCounts.delete(currentKey);
+    advanceStageThreeAfterComparisonFilter(item, filterKey, matches, isolated);
+    return;
+  } catch (e) {
+    comparisonFilters.set(filterKey, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+    persistAiCaches();
+  }
+  if (selectedKey === currentKey) {
+    if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+    else refreshStageThreeSection(item);
+  }
+}
+
+async function ensureUsedPriceGuide(item) {
+  if (!item || !isStepThreeUnlocked(item) || !comps || !isCompsCollected(comps)) return;
+  const key = usedPriceGuideKey(item, comps);
+  if (!key) return;
+  const filterState = comparisonFilters.get(key);
+  if (filterState?.status !== 'done') return;
+  const existing = usedPriceGuides.get(key);
+  if (existing?.status === 'loading' || existing?.status === 'done') return;
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchUsedPriceGuide !== 'function') {
+    usedPriceGuides.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    refreshStageThreeSection(item);
+    if (isStepThreeDone(item)) refreshStageFourSection(item);
+    return;
+  }
+
+  purchaseReceipts.delete(key);
+  usedPriceGuides.set(key, { status: 'loading' });
+  refreshStageThreeSection(item);
+  try {
+    const data = await globalThis.UlsaAi.fetchUsedPriceGuide({
+      ...usedPriceGuidePayload(item, comps),
+      apiKey,
+    });
+    usedPriceGuides.set(key, { status: 'done', guide: data.guide || {} });
+    persistAiCaches();
+  } catch (e) {
+    usedPriceGuides.set(key, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+    persistAiCaches();
+  }
+  if (selectedKey === summaryKey(item)) {
+    refreshStageThreeSection(item);
+    if (isStepThreeDone(item)) refreshStageFourSection(item);
+    else syncStagePanels(item);
+  }
+}
+
+async function ensurePurchaseReceipt(item, opts = {}) {
+  if (!item || !comps || !isCompsCollected(comps)) return;
+  const key = purchaseReceiptKey(item, comps);
+  if (!key) return;
+  const existing = purchaseReceipts.get(key);
+  if (existing?.status === 'loading') return;
+  if (opts.regenerate) {
+    purchaseReceipts.delete(key);
+    persistAiCaches();
+  } else if (existing?.status === 'done') {
+    refreshStageFourSection(item);
+    if (selectedKey === summaryKey(item)) {
+      window.requestAnimationFrame(() => followPurchaseReceiptPrint($current));
+    }
+    return;
+  }
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchPurchaseReceipt !== 'function') {
+    purchaseReceipts.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    refreshStageFourSection(item);
+    return;
+  }
+  const summary = getProductSummaryState(item)?.summary || null;
+  const guideState = usedPriceGuides.get(key);
+  if (guideState?.status !== 'done') {
+    await ensureUsedPriceGuide(item);
+    if (usedPriceGuides.get(key)?.status !== 'done') return;
+  }
+  purchaseReceipts.set(key, { status: 'loading' });
+  refreshStageFourSection(item);
+  try {
+    const data = await globalThis.UlsaAi.fetchPurchaseReceipt({
+      current: {
+        platform: item.platformLabel || item.platform || '',
+        title: item.title || '',
+        price: item.price || null,
+        priceLabel: item.priceLabel || '',
+        shippingFee: Number.isFinite(item.shippingFee) ? item.shippingFee : null,
+        shippingFeeLabel: item.shippingFeeLabel || '',
+        body: item.body || '',
+        seller: item.seller || null,
+        imageCount: Array.isArray(item.imageUrls) ? item.imageUrls.length : 0,
+      },
+      summary,
+      riskAnalysis: productRiskAnalyses.get(summaryKey(item))?.analysis || null,
+      listingTextAnalysis: listingTextAnalyses.get(summaryKey(item))?.analysis || null,
+      listingImageAnalysis: listingImageAnalyses.get(summaryKey(item))?.analysis || null,
+      usedPriceGuide: usedPriceGuides.get(key)?.guide || null,
+      comparison: purchaseReceiptComparisonPayload(item, comps),
+      apiKey,
+    });
+    purchaseReceipts.set(key, { status: 'done', receipt: data.receipt || {} });
+    persistAiCaches();
+  } catch (e) {
+    purchaseReceipts.set(key, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+    persistAiCaches();
+  }
+  if (selectedKey === summaryKey(item)) {
+    refreshStageFourSection(item);
+    if (purchaseReceipts.get(key)?.status === 'done') {
+      window.requestAnimationFrame(() => followPurchaseReceiptPrint($current));
+    }
+  }
+}
+
+function scheduleComparisonFilter(item) {
+  if (!item || !isStepThreeUnlocked(item) || !comps || !isCompsCollected(comps)) return;
+  const filterKey = comparisonFilterKey(item, comps);
+  if (!filterKey || comparisonFilterTimers.has(filterKey) || comparisonFilters.has(filterKey)) return;
+  comparisonFilterTimers.add(filterKey);
+  window.setTimeout(() => {
+    comparisonFilterTimers.delete(filterKey);
+    if (selectedKey !== summaryKey(item)) return;
+    void ensureComparisonFilter(item);
+  }, 250);
 }
 
 function ensureStageTwoPanelElement(item) {
@@ -1720,17 +2853,76 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
 function refreshStageThreeSection(item) {
   const html = renderStageThreeSection(item, comps);
   const existing = $current.querySelector('[data-stage-three-panel]');
+  if (!html) {
+    existing?.remove();
+    refreshStageFourSection(item);
+    updateStageSlide();
+    return;
+  }
   if (existing) {
     existing.outerHTML = html;
-  } else if (html) {
+  } else {
     const stageTwo = $current.querySelector('[data-stage-two-panel]');
     const stageOne = $current.querySelector('[data-stage-one-zone]');
     if (stageTwo) stageTwo.insertAdjacentHTML('afterend', html);
     else if (stageOne) stageOne.insertAdjacentHTML('afterend', html);
   }
-  bindRelatedSearch($current, item);
-  bindCompsActions($current);
+  bindStageThreeFlow($current, item);
+  bindUsedPriceGuide($current, item);
+  bindPurchaseReceipt($current, item);
   updateStageSlide();
+  lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
+  if (isStepThreeUnlocked(item)) {
+    scheduleComparisonFilter(item);
+    if (comparisonFilters.get(comparisonFilterKey(item, comps))?.status === 'done') void ensureUsedPriceGuide(item);
+    if (isStepThreeDone(item)) refreshStageFourSection(item);
+  } else {
+    syncStagePanels(item);
+  }
+}
+
+function refreshStageFourSection(item) {
+  const html = renderStageFourSection(item, comps);
+  const existing = $current.querySelector('[data-stage-four-panel]');
+  if (!html) {
+    existing?.remove();
+    updateStageSlide();
+    return;
+  }
+  if (existing) {
+    existing.outerHTML = html;
+  } else {
+    const stageThree = $current.querySelector('[data-stage-three-panel]');
+    const stageTwo = $current.querySelector('[data-stage-two-panel]');
+    if (stageThree) stageThree.insertAdjacentHTML('afterend', html);
+    else if (stageTwo) stageTwo.insertAdjacentHTML('afterend', html);
+  }
+  bindPurchaseReceipt($current, item);
+  updateStageSlide();
+}
+
+function refreshStageThreeSearchCard(item) {
+  const current = $current.querySelector('[data-stage-three-search-card]');
+  if (!current) {
+    refreshStageThreeSection(item);
+    return;
+  }
+  current.outerHTML = renderStageThreeSearchCard(item, comps);
+  const updated = $current.querySelector('[data-stage-three-search-card]');
+  bindStageThreeFlow(updated, item);
+  updateStageSlide();
+}
+
+function refreshStageThreeCompsBlock(item, opts = {}) {
+  const target = $current.querySelector('.stage-three-comps');
+  if (!target) {
+    refreshStageThreeSection(item);
+    return;
+  }
+  target.innerHTML = renderCompsBlock(item, comps);
+  updateStageSlide();
+  lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
+  if (opts.schedule !== false) scheduleComparisonFilter(item);
 }
 
 function refreshListingTextAnalysisCard(item) {
@@ -1740,6 +2932,7 @@ function refreshListingTextAnalysisCard(item) {
     renderListingTextAnalysisCard(item),
     '[data-listing-image-analysis]'
   );
+  maybeMarkStageTwoComplete(item);
   refreshStageThreeSection(item);
 }
 
@@ -1748,6 +2941,7 @@ function refreshListingImageAnalysisCard(item) {
   const panel = $current.querySelector('[data-stage-two-panel]');
   bindImageAnalysisSlider(panel, item);
   bindImageZoom(panel);
+  maybeMarkStageTwoComplete(item);
   refreshStageThreeSection(item);
 }
 
@@ -1777,7 +2971,6 @@ function refreshProductSummaryBlock(item, opts = {}) {
     bindScrollText(updated);
     bindProductSummaryRetry(updated, item);
     bindProductImageSearch(updated, item);
-    bindRelatedSearch(updated, item);
   }
   if (!refreshStageTwo) {
     refreshStageThreeSection(item);
@@ -1801,6 +2994,7 @@ function refreshProductSummaryBlock(item, opts = {}) {
     bindImageZoom($current);
     updateStageSlide();
   }
+  maybeMarkStageTwoComplete(item);
   refreshStageThreeSection(item);
 }
 
@@ -1831,10 +3025,18 @@ $btnHistoryClear?.addEventListener('click', () => {
   imageAnalysisIndexes.clear();
   imageAnalysisDirections.clear();
   stageTwoActiveKeys.clear();
+  stageThreeActiveKeys.clear();
+  stageThreeIsolatedRefreshKeys.clear();
   productRiskAnalyses.clear();
   listingTextAnalyses.clear();
   listingImageAnalyses.clear();
+  comparisonFilters.clear();
+  usedPriceGuides.clear();
+  purchaseReceipts.clear();
+  comparisonFilterTimers.clear();
   imageAnalysisPreviewedKeys.clear();
+  searchQueryRegenerations.clear();
+  stageThreeAutoQueryRetryCounts.clear();
   renderItem(null);
   renderHistoryList();
   setHistoryOpen(false);
@@ -1862,7 +3064,7 @@ function renderHistoryList() {
       return `<li class="history-row">
         <button type="button" data-key="${escapeAttr(key)}" class="${active.trim()}">
           <span class="hist-title">[${escapeHtml(item.platformLabel || item.platform)}] ${escapeHtml(item.title || '')}</span>
-          <span class="hist-meta">${escapeHtml(item.priceLabel || '')} · ${formatTime(item.exportedAt)}</span>
+          <span class="hist-meta">${escapeHtml([item.priceLabel || '', shippingLine(item), formatTime(item.exportedAt)].filter(Boolean).join(' · '))}</span>
         </button>
         <button type="button" class="history-delete" data-delete-key="${escapeAttr(key)}" aria-label="최근 매물 삭제">×</button>
       </li>`;
@@ -1894,10 +3096,17 @@ function renderHistoryList() {
       imageAnalysisIndexes.delete(key);
       imageAnalysisDirections.delete(key);
       stageTwoActiveKeys.delete(key);
+      stageThreeActiveKeys.delete(key);
+      stageThreeIsolatedRefreshKeys.delete(key);
       productRiskAnalyses.delete(key);
       listingTextAnalyses.delete(key);
       listingImageAnalyses.delete(key);
       imageAnalysisPreviewedKeys.delete(key);
+      searchQueryRegenerations.delete(key);
+      stageThreeAutoQueryRetryCounts.delete(key);
+      for (const filterKey of [...purchaseReceipts.keys()]) {
+        if (filterKey.startsWith(`${key}::`)) purchaseReceipts.delete(filterKey);
+      }
       if (selectedKey === key) {
         latest = history[0] || null;
         selectedKey = latest ? itemKey(latest) : null;
@@ -2023,6 +3232,7 @@ async function ensureListingTextAnalysis(item) {
   const summary = getProductSummaryState(item)?.summary || null;
   const riskAnalysis = productRiskAnalyses.get(key)?.analysis || null;
   listingTextAnalyses.set(key, { status: 'loading' });
+  if (selectedKey === key) refreshListingTextAnalysisCard(item);
 
   try {
     const data = await globalThis.UlsaAi.fetchListingTextAnalysis({
@@ -2030,6 +3240,7 @@ async function ensureListingTextAnalysis(item) {
       body: item.body || '',
       seller: item.seller || null,
       priceLabel: item.priceLabel || '',
+      shippingFeeLabel: item.shippingFeeLabel || '',
       productName: summary?.productName || fallbackSearchQuery(item),
       summary,
       riskAnalysis,
@@ -2042,7 +3253,7 @@ async function ensureListingTextAnalysis(item) {
     if (!analysis) {
       listingTextAnalyses.delete(key);
       persistAiCaches();
-      if (selectedKey === key) refreshStageThreeSection(item);
+      if (selectedKey === key) refreshListingTextAnalysisCard(item);
       return;
     }
     listingTextAnalyses.set(key, { status: 'done', analysis, source: 'ai' });
@@ -2051,6 +3262,7 @@ async function ensureListingTextAnalysis(item) {
   } catch (e) {
     listingTextAnalyses.delete(key);
     persistAiCaches();
+    if (selectedKey === key) refreshListingTextAnalysisCard(item);
   }
 }
 
@@ -2059,7 +3271,13 @@ async function ensureListingImageAnalysis(item) {
   if (!key) return;
   const existing = listingImageAnalyses.get(key);
   if (existing?.status === 'loading') return;
-  if (existing?.status === 'done' && existing.overlayVersion === 9) return;
+  if (existing?.status === 'done' && existing.overlayVersion === 11) {
+    if (selectedKey === key) {
+      refreshListingImageAnalysisCard(item);
+      previewListingImageAnalysis(item);
+    }
+    return;
+  }
   if (existing?.status === 'done') listingImageAnalyses.delete(key);
 
   const apiKey = getAiApiKey();
@@ -2092,7 +3310,7 @@ async function ensureListingImageAnalysis(item) {
       productName: summary?.productName || fallbackSearchQuery(item),
       apiKey,
     });
-    listingImageAnalyses.set(key, { status: 'done', analysis: data.analysis || {}, overlayVersion: 10 });
+    listingImageAnalyses.set(key, { status: 'done', analysis: data.analysis || {}, overlayVersion: 11 });
     persistAiCaches();
     if (selectedKey === key) {
       refreshListingImageAnalysisCard(item);
@@ -2109,6 +3327,8 @@ async function ensureListingImageAnalysis(item) {
 }
 
 function applyPayload(payload) {
+  const previousSelectedKey = selectedKey;
+  const hadRenderedItem = Boolean($current.querySelector('[data-stage-one-zone]'));
   latest = payload?.latest ?? latest;
   history = Array.isArray(payload?.history) ? payload.history : history;
   const selectedItem =
@@ -2124,8 +3344,19 @@ function applyPayload(payload) {
 
   if (selectedItem) {
     selectedKey = selectedItemKey;
-    renderItem(selectedItem, comps);
-    void ensureProductSummary(selectedItem);
+    if (hadRenderedItem && previousSelectedKey === selectedItemKey && relatedRequestedKeys.has(selectedItemKey)) {
+      const nextRenderKey = stageThreeCompsRenderKey(selectedItem, comps);
+      if (nextRenderKey && nextRenderKey !== lastStageThreeCompsRenderKey) {
+        if (stageThreeIsolatedRefreshKeys.has(selectedItemKey)) {
+          refreshStageThreeCompsBlock(selectedItem);
+        } else {
+          refreshStageThreeSection(selectedItem);
+        }
+      }
+    } else {
+      renderItem(selectedItem, comps);
+      void ensureProductSummary(selectedItem);
+    }
   } else if (!history.length) {
     renderItem(null);
   }
@@ -2154,11 +3385,12 @@ function initMain() {
     if (ev.source !== window) return;
     const d = ev.data;
     if (!d || d.type !== 'MARKET_SCRAPE_BRIDGE') return;
-    applyPayload({ latest: d.latest, history: d.history });
+    applyPayload({ latest: d.latest, history: d.history, comps: d.comps });
   });
 
   $btnRefresh.addEventListener('click', () => {
-    clearCurrentAiCaches();
+    clearCurrentAnalysisState();
+    renderItem(null);
     window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
   });
 

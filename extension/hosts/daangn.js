@@ -26,14 +26,52 @@
     }
   }
 
+  function bodyLooksTruncated(text) {
+    return /(?:\.{3}|…)\s*$/.test(String(text || '').trim());
+  }
+
+  function collectBodyCandidatesFromObject(value, out = [], path = '') {
+    if (!value || out.length > 80) return out;
+    if (typeof value === 'string') {
+      const keyHint = /content|description|body|text|article|detail|memo/i.test(path);
+      if (!keyHint) return out;
+      const clean = sanitizeDaangnBody(textFromHtml(value));
+      if (clean.length >= 8) out.push(clean);
+      return out;
+    }
+    if (Array.isArray(value)) {
+      value.slice(0, 80).forEach((item, idx) => collectBodyCandidatesFromObject(item, out, `${path}.${idx}`));
+      return out;
+    }
+    if (typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        if (/image|photo|thumbnail|avatar|profile|url|href|price|count|id$/i.test(key)) continue;
+        collectBodyCandidatesFromObject(child, out, path ? `${path}.${key}` : key);
+      }
+    }
+    return out;
+  }
+
+  function pickBestBodyCandidate(candidates) {
+    const unique = [...new Set(candidates.map((text) => sanitizeDaangnBody(text)).filter((text) => text.length >= 4))];
+    unique.sort((a, b) => {
+      const ta = bodyLooksTruncated(a) ? 1 : 0;
+      const tb = bodyLooksTruncated(b) ? 1 : 0;
+      if (ta !== tb) return ta - tb;
+      return b.length - a.length;
+    });
+    return unique[0] || '';
+  }
+
   function findProductInLoaderData(ld) {
     if (!ld || typeof ld !== 'object') return null;
+    const bodyCandidates = collectBodyCandidatesFromObject(ld);
     for (const [key, val] of Object.entries(ld)) {
       if (!val?.product?.title) continue;
-      if (/buy[._-]?sell|buy_sell/i.test(key)) return val.product;
+      if (/buy[._-]?sell|buy_sell/i.test(key)) return { ...val.product, _bodyCandidates: bodyCandidates };
     }
     for (const val of Object.values(ld)) {
-      if (val?.product?.title) return val.product;
+      if (val?.product?.title) return { ...val.product, _bodyCandidates: bodyCandidates };
     }
     return null;
   }
@@ -71,22 +109,88 @@
     return Boolean(extractItemIdFromUrl(canonical) || extractItemIdFromUrl(ogUrl));
   }
 
+  function decodedImageHint(url) {
+    let parsed;
+    try {
+      parsed = new URL(String(url || '').trim(), location.href);
+    } catch {
+      return String(url || '').toLowerCase();
+    }
+    let hint = `${parsed.hostname}${parsed.pathname}${parsed.search}`.toLowerCase();
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const next = decodeURIComponent(hint);
+        if (next === hint) break;
+        hint = next;
+      } catch {
+        break;
+      }
+    }
+    return hint;
+  }
+
+  function isDaangnArticleImageUrl(url) {
+    const hint = decodedImageHint(url);
+    return (
+      /karrotmarket\.com|gcp-karroter\.net|daangncdn|daangn\.com|cloudfront\.net/i.test(hint) &&
+      /\/origin\/article\//i.test(hint)
+    );
+  }
+
   function isListingImageUrl(url) {
-    const u = String(url || '').split(/[?#]/)[0];
-    if (!/^https?:\/\//i.test(u)) return false;
+    if (isDaangnArticleImageUrl(url)) return true;
+    let parsed;
+    try {
+      parsed = new URL(String(url || '').trim(), location.href);
+    } catch {
+      return false;
+    }
+    if (!/^https?:$/i.test(parsed.protocol)) return false;
+    const host = parsed.hostname.toLowerCase();
+    const path = `${parsed.pathname}${parsed.search}`.toLowerCase();
+    let decodedPath = path;
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const next = decodeURIComponent(decodedPath);
+        if (next === decodedPath) break;
+        decodedPath = next;
+      } catch {
+        break;
+      }
+    }
+    const imageHint = `${host}${decodedPath}`;
+    if (!/daangn|karrot|karroter|karrotmarket|cloudfront|daangncdn/i.test(host)) return false;
     if (
-      !/img\.kr\.gcp-karroter\.net|images\.daangn\.com|image\.daangn\.com|karrot-market|dnvefa72aowie\.cloudfront\.net|daangncdn/i.test(
-        u
+      /profile|avatar|user_profile|\/users\/|manner|emoji|\/static\/|\/icon|\/logo|\/banner|\/advert|thumbnail_seller|seller_profile/i.test(
+        decodedPath
       )
     )
       return false;
     if (
-      /profile|avatar|user_profile|\/users\/|manner|emoji|static\/|icon|logo|banner|advert|thumbnail_seller|seller/i.test(
-        u
+      /app[\s._-]*store|google[\s._-]*play|play[\s._-]*store|store[\s._-]*badge|play[\s._-]*badge|apple[\s._-]*badge|download[\s._-]*app|app[\s._-]*download/i.test(
+        imageHint
       )
     )
       return false;
-    return /\.(webp|jpg|jpeg|png)/i.test(u);
+    if (/\.svg(?:$|[?#&])/i.test(decodedPath)) return false;
+    if (/download|badge/i.test(decodedPath) && !/article|product|media|thumbnail|listing|buy-sell/i.test(decodedPath)) {
+      return false;
+    }
+    return true;
+  }
+
+  function isDaangnPromoImageUrl(url) {
+    if (isDaangnArticleImageUrl(url)) return false;
+    const hint = decodedImageHint(url);
+    return (
+      /app[\s._-]*store|google[\s._-]*play|play[\s._-]*store|store[\s._-]*badge|play[\s._-]*badge|apple[\s._-]*badge|download[\s._-]*app|app[\s._-]*download/i.test(
+        hint
+      ) ||
+      /\.svg(?:$|[?#&])/i.test(hint) ||
+      /\/_next\/static\/|\/static\/media\/|open[\s._-]*graph|opengraph|og[\s._-]*image|share[\s._-]*image|(?:^|[\/_.-])landing(?:[\/_.-]|$)|home[\s._-]*banner|(?:^|[\/_.-])intro(?:[\/_.-]|$)|(?:^|[\/_.-])brand(?:[\/_.-]|$)|(?:^|[\/_.-])marketing(?:[\/_.-]|$)|(?:^|[\/_.-])promotion(?:[\/_.-]|$)|(?:^|[\/_.-])promo(?:[\/_.-]|$)|(?:^|[\/_.-])download(?:[\/_.-]|$)|(?:^|[\/_.-])advert(?:[\/_.-]|$)|(?:^|[\/_.-])banner(?:[\/_.-]|$)/i.test(
+        hint
+      )
+    );
   }
 
   function mapImages(images) {
@@ -95,7 +199,7 @@
     for (const it of images) {
       const raw =
         typeof it === 'string' ? it : it?.url || it?.thumbnail || it?.imageUrl || it?.src || '';
-      if (raw && isListingImageUrl(raw)) out.push(String(raw).split(/[?#]/)[0]);
+      if (raw && isListingImageUrl(raw)) out.push(String(raw));
     }
     return [...new Set(out)];
   }
@@ -179,34 +283,37 @@
       }
     }
 
-    candidates.sort((a, b) => a.length - b.length);
-    for (const raw of candidates) {
-      const clean = sanitizeDaangnBody(raw);
-      if (clean.length >= 4) return clean;
-    }
+    const bestDom = pickBestBodyCandidate(candidates);
+    if (bestDom && !bodyLooksTruncated(bestDom)) return bestDom;
 
+    const fallbackCandidates = [bestDom];
     const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content')?.trim();
-    if (ogDesc) {
-      const clean = sanitizeDaangnBody(ogDesc);
-      if (clean.length >= 4) return clean;
+    if (ogDesc) fallbackCandidates.push(ogDesc);
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content')?.trim();
+    if (metaDesc) fallbackCandidates.push(metaDesc);
+    for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+      try {
+        const parsed = JSON.parse(script.textContent || '{}');
+        fallbackCandidates.push(...collectBodyCandidatesFromObject(parsed));
+      } catch {
+        /* ignore invalid structured data */
+      }
     }
-    return '';
+    return pickBestBodyCandidate(fallbackCandidates);
   }
 
   function pickBodyFromProduct(p) {
     const domBody = harvestBodyFromDom();
     let best = domBody;
 
+    const candidates = [domBody, ...(Array.isArray(p?._bodyCandidates) ? p._bodyCandidates : [])];
     for (const key of ['content', 'description', 'contentText', 'body', 'memo']) {
       const t = sanitizeDaangnBody(textFromHtml(p?.[key]));
       if (t.length < 4) continue;
-      if (!best || (t.length < best.length && t.length >= 4)) best = t;
-      else if (!best) best = t;
+      candidates.push(t);
     }
 
-    if (best && domBody) {
-      if (domBody.length >= 4 && domBody.length <= best.length * 0.85) return domBody;
-    }
+    best = pickBestBodyCandidate(candidates);
     return best || domBody || '';
   }
 
@@ -226,6 +333,7 @@
 
     const txt = document.body?.innerText || '';
     const priceM = txt.match(/([\d,]+)\s*원/);
+    const isFree = !priceM && txt.split('\n').some((line) => line.trim() === '나눔');
     const mannerM = txt.match(/(\d{2,3}(?:\.\d+)?)\s*°?\s*C/i);
     const reviewM = txt.match(/후기\s*([\d,]+)/);
 
@@ -244,7 +352,7 @@
       id: itemId,
       title,
       content: body,
-      price: priceM ? priceM[1].replace(/,/g, '') : '0',
+      price: isFree ? '나눔' : priceM ? priceM[1].replace(/,/g, '') : '',
       images: imgs,
       locationName: '',
       user: {
@@ -258,9 +366,25 @@
 
   function productToListing(p, itemId) {
     const u = p.user || {};
-    const priceRaw = String(p.price ?? '').replace(/,/g, '');
-    const priceNum = Number(priceRaw);
-    const isFree = priceRaw === '0' || p.price === 0;
+    const domPriceM = (document.body?.innerText || '').match(/([\d,]+)\s*원/);
+    const rawPrice = p.price === 0 && domPriceM ? domPriceM[1] : p.price;
+    const priceRaw = String(rawPrice ?? '').replace(/,/g, '');
+    const hasPriceRaw = priceRaw !== '';
+    const priceNum = hasPriceRaw ? Number(priceRaw) : NaN;
+    const isFree = ((hasPriceRaw && priceRaw === '0') || rawPrice === 0 || rawPrice === '나눔') && !domPriceM;
+    const body = pickBodyFromProduct(p);
+    const shipping = globalThis.MarketScrape.parseShippingInfo?.(
+      p.shippingFee,
+      p.shipping_fee,
+      p.deliveryFee,
+      p.delivery_fee,
+      p.shippingPrice,
+      p.deliveryPrice,
+      p.shippingFeeText,
+      p.deliveryFeeText,
+      body,
+      document.body?.innerText || ''
+    );
 
     let imageUrls = mapImages(p.images);
     if (!imageUrls.length && p._fromDom) imageUrls = harvestImagesFromDom();
@@ -270,9 +394,10 @@
       platformLabel: '당근마켓',
       itemId: String(p.id || itemId),
       title: String(p.title || '').trim(),
-      price: Number.isFinite(priceNum) ? priceNum : p.price,
-      priceLabel: isFree || p.price === '나눔' ? '나눔' : formatWon(priceNum),
-      body: pickBodyFromProduct(p),
+      price: Number.isFinite(priceNum) ? priceNum : rawPrice,
+      priceLabel: isFree || rawPrice === '나눔' ? '나눔' : Number.isFinite(priceNum) ? formatWon(priceNum) : '—',
+      ...(shipping || {}),
+      body,
       imageUrls,
       seller: {
         nickname: u.nickname || '',
@@ -296,13 +421,457 @@
     return globalThis.MarketScrape.isDaangnSearchUrl(url);
   }
 
+  function firstSearchSrcsetUrl(srcset) {
+    return (
+      String(srcset || '')
+        .split(',')
+        .map((part) => part.trim().split(/\s+/)[0])
+        .filter(Boolean)
+        .at(-1) || ''
+    );
+  }
+
+  function usableSearchImageUrl(raw) {
+    const value = String(raw || '').trim();
+    if (!value || /^data:/i.test(value) || /^blob:/i.test(value)) return '';
+    try {
+      const parsed = new URL(value, location.href);
+      const nested = parsed.searchParams.get('url') || parsed.searchParams.get('src');
+      if (nested && /daangn|karrot|karroter|karrotmarket|gcp-karroter|cloudfront|daangncdn/i.test(nested)) {
+        return new URL(nested, location.href).href;
+      }
+      return parsed.href;
+    } catch {
+      return value;
+    }
+  }
+
+  function collectSearchImgCandidates(img) {
+    if (!img) return [];
+    const out = [];
+    const push = (raw) => {
+      const value = String(raw || '').trim();
+      if (value) out.push(value);
+    };
+    for (const part of String(img.getAttribute('srcset') || '').split(',')) {
+      push(part.trim().split(/\s+/)[0]);
+    }
+    push(img.getAttribute('data-src'));
+    push(img.getAttribute('data-lazy'));
+    push(img.getAttribute('src'));
+    push(img.currentSrc);
+    push(img.src);
+    return out;
+  }
+
+  function pickArticleImageFromCandidates(candidates) {
+    for (const candidate of candidates) {
+      const url = usableSearchImageUrl(candidate);
+      if (isDaangnArticleImageUrl(url)) return url;
+    }
+    return '';
+  }
+
+  function imageFromSearchArticleRoot(root) {
+    if (!root?.querySelectorAll) return '';
+    const directThumbnail = root.querySelector('img[alt="thumbnail"]') || root.querySelector('img');
+    const thumbUrl = pickArticleImageFromCandidates(collectSearchImgCandidates(directThumbnail));
+    if (thumbUrl) return thumbUrl;
+
+    for (const img of root.querySelectorAll('img')) {
+      const url = pickArticleImageFromCandidates(collectSearchImgCandidates(img));
+      if (url) return url;
+    }
+
+    for (const source of root.querySelectorAll('source[srcset]')) {
+      const url = usableSearchImageUrl(firstSearchSrcsetUrl(source.getAttribute('srcset')));
+      if (isDaangnArticleImageUrl(url)) return url;
+    }
+    return '';
+  }
+
+  function imageFromRemixHtml(html, baseUrl = location.href) {
+    let ctx = parseRemixContextFromString(String(html || ''));
+    if (!ctx?.state?.loaderData) {
+      try {
+        const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+        for (const script of doc.querySelectorAll('script:not([src])')) {
+          const text = script.textContent || '';
+          if (!text.includes('__remixContext')) continue;
+          ctx = parseRemixContextFromString(text);
+          if (ctx?.state?.loaderData) break;
+        }
+      } catch {
+        return '';
+      }
+    }
+    const product = findProductInLoaderData(ctx?.state?.loaderData);
+    const imgs = mapImages(product?.images);
+    return imgs.find((url) => isDaangnArticleImageUrl(url)) || imgs[0] || '';
+  }
+
+  function imageFromHtmlText(html, baseUrl = location.href) {
+    const text = String(html || '');
+    const candidates = new Set();
+    const take = (raw) => {
+      const value = String(raw || '').replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+      try {
+        candidates.add(new URL(value, baseUrl).href);
+      } catch {
+        candidates.add(value);
+      }
+    };
+
+    for (const match of text.matchAll(/https?:\\?\/\\?\/[^"'<>\\\s]+\/origin\/article\/[^"'<>\\\s]+/gi)) {
+      take(match[0]);
+    }
+    for (const match of text.matchAll(/(?:https?:)?\/\/[^"'<>\s]+\/origin\/article\/[^"'<>\s]+/gi)) {
+      take(match[0]);
+    }
+    for (const candidate of candidates) {
+      const url = usableSearchImageUrl(candidate);
+      if (isDaangnArticleImageUrl(url)) return url;
+    }
+    return '';
+  }
+
+  function isDaangnCategoryPath(pathname) {
+    return /\/buy-sell\/s\/?$/i.test(String(pathname || ''));
+  }
+
+  function extractSearchItemIdFromPath(pathname) {
+    const m = String(pathname || '').match(DETAIL_PATH_RE);
+    return m?.[1] || null;
+  }
+
+  function liveSearchImageForItem(item) {
+    const itemId = String(item?.itemId || '').trim();
+    const itemUrl = String(item?.url || '').split('?')[0];
+    if (!itemId && !itemUrl) return '';
+
+    for (const card of document.querySelectorAll('[data-gtm="search_article"]')) {
+      const link =
+        (card.matches?.('a[href*="/buy-sell/"]') ? card : null) ||
+        card.querySelector?.('a[href*="/buy-sell/"]');
+      if (!link) continue;
+      let href = '';
+      let path = '';
+      try {
+        href = new URL(link.href, location.origin).href.split('?')[0];
+        path = new URL(link.href, location.origin).pathname;
+      } catch {
+        continue;
+      }
+      if (isDaangnCategoryPath(path)) continue;
+      const cardItemId = extractSearchItemIdFromPath(path);
+      const matchesItem =
+        (itemUrl && href === itemUrl) || (itemId && (cardItemId === itemId || href.includes(itemId)));
+      if (!matchesItem) continue;
+      const url = imageFromSearchArticleRoot(card) || imageFromSearchArticleRoot(link);
+      if (url) return url;
+    }
+    return '';
+  }
+
+  function imageFromSearchHtml(html, baseUrl = location.href) {
+    const absoluteImageUrl = (raw) => {
+      try {
+        return new URL(String(raw || '').trim(), baseUrl).href;
+      } catch {
+        return String(raw || '').trim();
+      }
+    };
+    try {
+      const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+      for (const img of doc.querySelectorAll('img')) {
+        for (const part of String(img.getAttribute('srcset') || '').split(',')) {
+          const raw = part.trim().split(/\s+/)[0];
+          const url = absoluteImageUrl(raw);
+          if (raw && isDaangnArticleImageUrl(url)) return url;
+        }
+        for (const raw of [img.getAttribute('data-src'), img.getAttribute('src')]) {
+          const url = absoluteImageUrl(raw);
+          if (raw && isDaangnArticleImageUrl(url)) return url;
+        }
+      }
+    } catch {
+      /* ignore malformed detail html */
+    }
+    return '';
+  }
+
+  async function fetchSearchListingImage(url) {
+    try {
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) return '';
+      const html = await res.text();
+      const imageUrl = imageFromSearchHtml(html, url) || imageFromRemixHtml(html, url) || imageFromHtmlText(html, url);
+      return imageUrl ? new URL(imageUrl, url).href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function notifyCompsImagePatch() {
+    try {
+      chrome.runtime.sendMessage({ type: 'COMPS_IMAGES_PATCHED', platform: 'daangn' }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch {
+      /* extension reloaded */
+    }
+  }
+
+  async function fillMissingSearchImages(items) {
+    const targets = items.filter((item) => !item.imageUrl && item.url).slice(0, 12);
+    if (!targets.length) return items;
+
+    for (const delay of [0, 1200, 2800]) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      for (const item of targets) {
+        if (item.imageUrl) continue;
+        const live = liveSearchImageForItem(item);
+        if (live) item.imageUrl = live;
+      }
+    }
+
+    await Promise.all(
+      targets.map(async (item) => {
+        if (item.imageUrl) return;
+        const imageUrl = await fetchSearchListingImage(item.url);
+        if (imageUrl && isDaangnArticleImageUrl(imageUrl)) item.imageUrl = imageUrl;
+      })
+    );
+
+    return items;
+  }
+
+  function enhanceMissingSearchImages(items, meta = {}) {
+    if (!items.some((item) => !item.imageUrl && item.url) || !globalThis.MarketScrape?.saveComps) return;
+
+    window.setTimeout(() => {
+      void fillMissingSearchImages(items).then((nextItems) => {
+        if (!nextItems.some((item) => item.imageUrl)) return;
+        void globalThis.MarketScrape.saveComps('daangn', nextItems, meta).then(() => {
+          notifyCompsImagePatch();
+        });
+      });
+    }, 0);
+  }
+
   function harvestSearchListings() {
     const MS = globalThis.MarketScrape;
     const items = [];
     const seen = new Set();
     const query = MS.getSearchQueryFromUrl?.(location.href) || '';
+    const imageFromSearchArticle = imageFromSearchArticleRoot;
+    const usableImageUrl = usableSearchImageUrl;
+    const firstSrcsetUrl = firstSearchSrcsetUrl;
+    const imageUrlLooksLikeAppBadge = (url = '') => {
+      return isDaangnPromoImageUrl(url);
+    };
+    const imageLooksLikeAppBadge = (img, url = '') => {
+      const label = [
+        url,
+        img?.alt,
+        img?.title,
+        img?.getAttribute?.('aria-label'),
+        img?.getAttribute?.('data-testid'),
+        img?.className,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      if (imageUrlLooksLikeAppBadge(label)) return true;
+      if (/app\s*store|google\s*play|play\s*store|download|앱\s*다운로드|앱스토어|구글플레이/i.test(label)) {
+        return true;
+      }
+      const width = img?.naturalWidth || img?.width || 0;
+      const height = img?.naturalHeight || img?.height || 0;
+      return width > 0 && height > 0 && width / height > 2.15;
+    };
+    const imageFromImg = (img, opts = {}) => {
+      const candidates = [
+        firstSrcsetUrl(img?.srcset),
+        img?.currentSrc,
+        img?.src,
+        img?.getAttribute?.('data-src'),
+        img?.getAttribute?.('data-lazy'),
+        img?.getAttribute?.('data-original'),
+      ];
+      for (const candidate of candidates) {
+        const url = usableImageUrl(candidate);
+        if (!url || !isListingImageUrl(url)) continue;
+        if (!opts.relaxed && imageLooksLikeAppBadge(img, url)) continue;
+        if (opts.relaxed && (imageLooksLikeAppBadge(img, url) || imageUrlLooksLikeAppBadge(url))) continue;
+        return url;
+      }
+      return '';
+    };
+    const listingCardForAnchor = (a) => {
+      let node = a;
+      let fallback = a.closest('article, li, div') || a;
+      for (let i = 0; i < 9 && node; i += 1) {
+        const text = (node.innerText || '').trim();
+        const hasPrice = /[\d,]+\s*원|(^|\s)나눔(\s|$)/.test(text);
+        const hasImage =
+          Boolean(node.querySelector?.('img, source[srcset], [style*="background-image"]')) ||
+          /url\(/i.test(String(node.getAttribute?.('style') || ''));
+        if (hasImage) fallback = node;
+        if (hasPrice && hasImage) return node;
+        node = node.parentElement;
+      }
+      return fallback;
+    };
+    const nearbyImageForAnchor = (a) => {
+      const rect = a.getBoundingClientRect?.();
+      if (!rect) return '';
+      const ax = rect.left + rect.width / 2;
+      const ay = rect.top + rect.height / 2;
+      let best = null;
+      for (const img of document.querySelectorAll('img')) {
+        const url = imageFromImg(img, { relaxed: true });
+        if (!url || !isDaangnArticleImageUrl(url)) continue;
+        const r = img.getBoundingClientRect?.();
+        if (!r || r.width < 32 || r.height < 32) continue;
+        const ix = r.left + r.width / 2;
+        const iy = r.top + r.height / 2;
+        const distance = Math.abs(ix - ax) + Math.abs(iy - ay);
+        const verticalOverlap = Math.max(0, Math.min(rect.bottom, r.bottom) - Math.max(rect.top, r.top));
+        if (distance > 520 && verticalOverlap <= 0) continue;
+        if (!best || distance < best.distance) best = { url, distance };
+      }
+      return best?.url || '';
+    };
+    const searchImageRoot = (a) => {
+      let node = a;
+      for (let i = 0; i < 7 && node; i += 1) {
+        const text = (node.innerText || '').trim();
+        const hasImage =
+          Boolean(node.querySelector?.('img, source[srcset], [style*="background-image"]')) ||
+          /url\(/i.test(String(node.getAttribute?.('style') || ''));
+        if (hasImage) return node;
+        node = node.parentElement;
+      }
+      return a.closest('article, li, div') || a;
+    };
+    const searchTextRoot = (a) => {
+      let node = a;
+      for (let i = 0; i < 7 && node; i += 1) {
+        const text = (node.innerText || '').trim();
+        if (text && (text.includes('원') || /(^|\s)나눔(\s|$)/.test(text) || /판매완료|예약중|거래완료/.test(text))) return node;
+        node = node.parentElement;
+      }
+      return a.closest('article, li, div') || a;
+    };
+    const searchImageScore = (url, img) => {
+      if (!url || !isListingImageUrl(url) || isDaangnPromoImageUrl(url)) return -1;
+      let score = 0;
+      const hint = decodedImageHint(url);
+      if (isDaangnArticleImageUrl(url)) score += 140;
+      else if (/\/origin\/article\//i.test(hint)) score += 120;
+      if (/karrotmarket\.com/i.test(hint)) score += 50;
+      const alt = String(img?.getAttribute?.('alt') || '').trim().toLowerCase();
+      if (alt === 'thumbnail') score += 90;
+      const nw = img?.naturalWidth || img?.width || 0;
+      const nh = img?.naturalHeight || img?.height || 0;
+      if (nw >= 40 && nh >= 40) score += Math.min(36, Math.round((nw * nh) / 4800));
+      return score;
+    };
+    const considerSearchImage = (best, url, img) => {
+      const score = searchImageScore(url, img);
+      if (score < 0) return best;
+      if (!best || score > best.score) return { url, score };
+      return best;
+    };
+    const imageFromCard = (card) => {
+      if (!card?.querySelectorAll) return '';
+      let best = null;
+      const considerUrl = (url, img) => {
+        best = considerSearchImage(best, url, img);
+      };
+      for (const picture of card.querySelectorAll('picture')) {
+        const sourceUrl = usableImageUrl(
+          firstSrcsetUrl(picture.querySelector('source[srcset]')?.getAttribute('srcset'))
+        );
+        considerUrl(sourceUrl, picture.querySelector('img'));
+        for (const img of picture.querySelectorAll('img')) {
+          considerUrl(imageFromImg(img, { relaxed: true }), img);
+        }
+      }
+      for (const img of card.querySelectorAll('img')) {
+        considerUrl(imageFromImg(img, { relaxed: true }), img);
+      }
+      const sourceUrl = usableImageUrl(firstSrcsetUrl(card.querySelector('source[srcset]')?.getAttribute('srcset')));
+      considerUrl(sourceUrl, null);
+      for (const el of [card, ...card.querySelectorAll('[style*="background-image"]')]) {
+        const style = String(el.getAttribute('style') || '');
+        const match = style.match(/url\(["']?([^"')]+)["']?\)/i);
+        considerUrl(usableImageUrl(match?.[1]), null);
+      }
+      return best?.url || '';
+    };
 
-    for (const a of document.querySelectorAll('a[href*="/kr/buy-sell/"]')) {
+    const pushSearchItem = (link, scope) => {
+      if (!link || MS.isInsideNoiseSection(link)) return;
+      let path;
+      try {
+        path = new URL(link.href, location.origin).pathname;
+      } catch {
+        return;
+      }
+      if (isDaangnCategoryPath(path)) return;
+      const itemId = extractSearchItemIdFromPath(path);
+      if (!itemId || seen.has(itemId)) return;
+
+      const card = scope || link.closest('[data-gtm="search_article"], article') || searchTextRoot(link);
+      const text = (card.innerText || '').trim();
+      const imgAlt = String(card.querySelector?.('img')?.alt || '').trim();
+      const titleFromAlt = imgAlt && !/^thumbnail$/i.test(imgAlt) && imgAlt.length >= 3 ? imgAlt : '';
+      const title = (
+        link.getAttribute('aria-label') ||
+        link.getAttribute('title') ||
+        text.split('\n').find((line) => !/^(?:[\d,]+\s*원|나눔)$/.test(line.trim())) ||
+        titleFromAlt ||
+        ''
+      )
+        .trim()
+        .slice(0, 120);
+      if (!MS.listingTitleMatchesSearchQuery?.(title, query)) return;
+
+      const imageUrl =
+        imageFromSearchArticleRoot(scope) ||
+        imageFromSearchArticleRoot(card) ||
+        imageFromSearchArticleRoot(link);
+
+      const statusM = text.match(/판매완료|예약중|거래완료/);
+      const saleStatus = statusM ? statusM[0] : '';
+      seen.add(itemId);
+      const priceM = text.match(/([\d,]+)\s*원/);
+      const isFree = !priceM && text.split('\n').some((line) => line.trim() === '나눔');
+      const price = MS.parsePriceNumber(priceM?.[1]);
+
+      items.push({
+        platform: 'daangn',
+        platformLabel: '당근마켓',
+        itemId,
+        title: title || `매물 ${itemId}`,
+        price: isFree ? 0 : price,
+        priceLabel: isFree ? '나눔' : price != null ? formatWon(price) : priceM?.[0] || '—',
+        url: link.href.split('?')[0],
+        imageUrl: imageUrl || '',
+        ...(saleStatus ? { saleStatus } : {}),
+      });
+    };
+
+    for (const scope of document.querySelectorAll('[data-gtm="search_article"]')) {
+      if (scope.parentElement?.closest('[data-gtm="search_article"]')) continue;
+      const link =
+        (scope.matches?.('a[href*="/buy-sell/"]') ? scope : null) ||
+        scope.querySelector?.('a[href*="/buy-sell/"]');
+      pushSearchItem(link, scope);
+    }
+
+    for (const a of document.querySelectorAll('a[href*="/buy-sell/"]')) {
       if (MS.isInsideNoiseSection(a)) continue;
       let path;
       try {
@@ -310,31 +879,10 @@
       } catch {
         continue;
       }
-      const m = path.match(DETAIL_PATH_RE);
-      if (!m || seen.has(m[1])) continue;
-
-      const card = a.closest('article, li, div') || a;
-      const text = (card.innerText || '').trim();
-      const title = (a.getAttribute('aria-label') || text.split('\n')[0] || '').trim().slice(0, 120);
-      if (!MS.listingTitleMatchesSearchQuery?.(title, query)) continue;
-
-      const statusM = text.match(/판매완료|예약중|거래완료/);
-      const saleStatus = statusM ? statusM[0] : '';
-
-      seen.add(m[1]);
-      const priceM = text.match(/([\d,]+)\s*원/);
-      const price = MS.parsePriceNumber(priceM?.[1]);
-
-      items.push({
-        platform: 'daangn',
-        platformLabel: '당근마켓',
-        itemId: m[1],
-        title: title || `매물 ${m[1]}`,
-        price,
-        priceLabel: price != null ? formatWon(price) : priceM?.[0] || '—',
-        url: a.href.split('?')[0],
-        ...(saleStatus ? { saleStatus } : {}),
-      });
+      if (isDaangnCategoryPath(path)) continue;
+      const itemId = extractSearchItemIdFromPath(path);
+      if (!itemId || seen.has(itemId)) continue;
+      pushSearchItem(a, a.closest('[data-gtm="search_article"], article'));
     }
     return items;
   }
@@ -346,6 +894,7 @@
     isDetailPage,
     isSearchPage,
     harvestSearchListings,
+    enhanceSearchListings: fillMissingSearchImages,
     guessItemId: () => extractItemIdFromUrl(),
     async fetchListing(itemId) {
       const p = await getProductFromPage();

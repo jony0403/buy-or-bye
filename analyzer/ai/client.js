@@ -16,7 +16,7 @@
   }
 
   /**
-   * @param {{ title: string, body?: string, imageUrls?: string[], apiKey: string, model?: string }} p
+   * @param {{ title: string, body?: string, imageUrls?: string[], maxQueries?: number, apiKey: string, model?: string }} p
    * @returns {Promise<{ query: string }>}
    */
   UlsaAi.fetchSearchQuery = async (p) => {
@@ -33,6 +33,7 @@
         title: p.title || '',
         body: p.body || '',
         imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : [],
+        maxQueries: p.maxQueries || 1,
       }),
     });
     const text = await res.text();
@@ -89,6 +90,9 @@
       }),
     });
     const text = await res.text();
+    if (res.status === 404) {
+      throw new Error('최종 판단 영수증 API를 찾지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도하세요.');
+    }
     let data;
     try {
       data = JSON.parse(text);
@@ -166,7 +170,7 @@
   };
 
   /**
-   * @param {{ title: string, body?: string, seller?: object, priceLabel?: string, productName?: string, summary?: object, riskAnalysis?: object, apiKey: string, model?: string }} p
+   * @param {{ title: string, body?: string, seller?: object, priceLabel?: string, shippingFeeLabel?: string, productName?: string, summary?: object, riskAnalysis?: object, apiKey: string, model?: string }} p
    * @returns {Promise<{ analysis: { sellerVerdict: string, bodyVerdict: string, questions: string[], redFlags: string[], overall: string } }>}
    */
   UlsaAi.fetchListingTextAnalysis = async (p) => {
@@ -184,6 +188,7 @@
         body: p.body || '',
         seller: p.seller || null,
         priceLabel: p.priceLabel || '',
+        shippingFeeLabel: p.shippingFeeLabel || '',
         productName: p.productName || '',
         summary: p.summary || null,
         riskAnalysis: p.riskAnalysis || null,
@@ -221,6 +226,111 @@
         body: p.body || '',
         imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : [],
         productName: p.productName || '',
+      }),
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+    }
+    if (!res.ok) {
+      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+    }
+    return data;
+  };
+
+  /**
+   * @param {{ title: string, body?: string, productName?: string, summary?: object, candidates: object[], apiKey: string, model?: string }} p
+   * @returns {Promise<{ analysis: { matches: Array<{ key: string, reason?: string }>, rejected?: Array<object> } }>}
+   */
+  UlsaAi.filterComparisonListings = async (p) => {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(`http://${location.hostname}:${port}/api/comparison-filter`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': p.apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        title: p.title || '',
+        body: p.body || '',
+        productName: p.productName || '',
+        summary: p.summary || null,
+        candidates: Array.isArray(p.candidates) ? p.candidates : [],
+      }),
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+    }
+    if (!res.ok) {
+      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+    }
+    return data;
+  };
+
+  /**
+   * @param {{ current: object, summary?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @returns {Promise<{ guide: object }>}
+   */
+  UlsaAi.fetchUsedPriceGuide = async (p) => {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(`http://${location.hostname}:${port}/api/used-price-guide`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': p.apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        current: p.current || {},
+        summary: p.summary || null,
+        comparison: p.comparison || null,
+      }),
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+    }
+    if (!res.ok) {
+      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+    }
+    return data;
+  };
+
+  /**
+   * @param {{ current: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, usedPriceGuide?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @returns {Promise<{ receipt: object }>}
+   */
+  UlsaAi.fetchPurchaseReceipt = async (p) => {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(`http://${location.hostname}:${port}/api/purchase-receipt`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': p.apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        current: p.current || {},
+        summary: p.summary || null,
+        riskAnalysis: p.riskAnalysis || null,
+        listingTextAnalysis: p.listingTextAnalysis || null,
+        listingImageAnalysis: p.listingImageAnalysis || null,
+        usedPriceGuide: p.usedPriceGuide || null,
+        comparison: p.comparison || null,
       }),
     });
     const text = await res.text();

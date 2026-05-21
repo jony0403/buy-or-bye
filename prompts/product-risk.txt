@@ -6,7 +6,7 @@
 제품명: {{productName}}
 제품 설명: {{description}}
 제조사/판매처: {{makerOrSeller}}
-신품 시세: {{newPrice}}
+신품 가격 참고: {{newPrice}}
 판매글 제목: {{title}}
 판매글 본문: {{body}}
 

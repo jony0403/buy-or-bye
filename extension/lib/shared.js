@@ -2,6 +2,7 @@
 (() => {
   const Root = globalThis.MarketScrape || (globalThis.MarketScrape = {});
   const adapters = (Root.adapters = Root.adapters || []);
+  const SEARCH_PLATFORMS = ['bunjang', 'daangn', 'joongna'];
   const INSTANCE_ID = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
   Root.__activeInstanceId = INSTANCE_ID;
 
@@ -21,6 +22,47 @@
     return `${x.toLocaleString('ko-KR')}원`;
   };
 
+  Root.parseShippingInfo = (...values) => {
+    const feeFromMatch = (raw, unit = '') => {
+      const n = Number(String(raw || '').replace(/,/g, ''));
+      if (!Number.isFinite(n)) return null;
+      return unit === '천' && n < 1000 ? n * 1000 : n;
+    };
+    const feeResult = (fee) => ({
+      shippingFee: Math.max(0, fee),
+      shippingFeeLabel: fee > 0 ? `배송비 ${Root.formatWon(fee)}` : '배송비 무료',
+    });
+
+    for (const value of values) {
+      if (value == null || value === '') continue;
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return feeResult(value);
+      }
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      const numericOnly = text.match(/^([0-9][0-9,]*)$/);
+      if (numericOnly) return feeResult(Number(numericOnly[1].replace(/,/g, '')));
+      if (/배송비\s*(?:무료|포함)|무료\s*배송|택배비\s*(?:무료|포함)|택포/i.test(text)) {
+        return { shippingFee: 0, shippingFeeLabel: '배송비 무료/포함' };
+      }
+      if (/(?:배송비|택배비|배송료|운송비)\s*(?:별도|착불|구매자\s*부담)|(?:착불|배송비\s*별도)/i.test(text)) {
+        return { shippingFeeLabel: '배송비 별도/착불' };
+      }
+      const match =
+        text.match(/(?:배송비|택배비|배송료|운송비)\s*[:：]?\s*([0-9][0-9,]*)(천)?\s*원/i) ||
+        text.match(/(?:일반|반값|편의점|우체국|GS|CU)?\s*택배(?:비|비용|배송비)?\s*[:：]?\s*([0-9][0-9,]*)(천)?\s*원/i) ||
+        text.match(/([0-9][0-9,]*)(천)?\s*원\s*(?:배송비|택배비|배송료|운송비)/i);
+      if (match) {
+        const fee = feeFromMatch(match[1], match[2]);
+        if (fee != null) return feeResult(fee);
+      }
+      if (/택배\s*(?:거래|가능)|배송\s*(?:가능|문의)/i.test(text)) {
+        return { shippingFeeLabel: '택배 거래 가능 · 배송비 미확인' };
+      }
+    }
+    return null;
+  };
+
   Root.formatSellerLine = (seller, platform) => {
     if (!seller) return '';
     const bits = [];
@@ -29,10 +71,18 @@
     if (seller.isProshop) bits.push('프로상점');
     if (platform === 'daangn' && Number.isFinite(seller.mannerScore))
       bits.push(`매너온도 ${seller.mannerScore}°C`);
+    if (platform === 'joongna' && Number.isFinite(seller.trustScore)) {
+      bits.push(`신뢰지수 ${seller.trustScore.toLocaleString('ko-KR')}${Number.isFinite(seller.trustMax) ? `/${seller.trustMax.toLocaleString('ko-KR')}` : ''}`);
+    }
+    if (platform === 'joongna' && seller.isSafePayment) bits.push('안심결제 가능');
+    if (platform === 'joongna' && Number.isFinite(seller.safePaymentCount))
+      bits.push(`안심결제 ${seller.safePaymentCount.toLocaleString('ko-KR')}건`);
     if (platform !== 'daangn' && Number.isFinite(seller.reviewRating))
       bits.push(`평점 ${seller.reviewRating}`);
     if (Number.isFinite(seller.reviewCount) && seller.reviewCount >= 0)
       bits.push(`리뷰 ${seller.reviewCount.toLocaleString('ko-KR')}개`);
+    if (platform === 'joongna' && Number.isFinite(seller.followerCount))
+      bits.push(`단골 ${seller.followerCount.toLocaleString('ko-KR')}명`);
     if (Number.isFinite(seller.salesCount) && seller.salesCount >= 0)
       bits.push(`판매·거래 ${seller.salesCount.toLocaleString('ko-KR')}건`);
     if (seller.location) bits.push(seller.location);
@@ -163,7 +213,7 @@
     <button class="btn btn-dark" type="button" id="msSearchComps">키워드 후보 만들기</button>
   </div>
   <div class="keywords" id="msKeywords"></div>
-  <p class="hint">번개장터·당근 <strong>상세 페이지</strong>에서 동작합니다.</p>
+  <p class="hint">번개장터·당근·중고나라 <strong>상세 페이지</strong>에서 동작합니다.</p>
   <div class="err" id="msErr"></div>
 </div>`;
 
@@ -205,6 +255,7 @@
       '',
       `**플랫폼:** ${u.platformLabel}`,
       `**가격:** ${u.priceLabel}`,
+      ...(u.shippingFeeLabel ? [`**배송비:** ${u.shippingFeeLabel}`, ''] : ['']),
       '',
     ];
     const sline = Root.formatSellerLine(u.seller, u.platform);
@@ -293,7 +344,7 @@
       showToast('분석 웹으로 전송 중...');
       const r = await refreshForSendWithRetry(cachedListing);
       if (!r?.ok) {
-        showToast('매물 정보를 읽는 중입니다. 잠시 후 다시 눌러주세요.');
+        hideToast();
         return;
       }
       let secondsLeft = 3;
@@ -310,7 +361,7 @@
         void chrome.runtime.sendMessage({ type: 'OPEN_ANALYZER_TAB' });
       }, 3000);
     } catch {
-      showToast('매물 정보를 읽는 중입니다. 잠시 후 다시 눌러주세요.');
+      hideToast();
     } finally {
       sendInFlight = false;
     }
@@ -352,17 +403,13 @@
       : [String(data.query || '').trim()].filter(Boolean);
     const queries = [];
     const seen = new Set();
-    const noiseWords =
-      '새상품|미개봉|단순\\s*개봉|개봉만|개봉|급처|네고|택포|직거래|택배|배송|교환|환불|판매|팝니다|팔아요|구매|구입|인증|가능|불가|원하시면|원하신다면|찾는다면|좋습니다|드립니다|드려요|상태|컨디션|외관|기스|찍힘|하자|사용감|사용|실사용|시착|착용|보관|구성품|구성|포함|더스트|관련텍|부속|부분가죽|색상|사이즈|저렴|깨끗|오늘|방금';
     for (const item of rawQueries) {
       const q = String(item || '')
         .replace(/```(?:json)?/gi, ' ')
         .replace(/[`{}[\]"]/g, ' ')
-        .replace(new RegExp(`\\([^)]*(?:${noiseWords})[^)]*\\)`, 'gi'), ' ')
-        .replace(new RegExp(`\\s*(?:${noiseWords}).*`, 'i'), '')
         .replace(/\s+/g, ' ')
         .trim();
-      if (!q || /^json$/i.test(q) || /queries\s*:/.test(q) || /검색결과|사진과|판매자/.test(q)) continue;
+      if (!q || /^json$/i.test(q) || /queries\s*:/.test(q)) continue;
       const key = q.replace(/\s+/g, '').toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -377,7 +424,7 @@
     const err = shadow?.getElementById('msErr');
     const opened = await chrome.runtime.sendMessage({ type: 'OPEN_SEARCH_TABS', query });
     if (!opened?.ok) throw new Error(opened?.error || '검색 탭 열기 실패');
-    if (err) err.textContent = `검색어 「${query}」로 번개·당근 탭을 열었습니다. 수집 후 자동으로 닫힙니다.`;
+    if (err) err.textContent = `검색어 「${query}」로 번개·당근·중고나라 탭을 열었습니다. 수집 후 자동으로 닫힙니다.`;
   }
 
   function renderKeywordChoices(queries) {
@@ -434,7 +481,9 @@
       return;
     }
 
-    shadow.getElementById('msPrice').textContent = data.priceLabel;
+    shadow.getElementById('msPrice').textContent = data.shippingFeeLabel
+      ? `${data.priceLabel} · ${data.shippingFeeLabel}`
+      : data.priceLabel;
     shadow.getElementById('msTitle').textContent = data.title;
     shadow.getElementById('msSeller').textContent =
       Root.formatSellerLine(data.seller, data.platform) || '(판매자 정보 없음)';
@@ -457,7 +506,7 @@
     ensureHost();
     const adapter = Root.getAdapter();
     if (!adapter) {
-      render(null, '번개장터·당근마켓 상세 페이지에서만 동작합니다.');
+      render(null, '번개장터·당근마켓·중고나라 상세 페이지에서만 동작합니다.');
       latest = null;
       return { ok: false, error: '지원하지 않는 사이트' };
     }
@@ -523,6 +572,8 @@
                 platformLabel: latest.platformLabel,
                 title: latest.title,
                 priceLabel: latest.priceLabel,
+                shippingFee: latest.shippingFee,
+                shippingFeeLabel: latest.shippingFeeLabel || '',
                 body: latest.body,
                 imageUrls: latest.imageUrls || [],
                 imageCount: latest.imageUrls?.length ?? 0,
@@ -543,11 +594,14 @@
               sendResponse({ ok: false, error: '검색 결과 페이지가 아닙니다.' });
               break;
             }
-            const items = ad.harvestSearchListings?.() || [];
+            let items = ad.harvestSearchListings?.() || [];
             const q =
               new URL(location.href).searchParams.get('q') ||
               new URL(location.href).searchParams.get('search') ||
               '';
+            if (typeof ad.enhanceSearchListings === 'function') {
+              items = await ad.enhanceSearchListings(items, { searchUrl: location.href, query: q });
+            }
             await Root.saveComps(ad.id, items, { searchUrl: location.href, query: q });
             sendResponse({ ok: true, count: items.length, platform: ad.id });
             break;
@@ -570,6 +624,8 @@
                   title: latest.title,
                   price: latest.price,
                   priceLabel: latest.priceLabel,
+                  shippingFee: latest.shippingFee,
+                  shippingFeeLabel: latest.shippingFeeLabel || '',
                   body: latest.body,
                   imageUrls: latest.imageUrls,
                   seller: sellerClean,
@@ -630,17 +686,26 @@
     if (flags.at && Date.now() - flags.at > 3 * 60 * 1000) return;
 
     let items = [];
-    for (let i = 0; i < 4; i += 1) {
-      await new Promise((r) => setTimeout(r, i === 0 ? 2000 : 1500));
+    const firstWaitMs = ad.id === 'daangn' ? 3500 : 2000;
+    const retryWaitMs = ad.id === 'daangn' ? 2000 : 1500;
+    for (let i = 0; i < 5; i += 1) {
+      await new Promise((r) => setTimeout(r, i === 0 ? firstWaitMs : retryWaitMs));
       items = ad.harvestSearchListings();
-      if (items.length) break;
+      const withImage = items.filter((item) => item.imageUrl).length;
+      if (items.length && (ad.id !== 'daangn' || withImage > 0 || i >= 4)) break;
     }
     const q =
       new URL(location.href).searchParams.get('q') ||
       new URL(location.href).searchParams.get('search') ||
       '';
+    if (typeof ad.enhanceSearchListings === 'function') {
+      items = await ad.enhanceSearchListings(items, { searchUrl: location.href, query: q });
+    }
     await Root.saveComps(ad.id, items, { searchUrl: location.href, query: q });
-    const next = { ...flags, [ad.id]: false };
+    const latest = await chrome.storage.local.get(['marketScrapeAutoCollect']);
+    const currentFlags = latest.marketScrapeAutoCollect || flags;
+    const next = { ...currentFlags, [ad.id]: false };
     await chrome.storage.local.set({ marketScrapeAutoCollect: next });
+    if (SEARCH_PLATFORMS.every((id) => !next[id])) await Root.markCompsCollected?.();
   };
 })();

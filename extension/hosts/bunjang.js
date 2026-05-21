@@ -120,6 +120,37 @@
     };
   }
 
+  function extractShippingInfo(p, body = '') {
+    const trade = p?.trade || {};
+    const shippingSpecFees = Object.values(trade.shippingSpecs || {})
+      .map((spec) => spec?.fee)
+      .filter((fee) => fee != null && fee !== '');
+    const tradeTexts = Array.isArray(p?.trades)
+      ? p.trades.map((item) => {
+          const contents = Array.isArray(item?.contents) ? item.contents.join(' ') : item?.contents || '';
+          return [item?.title, contents].filter(Boolean).join(' ');
+        })
+      : [];
+    return MS.parseShippingInfo?.(
+      trade.freeShipping === true ? 0 : null,
+      ...shippingSpecFees,
+      p?.shippingFee,
+      p?.shipping_fee,
+      p?.deliveryFee,
+      p?.delivery_fee,
+      p?.deliveryCharge,
+      p?.delivery_charge,
+      p?.shippingPrice,
+      p?.shipping_price,
+      p?.deliveryPrice,
+      p?.deliveryPriceText,
+      p?.shippingFeeText,
+      p?.deliveryFeeText,
+      ...tradeTexts,
+      body
+    );
+  }
+
   function isListingImageUrl(url, pid) {
     const n = normalizeMediaUrl(url);
     return Boolean(n && n.includes(`/product/${pid}_`));
@@ -165,6 +196,8 @@
   }
 
   function toListing(pid, p, payload, source, sourceLabel, warn) {
+    const body = pickBody(p);
+    const shipping = extractShippingInfo(p, body);
     return {
       platform: 'bunjang',
       platformLabel: '번개장터',
@@ -172,7 +205,8 @@
       title: String(p.name || '').trim(),
       price: p.price,
       priceLabel: formatWon(p.price),
-      body: pickBody(p),
+      ...(shipping || {}),
+      body,
       imageUrls: collectImageUrlsFromPayload(p),
       seller: extractSeller(payload),
       source,
@@ -187,7 +221,8 @@
     const domBody = harvestBodyFromDom();
     if (!body || (domBody && domBody.length >= 4 && domBody.length < Math.max(body.length, 120))) body = domBody;
     if (!imgs.length) imgs = harvestImagesFromDom(pid);
-    return { ...data, body: body.trim(), imageUrls: imgs };
+    const domShipping = data.shippingFeeLabel ? null : MS.parseShippingInfo?.(document.body?.innerText || '', domBody, body);
+    return { ...data, ...(domShipping || {}), body: body.trim(), imageUrls: imgs };
   }
 
   async function fetchViaApi(pid) {
@@ -212,6 +247,7 @@
     const priceText = document.body.innerText.match(/[\d,]+\s*원/)?.[0] || '';
     const imgs = harvestImagesFromDom(pid);
     const body = harvestBodyFromDom();
+    const shipping = MS.parseShippingInfo?.(document.body?.innerText || '', body);
     if (!title && !imgs.length && !body) return null;
     return enrichDom(
       {
@@ -221,6 +257,7 @@
         title: title || '(제목 없음)',
         price: null,
         priceLabel: priceText || '—',
+        ...(shipping || {}),
         body: body || '',
         imageUrls: imgs,
         seller: null,
@@ -239,7 +276,32 @@
     const items = [];
     const seen = new Set();
     const query = MS.getSearchQueryFromUrl?.(location.href) || '';
-    const add = (href, titleHint, priceHint) => {
+    const cardImageUrl = (card) => {
+      const img = card?.querySelector?.('img');
+      return String(img?.currentSrc || img?.src || img?.getAttribute?.('data-src') || '').trim();
+    };
+    const cardTitle = (a, card) => {
+      const candidates = [
+        a.getAttribute('title'),
+        a.getAttribute('aria-label'),
+        ...String(card?.innerText || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean),
+        a.textContent?.trim(),
+      ];
+      return (
+        candidates.find(
+          (line) =>
+            line &&
+            line.length >= 2 &&
+            !/^[\d,]+\s*원$/.test(line) &&
+            !/^상품\s*\d+$/i.test(line) &&
+            !/^(찜|좋아요|조회|광고|AD)$/i.test(line)
+        ) || ''
+      );
+    };
+    const add = (href, titleHint, priceHint, imageUrl = '') => {
       const m = String(href || '').match(/\/(?:products|posts)\/(\d+)/);
       if (!m || seen.has(m[1])) return;
       const title = String(titleHint || '').trim().slice(0, 120) || `매물 ${m[1]}`;
@@ -255,6 +317,7 @@
         price,
         priceLabel: price != null ? formatWon(price) : priceHint || '—',
         url: url.startsWith('http') ? url : `https://m.bunjang.co.kr/products/${m[1]}`,
+        ...(imageUrl ? { imageUrl } : {}),
       });
     };
 
@@ -264,7 +327,7 @@
       const text = card?.innerText || '';
       if (/광고|AD\b/i.test(text.slice(0, 30))) continue;
       const priceM = text.match(/([\d,]+)\s*원/);
-      add(a.href, a.getAttribute('title') || a.textContent?.trim() || text.split('\n')[0], priceM?.[0]);
+      add(a.href, cardTitle(a, card), priceM?.[0], cardImageUrl(card));
     }
     return items;
   }

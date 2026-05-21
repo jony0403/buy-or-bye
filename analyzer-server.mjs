@@ -35,6 +35,13 @@ const PROMPTS = {
   productSummary: await loadPrompt('product-summary.txt'),
   productRisk: await loadPrompt('product-risk.txt'),
   productRiskJson: await loadPrompt('product-risk-json.txt'),
+  productInfoLookup: await loadPrompt('product-info-lookup.txt'),
+  listingTextAnalysis: await loadPrompt('listing-text-analysis.txt'),
+  comparisonFilter: await loadPrompt('comparison-filter.txt'),
+  usedPriceGuide: await loadPrompt('used-price-guide.txt'),
+  purchaseReceipt: await loadPrompt('purchase-receipt.txt'),
+  listingImageAnalysis: await loadPrompt('listing-image-analysis.txt'),
+  directAiChat: await loadPrompt('direct-ai-chat.txt'),
 };
 
 function renderPrompt(template, vars) {
@@ -153,47 +160,8 @@ function buildProductRiskJsonPrompt({ productName, researchText }) {
   });
 }
 
-/** AI 검색어가 제목 앞부분만 잘린 것 같으면 제목 기반으로 보정 */
-function sanitizeQueryFromListing(query, title) {
-  const q = String(query || '').trim();
-  const t = String(title || '')
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!q || !t || q.length >= t.length) return q;
-  if (t.startsWith(q) && t.length > q.length + 2) {
-    const compactTitle = stripSellerNoiseFromQuery(t);
-    if (compactTitle && compactTitle.length > q.length && compactTitle.startsWith(q)) return compactTitle;
-  }
-  return q;
-}
-
-function stripUsedMarketWord(raw) {
-  return String(raw || '')
-    .replace(/(^|\s)중고(?=\s|$)/g, ' ')
-    .replace(/중고$/g, '')
-    .replace(/(^|\s)가격(?=\s|$)/g, ' ')
-    .replace(/가격$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function stripSellerNoiseFromQuery(raw) {
-  let s = String(raw || '');
-  const noiseWords =
-    '새상품|미개봉|단순\\s*개봉|개봉만|개봉|급처|네고|택포|직거래|택배|배송|교환|환불|판매|팝니다|팔아요|구매|구입|인증|가능|불가|원하시면|원하신다면|찾는다면|좋습니다|드립니다|드려요|상태|컨디션|외관|기스|찍힘|하자|사용감|사용|실사용|시착|착용|보관|구성품|구성|포함|더스트|관련텍|부속|부분가죽|색상|사이즈|가격|저렴|깨끗|오늘|방금';
-  s = s
-    .replace(new RegExp(`\\([^)]*(?:${noiseWords})[^)]*\\)`, 'gi'), ' ')
-    .replace(new RegExp(`（[^）]*(?:${noiseWords})[^）]*）`, 'gi'), ' ');
-  s = s
-    .replace(new RegExp(`\\s*(?:${noiseWords}).*`, 'i'), '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return s;
-}
-
-function normalizeQueryCandidate(raw, title) {
-  let s = String(raw || '')
+function normalizeQueryCandidate(raw) {
+  const s = String(raw || '')
     .replace(/```(?:json)?/gi, ' ')
     .replace(/```/g, ' ')
     .replace(/^[-*•\d.]+\s*/, '')
@@ -202,29 +170,10 @@ function normalizeQueryCandidate(raw, title) {
     .trim();
   if (!s || /^json$/i.test(s) || /^[{\[]/.test(s) || /["']?queries["']?\s*:/.test(s)) return '';
   if (/^\]?\}?$/.test(s) || /^[}\]],?$/.test(s)) return '';
-  s = stripSellerNoiseFromQuery(s)
-    .replace(/(^|\s)중고(?=\s|$)/g, ' ')
-    .replace(/중고$/g, '')
-    .replace(/\([^)]{4,}\)/g, ' ')
-    .replace(/（[^）]{4,}）/g, ' ')
-    .replace(/[~!@#]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (title && s === String(title).replace(/\s+/g, ' ').trim()) {
-    const compact = stripSellerNoiseFromQuery(s);
-    if (compact.length >= 2) s = compact;
-  }
-  s = sanitizeQueryFromListing(clampQuery(s), title);
-  s = stripUsedMarketWord(s);
-  s = clampQuery(s);
-  if (!s || s === '중고') return '';
-  if (!/[\uAC00-\uD7A3]/.test(s)) return '';
-  if (/[.!?。]|입니다|검색결과|검색 결과|사진과|판매자/.test(s)) return '';
-  if (s.length < 2) return '';
   return s;
 }
 
-function parseQueryCandidates(text, title, maxQueries = 3) {
+function parseQueryCandidates(text, _title, maxQueries = 3) {
   const max = Math.min(Math.max(Number(maxQueries) || 3, 1), 3);
   const raw = String(text || '').trim();
   const candidates = [];
@@ -261,7 +210,7 @@ function parseQueryCandidates(text, title, maxQueries = 3) {
   const out = [];
   const seen = new Set();
   for (const item of candidates) {
-    const q = normalizeQueryCandidate(item, title);
+    const q = normalizeQueryCandidate(item);
     const key = q.replace(/\s+/g, '').toLowerCase();
     if (!q || seen.has(key)) continue;
     seen.add(key);
@@ -269,64 +218,10 @@ function parseQueryCandidates(text, title, maxQueries = 3) {
     if (out.length >= max) break;
   }
 
-  const fallback = normalizeQueryCandidate(title, title);
-  if (!out.length && fallback) out.push(fallback);
   return out;
 }
 
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
-
-function clampQuery(q) {
-  const max = MAX_SEARCH_QUERY_CHARS;
-  const OVER = 48; // max 경계가 한글 낱말·모델명 중간일 때 끝까지 보완(상한 초과 허용폭)
-  const H = /[\uAC00-\uD7A3]/;
-
-  let s = String(q || '')
-    .split(/\r?\n/)[0]
-    .replace(/^["'`「」]|["'`「」]$/g, '')
-    .trim();
-  if (!s) return '중고';
-  if (s.length <= max) return s;
-
-  /** slice(max) 직후 글자부터 공백 전까지 한 덩어리(한글 연속·숫자 등)면 끝까지 포함 */
-  let end = max;
-  while (end < s.length && end < max + OVER) {
-    const prev = s[end - 1];
-    const curr = s[end];
-    if (!curr) break;
-    if (/\s/.test(curr)) break;
-    const pH = H.test(prev);
-    const cH = H.test(curr);
-    if (pH && cH) {
-      end += 1;
-      continue;
-    }
-    if (pH && /\d/.test(curr)) {
-      end += 1;
-      continue;
-    }
-    if (/\d/.test(prev) && /\d/.test(curr)) {
-      end += 1;
-      continue;
-    }
-    if (/[A-Za-z]/.test(prev) && /[A-Za-z]/.test(curr)) {
-      end += 1;
-      continue;
-    }
-    break;
-  }
-
-  let out = s.slice(0, end).trim();
-
-  if (out.length > max + OVER) {
-    let hard = s.slice(0, max);
-    const sp = hard.lastIndexOf(' ');
-    if (sp > max * 0.35) hard = hard.slice(0, sp);
-    out = hard.replace(/\s+\S*$/, '').trim() || hard.trim();
-  }
-
-  return out || '중고';
-}
 
 const MAX_INLINE_IMAGES = 3;
 const LISTING_IMAGE_ANALYSIS_BATCH_SIZE = 10;
@@ -357,6 +252,7 @@ function refererForImageUrl(u) {
     const h = new URL(u).hostname.toLowerCase();
     if (h.includes('bunjang')) return 'https://m.bunjang.co.kr/';
     if (h.includes('daangn') || h.includes('karrot') || h.includes('gcp-karroter')) return 'https://www.daangn.com/';
+    if (h.includes('joongna')) return 'https://web.joongna.com/';
     return 'https://m.bunjang.co.kr/';
   } catch {
     return 'https://m.bunjang.co.kr/';
@@ -365,6 +261,18 @@ function refererForImageUrl(u) {
 
 function optimizeImageUrlForAi(url) {
   let s = String(url || '').trim();
+  try {
+    const parsed = new URL(s);
+    const host = parsed.hostname.toLowerCase();
+    if (host.includes('joongna') && parsed.pathname.includes('/media/original/')) {
+      if (!parsed.searchParams.has('w') && !parsed.searchParams.has('width') && !parsed.searchParams.has('size')) {
+        parsed.searchParams.set('w', '800');
+      }
+      return parsed.href;
+    }
+  } catch {
+    /* keep raw */
+  }
   // 번개 이미지는 파일명에 폭이 들어오는 경우가 많아, 제품 식별에는 충분한 400px급으로 낮춘다.
   s = s.replace(/_w\d+\.(webp|jpg|jpeg|png)(?=$|[?#])/i, '_w400.$1');
   s = s.replace(/([?&](?:w|width|size)=)\d+/i, '$1400');
@@ -525,19 +433,6 @@ async function fetchListingImageSources(urls, maxImages = Infinity) {
   return sources;
 }
 
-function looksUsableQuery(query, title) {
-  const q = normalizeQueryCandidate(query, title);
-  if (!q) return false;
-  if (q.length > 48) return false;
-  if (/\s(?:판매|팝니다|구매|구입|배송|택배|상태|사용|개봉|인증)\b/i.test(q)) return false;
-  return true;
-}
-
-function looksUsableCandidates(text, title, maxQueries = 3) {
-  const queries = parseQueryCandidates(text, title, maxQueries);
-  return queries.length > 0 && queries.some((q) => looksUsableQuery(q, title));
-}
-
 function extractGeminiText(data) {
   const cand = data?.candidates?.[0];
   if (!cand) return '';
@@ -583,53 +478,6 @@ function productImageProxyUrl(raw) {
   return u ? `/api/image-proxy?url=${encodeURIComponent(u)}` : '';
 }
 
-function productImageTerms(...values) {
-  const stop = new Set([
-    '중고',
-    '제품',
-    '이미지',
-    '한글판',
-    '한국판',
-    '정품',
-    '카드',
-    '키',
-    '닌텐도',
-    '스위치',
-    'switch',
-    'nintendo',
-  ]);
-  const text = values
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-    .replace(/[()[\]{}"'`「」:：,，]/g, ' ');
-  const words = text.match(/[a-z0-9]{3,}|[\uac00-\ud7a3]{2,}/g) || [];
-  const out = [];
-  const seen = new Set();
-  for (const word of words) {
-    if (stop.has(word) || seen.has(word)) continue;
-    seen.add(word);
-    out.push(word);
-    if (out.length >= 4) break;
-  }
-  return out;
-}
-
-function scoreProductImageResult(result, terms) {
-  const hay = `${result?.title || ''} ${result?.url || ''} ${result?.image || ''}`.toLowerCase();
-  let score = 0;
-  for (const term of terms) {
-    if (hay.includes(term)) score += 4;
-  }
-  const w = Number(result?.width) || 0;
-  const h = Number(result?.height) || 0;
-  if (w >= 300 && h >= 300) score += 2;
-  if (w >= 700 && h >= 700) score += 1;
-  if (/official|공식|store|shop|nintendo|pokemon|포켓몬/.test(hay)) score += 1;
-  if (/adservice|doubleclick|sprite|logo|icon|avatar|profile|banner/i.test(hay)) score -= 5;
-  return score;
-}
-
 async function isReachableProductImage(raw) {
   const u = normalizeProductImageUrl(raw);
   if (!u) return false;
@@ -655,7 +503,7 @@ async function isReachableProductImage(raw) {
   }
 }
 
-async function fetchDuckDuckGoImageUrls(query, terms = []) {
+async function fetchDuckDuckGoImageUrls(query) {
   const q = String(query || '').trim();
   if (!q) return [];
   const headers = {
@@ -682,14 +530,10 @@ async function fetchDuckDuckGoImageUrls(query, terms = []) {
   if (!res.ok) return [];
   const data = await res.json().catch(() => ({}));
   const results = Array.isArray(data?.results) ? data.results : [];
-  const ranked = results
-    .map((x) => ({ ...x, imageUrl: normalizeProductImageUrl(x.image || x.thumbnail), score: scoreProductImageResult(x, terms) }))
-    .filter((x) => x.imageUrl && (!terms.length || x.score > 0))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 12);
+  const ranked = results.map((x) => normalizeProductImageUrl(x.image || x.thumbnail)).filter(Boolean).slice(0, 12);
   const out = [];
-  for (const item of ranked) {
-    if (await isReachableProductImage(item.imageUrl)) out.push(item.imageUrl);
+  for (const imageUrl of ranked) {
+    if (await isReachableProductImage(imageUrl)) out.push(imageUrl);
     if (out.length >= 4) break;
   }
   return uniqueImageUrls(out);
@@ -805,9 +649,9 @@ function parseProductSummary(text, fallbackTitle) {
     .trim();
   const searchQuery =
     (parsedQueries.length ? parseQueryCandidates(JSON.stringify({ queries: parsedQueries }), productName || fallbackTitle, 4)[0] : '') ||
-    normalizeQueryCandidate(parsed.searchQuery, productName || fallbackTitle) ||
-    normalizeQueryCandidate(productName, fallbackTitle) ||
-    normalizeQueryCandidate(fallbackTitle, fallbackTitle);
+    normalizeQueryCandidate(parsed.searchQuery) ||
+    normalizeQueryCandidate(productName) ||
+    normalizeQueryCandidate(fallbackTitle);
   const searchQueries = parseQueryCandidates(
     JSON.stringify({ queries: parsedQueries.length ? parsedQueries : [searchQuery] }),
     productName || fallbackTitle,
@@ -1037,7 +881,7 @@ async function runWebGroundedSearchQuery(apiKey, model, title, body, inlineParts
       maxOutputTokens: 160,
       timeoutMs: GEMINI_FAST_TIMEOUT_MS,
     });
-    if (looksUsableQuery(fastText, title)) return { text: fastText, pipeline: 'multimodal_fast' };
+    if (normalizeQueryCandidate(fastText)) return { text: fastText, pipeline: 'multimodal_fast' };
   } catch (e) {
     console.warn('[search-query] 빠른 멀티모달 실패, Google Search 재시도:', e instanceof Error ? e.message : e);
   }
@@ -1062,7 +906,7 @@ async function runWebGroundedSearchCandidates(apiKey, model, title, body, inline
       maxOutputTokens: 220,
       timeoutMs: GEMINI_FAST_TIMEOUT_MS,
     });
-    if (looksUsableCandidates(fastText, title, maxQueries)) {
+    if (parseQueryCandidates(fastText, title, maxQueries).length) {
       return { text: fastText, pipeline: 'multimodal_candidates_fast' };
     }
   } catch (e) {
@@ -1108,36 +952,7 @@ async function runProductIdentify(apiKey, model, title, body, inlineParts) {
 async function runProductInfoLookup(apiKey, model, productName) {
   const name = String(productName || '').trim();
   if (!name) return '';
-  const prompt = `
-제품명 "${name}"을 Google 검색으로 확인해서 구매 판단용 제품 정보를 JSON으로 정리하세요.
-이 단계에서는 제품 식별을 다시 하지 말고, 주어진 제품명에 대한 제품 정보만 찾으세요.
-모든 가격과 판매처 정보는 한국 기준을 우선합니다. 한국 닌텐도, 국내 공식몰, 국내 쇼핑몰, 국내 기사/판매 페이지를 우선 검색하세요.
-newPrice는 정가만 쓰지 말고 다나와, 네이버쇼핑, 국내 쇼핑몰 검색 결과를 참고한 현재 신품 판매 시세/가격대를 우선하세요.
-가격 근거가 약하거나 검색 결과가 서로 크게 다르면 단일 가격처럼 확정하지 말고 "약 n원대", "약 n~m원대", "국내 시세 확인 필요"처럼 보수적으로 적으세요.
-가능하면 다나와 상품/검색 결과 URL을 newPriceSourceUrl에 넣으세요.
-
-반드시 JSON만 출력하세요:
-{
-  "productName": "공식 또는 통용 제품명",
-  "newPrice": "한국 기준 신품 정가/판매가/가격대",
-  "newPriceSourceUrl": "다나와 상품/검색 결과 URL 또는 빈 문자열",
-  "description": "제품 장르·용도·특징을 1~2문장으로 설명",
-  "makerOrSeller": "한국 기준 제조사·퍼블리셔·공식 판매처·대표 국내 판매처",
-  "searchQuery": "같은 제품을 찾기 좋은 제품명 중심 검색어",
-  "searchQueries": ["검색어1", "검색어2"],
-  "productImageUrl": "빈 문자열"
-}
-
-빈 값을 최소화하세요. 정확한 가격을 모르더라도 국내 검색 결과 기반의 가격대나 정가를 적으세요.
-newPrice는 출시 정가보다 현재 국내 신품 판매 시세/최저가/가격대를 우선하세요.
-검색 결과의 가격 신뢰도가 낮으면 단일 가격 대신 가격대 또는 확인 필요 문구로 적으세요.
-다나와에서 가격을 확인했거나 다나와 검색 결과가 있으면 newPriceSourceUrl에 넣으세요.
-해외 가격은 newPrice에 쓰지 마세요. 국내 가격을 못 찾으면 "국내 가격 확인 어려움"이라고 쓰세요.
-description에는 "식별했습니다" 같은 처리 결과 문구를 쓰지 말고, 제품 자체의 장르·용도·특징을 쓰세요.
-searchQuery/searchQueries에는 "중고", "가격", 상태, 지역, 거래조건을 넣지 말고 브랜드·라인·모델·품목 중심으로만 쓰세요.
-searchQueries는 쉼표로 이어 붙이지 말고 배열 항목으로 분리하세요.
-검색어는 한국어 표기를 우선하고, 영문명만 단독으로 쓰지 마세요.
-`;
+  const prompt = renderPrompt(PROMPTS.productInfoLookup, { productName: name });
   return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
     useGoogleSearch: true,
     temperature: 0.15,
@@ -1167,40 +982,207 @@ async function runProductRiskAnalysis(apiKey, model, payload) {
 }
 
 async function runListingTextAnalysis(apiKey, model, payload) {
-  const prompt = `
-중고 매물의 판매자 정보와 판매글 본문을, 앞 단계에서 식별한 제품 정보와 관련 이슈/고질병 분석 결과까지 종합해서 분석하세요.
-이 단계의 목적은 질문 생성이 아니라 "판매글이 중요한 리스크를 언급했는지/빠뜨렸는지/말하지 않은 부분 때문에 판단이 흐려지는지"를 논리적으로 추론하는 것입니다.
-예: 구성품이 필요한 제품인데 본문에 구성품 언급이 없으면 구성품 설명 누락, 특정 고질병이 있는데 판매자가 해당 상태를 언급하지 않으면 리스크 대응 설명 누락, 가격이 신품가 대비 애매하면 가격 근거 불충분처럼 판단하세요.
-과장하지 말고, 본문에 근거가 없으면 단정 대신 "언급 없음", "확인 필요"로 표현하세요.
-뻔한 일반론(직거래 권장, 사기 조심, 구성품 확인 같은 단독 문장)은 피하고, 반드시 이 매물의 제품명·본문 표현·앞 단계 이슈 중 최소 하나에 연결해 쓰세요.
-현재 날짜, 출시일, 미래 시점, 예약/출시 예정 여부를 임의로 만들지 마세요. 본문이나 앞 단계 요약에 명시되지 않은 "2026년", "향후", "출시 전", "미래 시점" 같은 표현은 쓰지 마세요.
-제품 세대·모델명도 임의로 바꾸지 마세요. 주어진 제품명과 판매글 제목/본문의 표기를 그대로 기준으로 삼으세요.
-sellerVerdict는 평점/판매건수를 칭찬하는 데서 끝내지 말고, 그 지표가 본문 신뢰도 판단에 어떤 한계가 있는지도 함께 보세요.
-판매자 정보가 평점·리뷰·판매건수처럼 화면에서 이미 보이는 지표뿐이어도 숫자를 반복하지 말고, 판매자 성격(전문 판매자/일반 판매자 추정)과 본문 설명 품질 사이의 불일치나 신뢰 한계를 AI 판단으로 짧게 쓰세요.
-bodyVerdict는 본문에 실제로 있는 표현을 1개 이상 근거로 삼고, 앞 단계 리스크 중 본문이 다루지 않은 항목을 구체적으로 짚으세요.
-각 문장은 화면에 그대로 보여줄 수 있도록 핵심 근거와 판단을 함께 적으세요.
-
-제품명: ${String(payload.productName || '')}
-제품 요약(JSON): ${JSON.stringify(payload.summary || null)}
-앞 단계 제품 이슈/고질병(JSON): ${JSON.stringify(payload.riskAnalysis || null)}
-제목: ${String(payload.title || '')}
-가격: ${String(payload.priceLabel || '')}
-판매자 정보(JSON): ${JSON.stringify(payload.seller || null)}
-본문:
-${String(payload.body || '').slice(0, 6000)}
-
-반드시 JSON만 출력하세요:
-{
-  "sellerVerdict": "판매자 지표와 본문 신뢰도를 연결한 짧은 판단 1문장",
-  "bodyVerdict": "본문에서 실제로 말한 내용과 말하지 않은 내용을 제품 이슈/고질병과 대조한 판단 1~2문장",
-  "redFlags": ["이 매물 본문에서 빠진 핵심 설명 또는 애매한 표현"],
-  "overall": "본문·판매자·제품 리스크를 합친 전체 판단 1문장"
-}
-`;
+  const prompt = renderPrompt(PROMPTS.listingTextAnalysis, {
+    productName: payload.productName || '',
+    summaryJson: JSON.stringify(payload.summary || null),
+    riskAnalysisJson: JSON.stringify(payload.riskAnalysis || null),
+    title: payload.title || '',
+    priceLabel: payload.priceLabel || '',
+    shippingFeeLabel: payload.shippingFeeLabel || '',
+    sellerJson: JSON.stringify(payload.seller || null),
+    body: String(payload.body || '').slice(0, 6000),
+  });
   return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
     responseMimeType: 'application/json',
     temperature: 0.18,
     maxOutputTokens: 1600,
+    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+  });
+}
+
+async function runComparisonFilter(apiKey, model, payload) {
+  const candidates = (Array.isArray(payload.candidates) ? payload.candidates : [])
+    .slice(0, 16)
+    .map((item, index) => ({
+      index,
+      key: String(item.key || item.url || `${item.platform || ''}:${item.itemId || index}`),
+      platform: item.platformLabel || item.platform || '',
+      title: item.title || '',
+      priceLabel: item.priceLabel || '',
+      url: item.url || '',
+      saleStatus: item.saleStatus || '',
+      query: item.query || '',
+    }));
+  const prompt = renderPrompt(PROMPTS.comparisonFilter, {
+    productName: payload.productName || '',
+    title: payload.title || '',
+    body: String(payload.body || '').replace(/\s+/g, ' ').slice(0, 800),
+    summaryJson: JSON.stringify(payload.summary || null),
+    candidatesJson: JSON.stringify(candidates),
+  });
+  return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+    responseMimeType: 'application/json',
+    temperature: 0.05,
+    maxOutputTokens: 1200,
+    timeoutMs: GEMINI_FAST_TIMEOUT_MS,
+  });
+}
+
+function parseComparisonFilter(text) {
+  const parsed = parseJsonObject(text);
+  const matches = Array.isArray(parsed.matches)
+    ? parsed.matches
+        .map((item) => ({
+          key: String(item?.key || '').trim(),
+          reason: String(item?.reason || '').replace(/\s+/g, ' ').trim(),
+        }))
+        .filter((item) => item.key)
+    : [];
+  return {
+    matches,
+    rejected: Array.isArray(parsed.rejected) ? parsed.rejected : [],
+    parseOk: Array.isArray(parsed.matches),
+  };
+}
+
+function normalizeConditionPrices(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      condition: String(item?.condition || '').replace(/\s+/g, ' ').trim(),
+      priceLabel: String(item?.priceLabel || '').replace(/\s+/g, ' ').trim(),
+      comment: String(item?.comment || '').replace(/\s+/g, ' ').trim(),
+    }))
+    .filter((item) => item.condition || item.priceLabel || item.comment)
+    .slice(0, 6);
+}
+
+function parseUsedPriceGuide(text) {
+  const parsed = parseJsonObject(text);
+  return {
+    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '상태별 중고 가격 참고표')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    summary: String(parsed.summary || recoverJsonStringField(text, 'summary') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    conditionPrices: normalizeConditionPrices(parsed.conditionPrices),
+    currentAssessment: String(parsed.currentAssessment || recoverJsonStringField(text, 'currentAssessment') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    recommendedAction: String(parsed.recommendedAction || recoverJsonStringField(text, 'recommendedAction') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    confidence: String(parsed.confidence || recoverJsonStringField(text, 'confidence') || '낮음')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    sourceNote: String(parsed.sourceNote || recoverJsonStringField(text, 'sourceNote') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    parseOk: Boolean(Object.keys(parsed).length),
+  };
+}
+
+async function runUsedPriceGuide(apiKey, model, payload) {
+  const prompt = renderPrompt(PROMPTS.usedPriceGuide, {
+    currentJson: JSON.stringify(payload.current || null),
+    summaryJson: JSON.stringify(payload.summary || null),
+    comparisonJson: JSON.stringify(payload.comparison || null),
+  });
+  return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+    useGoogleSearch: true,
+    temperature: 0.2,
+    maxOutputTokens: 2200,
+    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+  });
+}
+
+function normalizeReceiptList(items, limit = 4) {
+  return (Array.isArray(items) ? items : [])
+    .map((x) => String(x || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function parsePurchaseReceipt(text) {
+  const parsed = parseJsonObject(text);
+  const verdict = String(parsed.verdict || 'hold').toLowerCase();
+  return {
+    verdict: ['buy', 'negotiate', 'hold', 'pass'].includes(verdict) ? verdict : 'hold',
+    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '구매 판단 보류')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    summary: String(parsed.summary || recoverJsonStringField(text, 'summary') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    fairPriceLabel: String(parsed.fairPriceLabel || recoverJsonStringField(text, 'fairPriceLabel') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    negotiationPriceLabel: String(parsed.negotiationPriceLabel || recoverJsonStringField(text, 'negotiationPriceLabel') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    maxBuyPriceLabel: String(parsed.maxBuyPriceLabel || recoverJsonStringField(text, 'maxBuyPriceLabel') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    priceReason: String(parsed.priceReason || recoverJsonStringField(text, 'priceReason') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    riskBalance: String(parsed.riskBalance || recoverJsonStringField(text, 'riskBalance') || '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    positives: normalizeReceiptList(parsed.positives, 4),
+    cautions: normalizeReceiptList(parsed.cautions, 4),
+    disclaimer:
+      String(parsed.disclaimer || recoverJsonStringField(text, 'disclaimer') || '').replace(/\s+/g, ' ').trim() ||
+      '이 영수증은 AI가 제한된 화면 정보와 수집된 비교 매물을 바탕으로 만든 참고 의견입니다. 가격은 감정가나 확정 기준이 아니라 구매 판단용 참고자료이며, 실제 하자·구성품·거래 조건은 직접 확인해야 합니다.',
+    parseOk: Boolean(Object.keys(parsed).length),
+  };
+}
+
+function applyComparisonReliabilityToReceipt(receipt, comparison = {}, usedPriceGuide = null) {
+  if (usedPriceGuide?.headline || usedPriceGuide?.summary || Array.isArray(usedPriceGuide?.conditionPrices)) return receipt;
+  const matchedCount = Number(comparison?.matchedCount) || 0;
+  const pricedSampleCount = Number(comparison?.pricedSampleCount) || 0;
+  const minCount = Number(comparison?.minReliableMatchedCount) || 5;
+  const reliable = comparison?.isPriceReliable !== false && pricedSampleCount >= minCount;
+  if (reliable) return receipt;
+
+  const reason = '같은 제품으로 판별된 비교 매물의 가격 표본이 부족해 가격은 제한적인 참고자료로만 볼 수 있습니다.';
+  return {
+    ...receipt,
+    verdict: receipt.verdict === 'pass' ? 'pass' : 'hold',
+    fairPriceLabel: '가격 참고 제한',
+    negotiationPriceLabel: '표본 부족',
+    maxBuyPriceLabel: '표본 부족',
+    priceReason: receipt.priceReason ? `${reason} ${receipt.priceReason}` : reason,
+    summary: receipt.summary ? `${receipt.summary} 다만 ${reason}` : reason,
+    cautions: normalizeReceiptList([reason, ...(receipt.cautions || [])], 4),
+    disclaimer:
+      receipt.disclaimer ||
+      '비교 표본이 부족해 가격과 네고가는 제한적인 참고자료로만 볼 수 있습니다. 이 영수증은 AI 참고 의견이며 실제 거래 조건은 직접 확인해야 합니다.',
+  };
+}
+
+async function runPurchaseReceipt(apiKey, model, payload) {
+  const current = payload.current || {};
+  const summary = payload.summary || null;
+  const riskAnalysis = payload.riskAnalysis || null;
+  const listingTextAnalysis = payload.listingTextAnalysis || null;
+  const listingImageAnalysis = payload.listingImageAnalysis || null;
+  const usedPriceGuide = payload.usedPriceGuide || null;
+  const comparison = payload.comparison || {};
+  const prompt = renderPrompt(PROMPTS.purchaseReceipt, {
+    currentJson: JSON.stringify(current),
+    summaryJson: JSON.stringify(summary),
+    riskAnalysisJson: JSON.stringify(riskAnalysis),
+    listingTextAnalysisJson: JSON.stringify(listingTextAnalysis),
+    listingImageAnalysisJson: JSON.stringify(listingImageAnalysis),
+    usedPriceGuideJson: JSON.stringify(usedPriceGuide),
+    comparisonJson: JSON.stringify(comparison),
+  });
+  return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+    responseMimeType: 'application/json',
+    temperature: 0.18,
+    maxOutputTokens: 2200,
     timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
   });
 }
@@ -1218,43 +1200,13 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
       return `${index}번 사진: 해상도 미확인 (첨부 순서 ${i + 1}번째 이미지)`;
     })
     .join('\n');
-  const prompt = `
-중고 매물 사진 ${imageCount}장을 순서대로 확인하고, 각 사진에 대해 짧은 구매 판단 코멘트를 작성하세요.
-제품명: ${String(payload.productName || '')}
-제목: ${String(payload.title || '')}
-본문 참고:
-${String(payload.body || '').slice(0, 1800)}
-
-사진 해상도 (첨부 이미지와 동일 순서):
-${sizeLines}
-
-규칙:
-- images[].index는 위에 적힌 사진 번호를 그대로 쓰세요. 묶음 안 순번이 아니라 전체 매물 사진 번호입니다.
-- 가장 먼저 "이 사진이 중고 판매자가 직접 찍은 실물 근거인가?"를 판별하세요. 이 판별이 하자 판단보다 우선입니다.
-- 사진 안에 가격, 원가 취소선, 할인율, 쿠폰, 쿠폰보기, 장바구니, 구매하기, 리뷰, 별점, 상품명/가격 카드, 쇼핑몰 상세 UI가 보이면 실제 상품이 함께 보여도 반드시 홍보용·쇼핑몰 스크랩 이미지로 분류하세요.
-- 위 경우에는 label을 "홍보 이미지" 또는 "실물 확인 불가"로 쓰고, level은 "caution"으로 쓰세요.
-- 홍보용·쇼핑몰 스크랩 이미지에서는 "깨끗해 보입니다", "양호합니다", "오염이나 파손이 없습니다", "구성품이 잘 갖춰져 있습니다", "본문 설명과 일치합니다"처럼 실물 상태를 확인한 듯한 표현을 절대 쓰지 마세요.
-- 홍보용·쇼핑몰 스크랩 이미지의 comment는 반드시 "쇼핑몰/홍보용 캡처로 보여 이 사진만으로는 실제 박스·본체·구성품 상태를 확인할 수 없습니다."와 같은 취지로 작성하세요.
-- 가격/쿠폰 UI가 없더라도 지나치게 깨끗한 스튜디오/카탈로그 구도, 제품만 단독으로 완벽하게 보이는 공식 렌더·패키지 아트, 손·책상·바닥·주변 배경·실사용 흔적 부재, 본문과 사진 맥락 불일치가 있으면 홍보용·스크랩 가능성을 우선 의심하세요.
-- 판매자가 직접 찍은 실물 사진으로 명확할 때만 찍힘/스크래치/오염/구성품 누락/박스 상태를 구체적으로 판단하세요.
-- 각 이미지별로 "문제 없어 보입니다", "모서리 찍힘이 의심됩니다", "구성품 확인이 필요합니다"처럼 짧고 구체적으로 작성합니다.
-- 확실하지 않으면 단정하지 말고 "의심", "확인 필요"라고 씁니다.
-- 사진에서 보이는 하자/오염/찍힘/스크래치/구성품 누락 가능성/박스 상태를 우선 봅니다.
-- 사진에서만 알 수 있는 "근거"를 comment에 포함하세요. 예: 구성품이 실제로 보이는지, 박스/케이스 모서리 상태, 광택·오염·흠집 의심, 본문과 사진의 불일치 가능성.
-- label은 사진 위 배지로 표시할 짧은 AI 요약명입니다. 사진 내용을 보고 4~10자 한국어로 직접 만드세요. 예: "전면 상태", "구성품 확인", "흠집 의심", "작동 근거", "박스 상태", "사진 부족", "홍보 이미지", "실물 확인 불가", "주의 사진".
-- level은 실물 사진에서 상태가 양호하면 safe, 추가 확인이 필요하거나 홍보용·스크랩 이미지라 실물 상태를 알 수 없으면 caution, 실제 하자·불일치가 강하게 보이면 risk, 판단 근거가 거의 없으면 neutral로 쓰세요.
-- overall에는 홍보용·스크랩 이미지가 많아 실물 근거가 부족한 경우 그 점을 직접 요약하세요.
-- 사진 위치 좌표나 오버레이용 boxes는 만들지 마세요.
-- 토큰 절약을 위해 comment는 사진당 1문장으로 쓰세요.
-
-반드시 JSON만 출력하세요:
-{
-  "images": [
-    { "index": 1, "width": 1200, "height": 900, "label": "홍보 이미지", "comment": "쇼핑몰/홍보용 캡처로 보여 이 사진만으로는 실제 박스·본체·구성품 상태를 확인할 수 없습니다.", "level": "safe|caution|risk|neutral" }
-  ],
-  "overall": "사진 전체 기준 요약 1문장"
-}
-`;
+  const prompt = renderPrompt(PROMPTS.listingImageAnalysis, {
+    imageCount,
+    productName: payload.productName || '',
+    title: payload.title || '',
+    body: String(payload.body || '').slice(0, 1800),
+    sizeLines,
+  });
   return geminiGenerateFromParts(apiKey, model, [{ text: prompt }, ...inlineParts], {
     responseMimeType: 'application/json',
     temperature: 0.15,
@@ -1264,14 +1216,7 @@ ${sizeLines}
 }
 
 async function runDirectAiChat(apiKey, model, prompt) {
-  const plainTextPrompt = `
-사용자 질문에 답하세요.
-답변은 일반 텍스트로만 작성하세요. 마크다운 문법을 쓰지 마세요.
-특히 **굵게**, # 제목, 글머리표 마크다운, 코드펜스, 백틱을 사용하지 마세요.
-
-사용자 질문:
-${String(prompt || '')}
-`;
+  const plainTextPrompt = renderPrompt(PROMPTS.directAiChat, { prompt: prompt || '' });
   return geminiGenerateFromParts(apiKey, model, [{ text: plainTextPrompt }], {
     useGoogleSearch: true,
     temperature: 0.35,
@@ -1396,9 +1341,7 @@ const server = http.createServer(async (req, res) => {
         body.body || '',
         inlineParts
       );
-      let query = normalizeQueryCandidate(rawOut, body.title) || clampQuery(rawOut);
-      query = sanitizeQueryFromListing(query, body.title);
-      query = normalizeQueryCandidate(query, body.title) || clampQuery(query);
+      const query = normalizeQueryCandidate(rawOut);
 
       json(res, 200, {
         query,
@@ -1446,7 +1389,7 @@ const server = http.createServer(async (req, res) => {
         newPriceSourceUrl: '',
         description: '',
         makerOrSeller: '',
-        searchQuery: identity.searchQuery || normalizeQueryCandidate(identity.productName, body.title),
+        searchQuery: identity.searchQuery || normalizeQueryCandidate(identity.productName),
         searchQueries: parseQueryCandidates(
           JSON.stringify({ queries: [identity.searchQuery || identity.productName] }),
           body.title,
@@ -1545,6 +1488,7 @@ const server = http.createServer(async (req, res) => {
         title: body.title || '',
         body: body.body || '',
         priceLabel: body.priceLabel || '',
+        shippingFeeLabel: body.shippingFeeLabel || '',
         seller: body.seller || null,
         summary: body.summary || null,
         riskAnalysis: body.riskAnalysis || null,
@@ -1611,9 +1555,41 @@ const server = http.createServer(async (req, res) => {
         if (Number(s?.index) > 0) sourceMeta[Number(s.index) - 1] = { width: s.width, height: s.height };
       }
       const parsedBatches = rawOutputs.map((rawOut) => parseListingImageAnalysis(rawOut, imageUrls, sourceMeta));
-      const images = parsedBatches
-        .flatMap((p) => (Array.isArray(p.images) ? p.images : []))
-        .sort((a, b) => (Number(a.index) || 0) - (Number(b.index) || 0));
+      const imageByIndex = new Map();
+      for (const img of parsedBatches.flatMap((p) => (Array.isArray(p.images) ? p.images : []))) {
+        const idx = Number(img?.index) || 0;
+        if (idx > 0 && !imageByIndex.has(idx)) imageByIndex.set(idx, img);
+      }
+      const loadedIndexSet = new Set(imageSources.map((s) => Number(s?.index) || 0).filter(Boolean));
+      for (const s of imageSources) {
+        const idx = Number(s?.index) || 0;
+        if (!idx || imageByIndex.has(idx)) continue;
+        imageByIndex.set(idx, {
+          index: idx,
+          imageUrl: imageUrls[idx - 1] || s.url || '',
+          imageWidth: Number(s.width) || 0,
+          imageHeight: Number(s.height) || 0,
+          label: '추가 사진',
+          comment: 'AI가 이 사진에 대한 개별 코멘트를 반환하지 않았습니다. 원본 매물 사진으로 함께 확인하세요.',
+          level: 'neutral',
+        });
+      }
+      for (let i = 0; i < imageUrls.length; i += 1) {
+        const idx = i + 1;
+        if (imageByIndex.has(idx)) continue;
+        imageByIndex.set(idx, {
+          index: idx,
+          imageUrl: imageUrls[i] || '',
+          imageWidth: 0,
+          imageHeight: 0,
+          label: loadedIndexSet.size ? '분석 생략' : '사진 확인',
+          comment: loadedIndexSet.size
+            ? '분석 서버가 이 사진을 불러오지 못했습니다. 위 매물 사진과 동일한 원본으로 직접 확인하세요.'
+            : '분석할 수 있는 매물 사진을 불러오지 못했습니다.',
+          level: 'neutral',
+        });
+      }
+      const images = [...imageByIndex.values()].sort((a, b) => (Number(a.index) || 0) - (Number(b.index) || 0));
       const overall =
         parsedBatches
           .map((p) => String(p.overall || '').trim())
@@ -1630,6 +1606,102 @@ const server = http.createServer(async (req, res) => {
         usedImages: inlineParts.length,
         batches: batches.length,
         pipeline: 'gemini_listing_image_analysis_json_batches',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/comparison-filter') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const rawOut = await runComparisonFilter(apiKey, model, body);
+      json(res, 200, {
+        analysis: parseComparisonFilter(rawOut),
+        rawText: rawOut,
+        model,
+        pipeline: 'gemini_comparison_same_product_filter',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/used-price-guide') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const rawOut = await runUsedPriceGuide(apiKey, model, body);
+      json(res, 200, {
+        guide: parseUsedPriceGuide(rawOut),
+        rawText: rawOut,
+        model,
+        pipeline: 'gemini_used_price_guide_json',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/purchase-receipt') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const rawOut = await runPurchaseReceipt(apiKey, model, body);
+      json(res, 200, {
+        receipt: applyComparisonReliabilityToReceipt(parsePurchaseReceipt(rawOut), body.comparison, body.usedPriceGuide),
+        rawText: rawOut,
+        model,
+        pipeline: 'gemini_purchase_receipt_json',
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });
@@ -1690,9 +1762,8 @@ const server = http.createServer(async (req, res) => {
         json(res, 400, { error: '제품명 또는 검색어가 필요합니다.' });
         return;
       }
-      const terms = productImageTerms(productName, searchQuery);
       const searchText = `${query} 공식 제품 이미지`;
-      const directUrls = await fetchDuckDuckGoImageUrls(searchText, terms);
+      const directUrls = await fetchDuckDuckGoImageUrls(searchText);
       const imageUrls = directUrls.map(productImageProxyUrl).filter(Boolean);
       json(res, 200, {
         imageUrls,
@@ -1769,7 +1840,13 @@ const server = http.createServer(async (req, res) => {
   try {
     const buf = await fs.readFile(abs);
     const ext = path.extname(abs);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    const cacheControl = /\.(?:html|js|css)$/i.test(abs)
+      ? 'no-store, no-cache, must-revalidate, max-age=0'
+      : 'public, max-age=3600';
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': cacheControl,
+    });
     res.end(buf);
   } catch {
     res.writeHead(404);

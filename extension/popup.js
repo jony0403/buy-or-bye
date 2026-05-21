@@ -8,8 +8,11 @@ const SCRIPT_FILES = [
   'lib/comps.js',
   'hosts/bunjang.js',
   'hosts/daangn.js',
+  'hosts/joongna.js',
   'content.js',
 ];
+
+const SEARCH_PLATFORMS = ['bunjang', 'daangn', 'joongna'];
 
 const $detailPanel = document.getElementById('detailPanel');
 const $searchPanel = document.getElementById('searchPanel');
@@ -95,6 +98,9 @@ function isListingDetailUrl(url) {
     if (u.hostname.includes('daangn.com')) {
       return /\/buy-sell\/[^/]+-[a-z0-9]+\/?$/i.test(u.pathname);
     }
+    if (u.hostname.includes('joongna.com')) {
+      return /\/product\/\d+(?:\/|$)/.test(u.pathname);
+    }
   } catch {
     /* ignore */
   }
@@ -111,6 +117,9 @@ function isSearchPageUrl(url) {
     if (u.hostname.includes('daangn.com')) {
       return /\/kr\/buy-sell\/?$/.test(u.pathname) && u.searchParams.has('search');
     }
+    if (u.hostname.includes('joongna.com')) {
+      return /^\/search(?:\/|$)/.test(u.pathname);
+    }
   } catch {
     /* ignore */
   }
@@ -120,6 +129,7 @@ function isSearchPageUrl(url) {
 function searchPlatformLabel(url) {
   if (url?.includes('bunjang')) return '번개장터 검색';
   if (url?.includes('daangn')) return '당근마켓 검색';
+  if (url?.includes('joongna')) return '중고나라 검색';
   return '검색';
 }
 
@@ -158,9 +168,11 @@ async function sendToTab(tabId, message) {
 function formatCompsLine(comps) {
   const b = comps?.bunjang?.count;
   const d = comps?.daangn?.count;
+  const j = comps?.joongna?.count;
   const bTxt = b != null && b > 0 ? `번개 ${b}건` : '번개 —';
   const dTxt = d != null && d > 0 ? `당근 ${d}건` : '당근 —';
-  return `비교 매물 · ${bTxt} · ${dTxt}`;
+  const jTxt = j != null && j > 0 ? `중고나라 ${j}건` : '중고나라 —';
+  return `비교 매물 · ${bTxt} · ${dTxt} · ${jTxt}`;
 }
 
 async function refreshCompsLine() {
@@ -193,8 +205,12 @@ function showSearchPanel(url) {
   if ($searchPlatform) $searchPlatform.textContent = searchPlatformLabel(url);
   if ($searchTitle) {
     try {
+      const u = new URL(url);
       const q =
-        new URL(url).searchParams.get('q') || new URL(url).searchParams.get('search') || '';
+        u.searchParams.get('q') ||
+        u.searchParams.get('search') ||
+        u.searchParams.get('keyword') ||
+        decodeURIComponent(u.pathname.match(/^\/search\/([^/?#]+)/)?.[1] || '');
       $searchTitle.textContent = q ? `「${q}」` : '검색 결과';
     } catch {
       $searchTitle.textContent = '검색 결과';
@@ -272,7 +288,8 @@ async function refreshSearchCollectState(url) {
   const res = await chrome.storage.local.get(['marketScrapeComps']);
   const comps = res.marketScrapeComps;
   const isBun = url.includes('bunjang');
-  const bucket = isBun ? comps?.bunjang : comps?.daangn;
+  const isDang = url.includes('daangn');
+  const bucket = isBun ? comps?.bunjang : isDang ? comps?.daangn : comps?.joongna;
   const n = bucket?.count ?? 0;
   if ($collectSearch) {
     $collectSearch.textContent = n > 0 ? `✓ ${n}건 저장됨 · 다시 수집` : '이 페이지 수집하기';
@@ -408,17 +425,19 @@ async function openSearchTabs(tab) {
 
   const bunjangUrl = `https://m.bunjang.co.kr/search/products?q=${encodeURIComponent(query)}&order=score`;
   const daangnUrl = `https://www.daangn.com/kr/buy-sell/?search=${encodeURIComponent(query)}`;
+  const joongnaUrl = `https://web.joongna.com/search/${encodeURIComponent(query)}`;
 
   const bunTab = await chrome.tabs.create({ url: bunjangUrl, active: false });
   const dangTab = await chrome.tabs.create({ url: daangnUrl, active: false });
-  const closeIds = [bunTab?.id, dangTab?.id].filter((x) => typeof x === 'number');
+  const joongTab = await chrome.tabs.create({ url: joongnaUrl, active: false });
+  const closeIds = [bunTab?.id, dangTab?.id, joongTab?.id].filter((x) => typeof x === 'number');
 
   await chrome.storage.local.set({
-    marketScrapeAutoCollect: { bunjang: true, daangn: true, at: Date.now() },
+    marketScrapeAutoCollect: { ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, true])), at: Date.now() },
     ...(closeIds.length ? { marketScrapeCloseTabs: closeIds } : {}),
   });
 
-  setStatus(`검색어 「${query}」로 탭 2개를 열었어요. 잠시 후 자동 수집됩니다…`);
+  setStatus(`검색어 「${query}」로 탭 3개를 열었어요. 잠시 후 자동 수집됩니다…`);
   startCompsPoll();
   setTimeout(() => void refreshCompsLine(), 2500);
   setTimeout(() => void refreshCompsLine(), 5000);
@@ -457,7 +476,7 @@ async function sendToWeb() {
 async function init() {
   const tab = await activeTab();
   if (!tab?.id || !isInjectable(tab.url)) {
-    showErrorPanel('번개장터·당근 사이트에서 확장을 열어 주세요.');
+    showErrorPanel('번개장터·당근·중고나라 사이트에서 확장을 열어 주세요.');
     return;
   }
   if (isSearchPageUrl(tab.url)) {

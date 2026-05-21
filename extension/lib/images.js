@@ -33,9 +33,20 @@
 
   Root.collectImgUrlsFromElements = (images, testUrl) => {
     const urls = new Set();
+    const normalize = (raw) => {
+      const value = String(raw || '').trim().split(/\s+/)[0];
+      if (!value || /^data:|^blob:/i.test(value)) return '';
+      try {
+        const parsed = new URL(value, location.href);
+        const nested = parsed.searchParams.get('url') || parsed.searchParams.get('src');
+        if (nested) return new URL(nested, location.href).href;
+        return parsed.href;
+      } catch {
+        return value;
+      }
+    };
     const take = (raw) => {
-      if (!raw) return;
-      const u = String(raw).trim().split(/\s+/)[0].split(/[?#]/)[0];
+      const u = normalize(raw);
       if (testUrl(u)) urls.add(u);
     };
     for (const img of images || []) {
@@ -46,6 +57,9 @@
       take(img.currentSrc || img.src);
       const ss = img.getAttribute('srcset');
       if (ss) for (const part of ss.split(',')) take(part.trim().split(/\s+/)[0]);
+      take(img.getAttribute('data-src'));
+      take(img.getAttribute('data-lazy'));
+      take(img.getAttribute('data-original'));
     }
     return [...urls];
   };
