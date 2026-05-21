@@ -54,6 +54,7 @@ let photoSliderAutoTimer = 0;
 let imageAnalysisAutoTimer = 0;
 let stageSlideIndex = 0;
 let stageSlideAnimationTimer = 0;
+let stageStartMotionTimer = 0;
 let lastStageThreeCompsRenderKey = '';
 const RECEIPT_PRINT_SCROLL_MS = 7800;
 const MIN_PRICE_REFERENCE_MATCHES = 5;
@@ -201,14 +202,15 @@ function isStepOneDone(item) {
 
 function isStepTwoStarted(item) {
   const key = summaryKey(item);
-  return Boolean(key && stageTwoActiveKeys.has(key));
+  if (!key) return false;
+  return Boolean(stageTwoActiveKeys.has(key) || productRiskAnalyses.get(key)?.status === 'done');
 }
 
 function isStepTwoFlowComplete(item) {
   const key = summaryKey(item);
   if (!key) return false;
   if (stageTwoCompletedKeys.has(key)) return true;
-  if (!stageTwoActiveKeys.has(key)) return false;
+  if (!isStepTwoStarted(item)) return false;
   const riskDone = productRiskAnalyses.get(key)?.status === 'done';
   const textState = listingTextAnalyses.get(key);
   const imageState = listingImageAnalyses.get(key);
@@ -237,6 +239,13 @@ function isStepThreeDone(item) {
 function maybeMarkStageTwoComplete(item) {
   const key = summaryKey(item);
   if (key && isStepTwoFlowComplete(item)) stageTwoCompletedKeys.add(key);
+}
+
+function ensureCachedStageTwoFollowups(item) {
+  const key = summaryKey(item);
+  if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
+  void ensureListingTextAnalysis(item);
+  void ensureListingImageAnalysis(item);
 }
 
 function syncStagePanels(item) {
@@ -292,6 +301,15 @@ function moveStageSlide(dir) {
     $appShell?.classList.remove('is-stage-sliding');
     stageSlideAnimationTimer = 0;
   }, 540);
+}
+
+function playStageStartMotion() {
+  if (stageStartMotionTimer) window.clearTimeout(stageStartMotionTimer);
+  $appShell?.classList.add('is-stage-starting');
+  stageStartMotionTimer = window.setTimeout(() => {
+    $appShell?.classList.remove('is-stage-starting');
+    stageStartMotionTimer = 0;
+  }, 900);
 }
 
 function renderStageSlideControls() {
@@ -846,7 +864,6 @@ function renderStageTwoSection(item) {
   if (!item) return '';
   const key = summaryKey(item);
   const state = getProductSummaryState(item);
-  const showStepTwoEntry = isStepOneDone(key) && !stageTwoActiveKeys.has(key);
   if (state?.status !== 'done') {
     return `
       <section class="stage-two-panel stage-zone stage-two-zone is-active is-locked" data-stage-panel data-stage-two-panel>
@@ -868,7 +885,7 @@ function renderStageTwoSection(item) {
       </section>
     `;
   }
-  const isActive = key ? stageTwoActiveKeys.has(key) : false;
+  const isActive = isStepTwoStarted(item);
   const riskState = key ? productRiskAnalyses.get(key) : null;
   const analysis = riskState?.analysis || null;
 
@@ -1714,12 +1731,14 @@ function renderItem(item, comps) {
   bindStageThreeFlow($current, item);
   bindUsedPriceGuide($current, item);
   bindPurchaseReceipt($current, item);
+  updatePurchaseReceiptLayout($current);
   window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
   bindImageAnalysisSlider($current, item);
   bindProductSummaryRetry($current, item);
   bindProductImageSearch($current, item);
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   syncStagePanels(item);
+  ensureCachedStageTwoFollowups(item);
   if (isStepThreeUnlocked(item)) {
     scheduleComparisonFilter(item);
     if (comparisonFilters.get(comparisonFilterKey(item, comps))?.status === 'done') void ensureUsedPriceGuide(item);
@@ -2034,14 +2053,8 @@ function bindStageTwoFlow(root, item) {
       const shouldRetry = productRiskAnalyses.get(key)?.status === 'error';
       stageTwoActiveKeys.add(key);
       if (shouldRetry) productRiskAnalyses.delete(key);
-      const panel = root.querySelector('[data-stage-two-panel]');
-      if (panel) {
-        panel.outerHTML = renderStageTwoSection(item);
-        bindStageTwoFlow(root, item);
-        bindImageAnalysisSlider(root, item);
-        bindImageZoom(root);
-        updateStageSlide();
-      }
+      playStageStartMotion();
+      if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
       void ensureProductRisk(item);
     };
     el.addEventListener('click', start);
@@ -2101,7 +2114,7 @@ function bindStageThreeFlow(root, item) {
       stageThreeActiveKeys.add(key);
       relatedRequestedKeys.add(key);
       persistAiCaches();
-      refreshStageThreeSection(item);
+      playStageStartMotion();
       openRelatedSearchForItem(item, stageThreeSearchQueries(item), el);
     };
     el.addEventListener('click', start);
@@ -2332,10 +2345,11 @@ function followPurchaseReceiptPrint(root = $current) {
     { once: true }
   );
   const startTop = window.scrollY;
+  const isScrollLayout = !$appShell?.classList.contains('app-shell--slide');
+  const bottomPadding = Math.min(140, Math.max(72, window.innerHeight * 0.14));
   const maxScrollTop = () => Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
   const targetTop = () => {
     const rect = reveal.getBoundingClientRect();
-    const bottomPadding = Math.min(140, Math.max(72, window.innerHeight * 0.14));
     const nextTop = window.scrollY + rect.bottom - window.innerHeight + bottomPadding;
     return Math.max(startTop, Math.min(maxScrollTop(), nextTop));
   };
@@ -2344,7 +2358,7 @@ function followPurchaseReceiptPrint(root = $current) {
   const step = (now) => {
     const progress = Math.min(1, (now - startedAt) / RECEIPT_PRINT_SCROLL_MS);
     const desired = targetTop();
-    const catchUp = 0.045 + progress * 0.09;
+    const catchUp = isScrollLayout ? 0.16 : 0.045 + progress * 0.09;
     const nextTop = window.scrollY + (desired - window.scrollY) * catchUp;
     window.scrollTo(0, nextTop);
     if (progress < 1) {
@@ -2746,7 +2760,7 @@ async function ensurePurchaseReceipt(item, opts = {}) {
   } else if (existing?.status === 'done') {
     refreshStageFourSection(item);
     if (selectedKey === summaryKey(item)) {
-      window.requestAnimationFrame(() => followPurchaseReceiptPrint($current));
+      window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
     }
     return;
   }
@@ -2836,6 +2850,11 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
   if (!panel) return;
   const grid = panel.querySelector('.stage-zone-grid') || panel;
   const existing = grid.querySelector(selector);
+  const isFollowupCard = selector === '[data-listing-text-analysis]' || selector === '[data-listing-image-analysis]';
+  if (isFollowupCard && (panel.querySelector('[data-stage-two-start]') || !canRenderStageTwoFollowups(item))) {
+    existing?.remove();
+    return;
+  }
   if (!html) {
     existing?.remove();
     return;
@@ -2848,6 +2867,16 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
     else grid.insertAdjacentHTML('beforeend', html);
   }
   updateStageSlide();
+}
+
+function canRenderStageTwoFollowups(item) {
+  const key = summaryKey(item);
+  if (!key || !isStepTwoStarted(item)) return false;
+  return productRiskAnalyses.get(key)?.status === 'done';
+}
+
+function removeStageTwoFollowupCards() {
+  $current.querySelectorAll('[data-listing-text-analysis], [data-listing-image-analysis]').forEach((el) => el.remove());
 }
 
 function refreshStageThreeSection(item) {
@@ -2899,6 +2928,8 @@ function refreshStageFourSection(item) {
   }
   bindPurchaseReceipt($current, item);
   updateStageSlide();
+  updatePurchaseReceiptLayout($current);
+  window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
 }
 
 function refreshStageThreeSearchCard(item) {
@@ -2926,6 +2957,10 @@ function refreshStageThreeCompsBlock(item, opts = {}) {
 }
 
 function refreshListingTextAnalysisCard(item) {
+  if (!canRenderStageTwoFollowups(item)) {
+    removeStageTwoFollowupCards();
+    return;
+  }
   upsertStageTwoCard(
     item,
     '[data-listing-text-analysis]',
@@ -2937,6 +2972,10 @@ function refreshListingTextAnalysisCard(item) {
 }
 
 function refreshListingImageAnalysisCard(item) {
+  if (!canRenderStageTwoFollowups(item)) {
+    removeStageTwoFollowupCards();
+    return;
+  }
   upsertStageTwoCard(item, '[data-listing-image-analysis]', renderListingImageAnalysisCard(item));
   const panel = $current.querySelector('[data-stage-two-panel]');
   bindImageAnalysisSlider(panel, item);
@@ -2995,6 +3034,7 @@ function refreshProductSummaryBlock(item, opts = {}) {
     updateStageSlide();
   }
   maybeMarkStageTwoComplete(item);
+  ensureCachedStageTwoFollowups(item);
   refreshStageThreeSection(item);
 }
 

@@ -58,7 +58,10 @@ h1 {
 .app-shell--slide[data-stage-slide-index="0"] .analysis-board {
   max-width: 1440px;
 }
-.app-shell--slide[data-stage-slide-index="2"] .analysis-board,
+.app-shell--slide[data-stage-slide-index="2"] .analysis-board {
+  align-content: center;
+  padding-top: clamp(1rem, 4svh, 3rem);
+}
 .app-shell--slide[data-stage-slide-index="3"] .analysis-board {
   align-content: start;
   padding-top: clamp(2.25rem, 5svh, 4rem);
@@ -178,6 +181,7 @@ h1 {
 }
 .listing-cluster:has(.stage-zone) {
   grid-auto-rows: auto;
+  overflow: visible;
 }
 .mini-card {
   position: relative;
@@ -509,6 +513,14 @@ h1 {
 .app-shell--slide.is-stage-sliding[data-stage-slide-dir="next"] .stage-four-zone.is-active {
   animation: stageSlideInNext 0.52s cubic-bezier(0.22, 0.9, 0.26, 1) both;
 }
+.app-shell--slide .stage-four-zone.is-active:has(.purchase-receipt-stage) {
+  animation: none !important;
+  clip-path: none !important;
+  overflow: visible !important;
+}
+.app-shell--slide .stage-four-zone.is-active:has(.purchase-receipt-stage) .purchase-receipt-stage {
+  animation: none !important;
+}
 .app-shell--slide.is-stage-sliding[data-stage-slide-dir="prev"] .stage-one-zone {
   animation: stageSlideInPrev 0.52s cubic-bezier(0.22, 0.9, 0.26, 1) both;
 }
@@ -536,6 +548,37 @@ h1 {
 }
 .app-shell--slide.is-stage-sliding .stage-zone-grid > .mini-card:nth-child(6) {
   animation-delay: 0.175s;
+}
+.app-shell--slide .stage-two-zone,
+.app-shell--slide .stage-three-zone {
+  animation: none;
+  clip-path: none;
+}
+.app-shell--slide .stage-two-card,
+.app-shell--slide .stage-two-risk-card {
+  animation: none;
+  animation-delay: 0ms;
+}
+.app-shell--slide .stage-three-card {
+  animation: none;
+}
+.app-shell--slide.is-stage-starting .stage-two-card,
+.app-shell--slide.is-stage-starting .stage-two-risk-card {
+  animation: stageCardIn 0.42s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  animation-delay: var(--stage-delay, 0ms);
+}
+.app-shell--slide.is-stage-starting .stage-three-card {
+  animation: stageCardIn 0.42s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+.app-shell--slide.is-stage-sliding .stage-two-card,
+.app-shell--slide.is-stage-sliding .stage-two-risk-card,
+.app-shell--slide.is-stage-sliding .stage-three-card {
+  animation: none !important;
+  animation-delay: 0ms !important;
+}
+.app-shell--slide.is-stage-sliding .stage-zone-grid > .mini-card {
+  animation: none !important;
+  animation-delay: 0ms !important;
 }
 .mini-card--photos {
   display: flex;
@@ -2389,6 +2432,7 @@ h1 {
   background: transparent;
   box-shadow: none;
   overflow: visible;
+  overflow-anchor: none;
 }
 .receipt-printer {
   display: grid;
