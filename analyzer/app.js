@@ -10,6 +10,10 @@ const $btnHistoryClear = document.getElementById('btnHistoryClear');
 const $recentDrawer = document.getElementById('recentDrawer');
 const $drawerBackdrop = document.getElementById('drawerBackdrop');
 const $directAiPanel = document.getElementById('directAiPanel');
+const $urlImportForm = document.getElementById('urlImportForm');
+const $urlImportInput = document.getElementById('urlImportInput');
+const $urlImportStatus = document.getElementById('urlImportStatus');
+const $btnUrlImport = document.getElementById('btnUrlImport');
 const $lightbox = document.getElementById('lightbox');
 const $lightboxImg = document.getElementById('lightboxImg');
 const $lightboxOverlay = document.getElementById('lightboxOverlay');
@@ -2306,6 +2310,10 @@ function updatePurchaseReceiptLayout(root = $current, opts = {}) {
     reveal.style.minHeight = `${printHeight}px`;
   }
   if (opts.animate) {
+    const currentHeight = Math.max(0, Math.ceil(zone.getBoundingClientRect().height));
+    zone.classList.remove('is-receipt-layout-animating');
+    zone.style.setProperty('--stage-four-receipt-height', `${currentHeight}px`);
+    void zone.offsetHeight;
     zone.classList.add('is-receipt-layout-animating');
     zone.style.setProperty('--stage-four-receipt-height', `${zoneTarget}px`);
   } else {
@@ -2928,8 +2936,11 @@ function refreshStageFourSection(item) {
   }
   bindPurchaseReceipt($current, item);
   updateStageSlide();
-  updatePurchaseReceiptLayout($current);
-  window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
+  const receiptStage = $current.querySelector('.purchase-receipt-stage');
+  if (!receiptStage || receiptStage.dataset.receiptScrollStarted === '1') {
+    updatePurchaseReceiptLayout($current);
+    window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
+  }
 }
 
 function refreshStageThreeSearchCard(item) {
@@ -3404,6 +3415,42 @@ function applyPayload(payload) {
   renderHistoryList();
 }
 
+function setUrlImportStatus(message = '', tone = '') {
+  if (!$urlImportStatus) return;
+  $urlImportStatus.textContent = message;
+  $urlImportStatus.dataset.tone = tone;
+}
+
+function supportedListingUrl(rawUrl) {
+  try {
+    const url = new URL(String(rawUrl || '').trim());
+    if (url.protocol !== 'https:') return null;
+    if (/(^|\.)bunjang\.co\.kr$/i.test(url.hostname)) return url.href;
+    if (/(^|\.)daangn\.com$/i.test(url.hostname)) return url.href;
+    if (/(^|\.)joongna\.com$/i.test(url.hostname)) return url.href;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function requestListingUrlImport(rawUrl) {
+  const url = supportedListingUrl(rawUrl);
+  if (!url) {
+    setUrlImportStatus('지원 URL 아님', 'error');
+    return;
+  }
+  if ($btnUrlImport) $btnUrlImport.disabled = true;
+  setUrlImportStatus('페이지 여는 중...', 'loading');
+  window.postMessage({ type: 'MARKET_SCRAPE_IMPORT_URL', url }, '*');
+  window.setTimeout(() => {
+    if ($btnUrlImport?.disabled && $urlImportStatus?.dataset.tone === 'loading') {
+      if ($btnUrlImport) $btnUrlImport.disabled = false;
+      setUrlImportStatus('확장 연결 확인 필요', 'error');
+    }
+  }, 30_000);
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -3424,8 +3471,26 @@ function initMain() {
   window.addEventListener('message', (ev) => {
     if (ev.source !== window) return;
     const d = ev.data;
-    if (!d || d.type !== 'MARKET_SCRAPE_BRIDGE') return;
-    applyPayload({ latest: d.latest, history: d.history, comps: d.comps });
+    if (!d) return;
+    if (d.type === 'MARKET_SCRAPE_BRIDGE') {
+      applyPayload({ latest: d.latest, history: d.history, comps: d.comps });
+      return;
+    }
+    if (d.type === 'MARKET_SCRAPE_URL_IMPORT_RESULT') {
+      if ($btnUrlImport) $btnUrlImport.disabled = false;
+      if (d.ok) {
+        setUrlImportStatus('불러옴', 'success');
+        if ($urlImportInput) $urlImportInput.value = '';
+        window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+      } else {
+        setUrlImportStatus(d.error || '불러오기 실패', 'error');
+      }
+    }
+  });
+
+  $urlImportForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    requestListingUrlImport($urlImportInput?.value || '');
   });
 
   $btnRefresh.addEventListener('click', () => {

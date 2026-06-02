@@ -1,5 +1,10 @@
 /** 유사 매물 검색 탭(bunjang/daangn/joongna) 수집 완료 후 자동 닫기 */
 const SEARCH_PLATFORMS = ['bunjang', 'daangn', 'joongna'];
+const LISTING_HOST_PATTERNS = [
+  { id: 'bunjang', hostRe: /(^|\.)bunjang\.co\.kr$/i },
+  { id: 'daangn', hostRe: /(^|\.)daangn\.com$/i },
+  { id: 'joongna', hostRe: /(^|\.)joongna\.com$/i },
+];
 
 function allSearchPlatformsDone(flags) {
   return SEARCH_PLATFORMS.every((id) => !flags?.[id]);
@@ -46,6 +51,81 @@ function scheduleCloseSearchCollectionTabs() {
   }, 45_000);
 }
 
+function classifyListingUrl(rawUrl) {
+  let url;
+  try {
+    url = new URL(String(rawUrl || '').trim());
+  } catch {
+    throw new Error('URL 형식이 올바르지 않습니다.');
+  }
+  if (url.protocol !== 'https:') throw new Error('https 링크만 지원합니다.');
+  const found = LISTING_HOST_PATTERNS.find((x) => x.hostRe.test(url.hostname));
+  if (!found) throw new Error('중고나라·번개장터·당근 매물 링크만 지원합니다.');
+  return { url: url.href, platform: found.id };
+}
+
+function waitForTabComplete(tabId, timeoutMs = 18_000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      reject(new Error('매물 페이지 로딩 시간이 초과되었습니다.'));
+    }, timeoutMs);
+    function done() {
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    }
+    function onUpdated(updatedTabId, info) {
+      if (updatedTabId === tabId && info.status === 'complete') done();
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) return;
+      if (tab?.status === 'complete') done();
+    });
+  });
+}
+
+function sendMessageToTab(tabId, message, timeoutMs = 22_000) {
+  const startedAt = Date.now();
+  return new Promise((resolve) => {
+    const attempt = () => {
+      chrome.tabs.sendMessage(tabId, message, (res) => {
+        const err = chrome.runtime.lastError;
+        if (!err && res?.ok) {
+          resolve(res);
+          return;
+        }
+        if (Date.now() - startedAt > timeoutMs) {
+          resolve({ ok: false, error: res?.error || err?.message || '매물 정보를 읽지 못했습니다.' });
+          return;
+        }
+        setTimeout(attempt, 700);
+      });
+    };
+    attempt();
+  });
+}
+
+async function importListingUrl(rawUrl) {
+  const target = classifyListingUrl(rawUrl);
+  const tab = await chrome.tabs.create({ url: target.url, active: false });
+  if (tab.id == null) throw new Error('매물 탭을 열지 못했습니다.');
+  try {
+    await waitForTabComplete(tab.id);
+    const res = await sendMessageToTab(tab.id, { type: 'REFRESH_AND_SAVE' });
+    if (!res?.ok) throw new Error(res?.error || '매물 정보를 읽지 못했습니다.');
+    await pushAnalyzerTabs();
+    return { ok: true, platform: res.platform || target.platform };
+  } finally {
+    try {
+      await chrome.tabs.remove(tab.id);
+    } catch {
+      /* already closed */
+    }
+  }
+}
+
 async function pushAnalyzerTabs() {
   const tabs = await chrome.tabs.query({ url: ['http://127.0.0.1:3920/*', 'http://localhost:3920/*'] });
   for (const tab of tabs) {
@@ -74,7 +154,13 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  const allowedTypes = new Set(['OPEN_EXTENSION_POPUP', 'OPEN_ANALYZER_TAB', 'OPEN_SEARCH_TABS', 'SEARCH_COLLECT_DONE']);
+  const allowedTypes = new Set([
+    'OPEN_EXTENSION_POPUP',
+    'OPEN_ANALYZER_TAB',
+    'OPEN_SEARCH_TABS',
+    'SEARCH_COLLECT_DONE',
+    'OPEN_LISTING_URL',
+  ]);
   if (!allowedTypes.has(msg?.type)) return undefined;
 
   (async () => {
@@ -86,6 +172,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         }
         sendResponse({ ok: true, completed: false, hasSession: false });
+        return;
+      }
+
+      if (msg.type === 'OPEN_LISTING_URL') {
+        const result = await importListingUrl(msg.url);
+        sendResponse(result);
         return;
       }
 

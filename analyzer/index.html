@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon32.png" />
     <link rel="apple-touch-icon" href="/icons/icon128.png" />
-    <link rel="stylesheet" href="style.css?v=20260522-0420-receipt-scroll-follow" />
+    <link rel="stylesheet" href="style.css?v=20260602-stage4-cta-space" />
   </head>
   <body>
     <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
@@ -47,6 +47,19 @@
           <p class="sub">가격 참고자료·하자·네고까지 구매 판단을 도와줍니다.</p>
           </div>
         </div>
+        <form id="urlImportForm" class="url-import" autocomplete="off" hidden aria-hidden="true">
+          <label class="url-import__label" for="urlImportInput">매물 URL</label>
+          <input
+            id="urlImportInput"
+            class="url-import__input"
+            type="url"
+            inputmode="url"
+            placeholder="중고나라·번개장터·당근 링크 붙여넣기"
+            aria-label="매물 URL"
+          />
+          <button type="submit" id="btnUrlImport" class="btn btn-small url-import__submit">불러오기</button>
+          <span id="urlImportStatus" class="url-import__status" role="status" aria-live="polite"></span>
+        </form>
         <div class="top-actions">
           <button type="button" id="btnLayoutMode" class="btn btn-secondary btn-small mode-toggle" aria-pressed="true">스크롤식</button>
           <button type="button" id="btnHistory" class="btn btn-secondary btn-small">최근 매물</button>
@@ -103,6 +116,6 @@
     <script src="ai/config.js?v=20260521-1618"></script>
     <script src="ai/client.js?v=20260522-0013-search-query-retry"></script>
     <script src="ai/gate.js?v=20260521-1618"></script>
-    <script src="app.js?v=20260522-0420-receipt-scroll-follow"></script>
+    <script src="app.js?v=20260602-url-import"></script>
   </body>
 </html>

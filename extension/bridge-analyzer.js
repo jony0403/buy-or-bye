@@ -73,6 +73,16 @@
     );
   }
 
+  function postUrlImportResult(payload) {
+    window.postMessage(
+      {
+        type: 'MARKET_SCRAPE_URL_IMPORT_RESULT',
+        ...payload,
+      },
+      '*'
+    );
+  }
+
   window.addEventListener('message', (ev) => {
     if (ev.source !== window || ev.data?.type !== 'MARKET_SCRAPE_REQUEST') return;
     pushToPage();
@@ -104,6 +114,29 @@
         query: queries[0],
         queries,
       });
+    }
+  });
+
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window || ev.data?.type !== 'MARKET_SCRAPE_IMPORT_URL') return;
+    const url = String(ev.data.url || '').trim();
+    if (!url) {
+      postUrlImportResult({ ok: false, error: 'URL이 비었습니다.' });
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({ type: 'OPEN_LISTING_URL', url }, (res) => {
+        const runtimeError = chrome.runtime.lastError?.message || '';
+        postUrlImportResult({
+          ok: Boolean(res?.ok) && !runtimeError,
+          error: runtimeError || res?.error || '',
+          url,
+          platform: res?.platform || '',
+        });
+        if (res?.ok) pushToPage();
+      });
+    } catch (e) {
+      postUrlImportResult({ ok: false, error: e instanceof Error ? e.message : String(e), url });
     }
   });
 

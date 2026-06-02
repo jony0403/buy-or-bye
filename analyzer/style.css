@@ -2833,3 +2833,559 @@ h1 {
   padding: 0.65rem;
   font-size: 0.9rem;
 }
+
+/* Modern design refresh: CSS-only, keep Step 4 receipt behavior intact. */
+:root {
+  --modern-bg: #f5f6f8;
+  --modern-surface: rgba(255, 255, 255, 0.94);
+  --modern-shadow: 0 14px 38px rgba(17, 24, 39, 0.07);
+  --modern-shadow-hover: 0 18px 48px rgba(17, 24, 39, 0.12);
+  --modern-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+body {
+  background: var(--modern-bg);
+}
+.top {
+  max-width: 1260px;
+  align-items: center;
+}
+.analysis-board,
+.app-shell--slide[data-stage-slide-index="0"] .analysis-board {
+  max-width: 1260px;
+}
+.brand,
+.top-actions,
+.stage-slide-controls,
+.ai-gate__panel,
+.direct-chat-card,
+.recent-drawer {
+  border: 0;
+  background: var(--modern-surface);
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.06);
+}
+.brand {
+  padding: 0.42rem 0.62rem 0.42rem 0.42rem;
+  border-radius: 999px;
+}
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+}
+.top-actions {
+  padding: 0.36rem;
+  border-radius: 999px;
+}
+.stage-one-zone {
+  --stage-accent: #ff6f0f;
+  --stage-accent-strong: #e85d00;
+  --stage-soft: #fff3ea;
+}
+.stage-two-zone {
+  --stage-accent: #3b6cff;
+  --stage-accent-strong: #2452d6;
+  --stage-soft: #eef3ff;
+}
+.stage-three-zone {
+  --stage-accent: #12a875;
+  --stage-accent-strong: #07855c;
+  --stage-soft: #eafaf4;
+}
+.stage-four-zone {
+  --stage-accent: #8b5cf6;
+  --stage-accent-strong: #6d3fe0;
+  --stage-soft: #f3efff;
+}
+.stage-zone {
+  padding: 1rem 1rem 1rem 6rem;
+  border-radius: 28px;
+}
+.stage-zone::before {
+  border: 0;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(17, 24, 39, 0.08);
+}
+.stage-zone-label {
+  top: 1.15rem;
+  left: 1.15rem;
+  width: 4.25rem;
+  padding: 0.55rem 0.5rem;
+  border: 0;
+  border-radius: 20px;
+  background: var(--stage-soft);
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.06);
+}
+.stage-zone-label b,
+.stage-two-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label b,
+.stage-kicker,
+.block-label {
+  color: var(--stage-accent);
+}
+.stage-zone-label span {
+  color: var(--stage-accent-strong);
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.current-price-card,
+.stage-two-mini,
+.stage-two-card--listing-text .stage-two-mini,
+.used-price-guide-card,
+.comparison-price-table-wrap {
+  border: 0;
+  background: var(--modern-surface);
+  box-shadow: var(--modern-shadow);
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.current-price-card,
+.stage-two-mini {
+  transform: translate3d(0, 0, 0) scale(1);
+  transition:
+    transform 220ms var(--modern-ease),
+    box-shadow 220ms var(--modern-ease),
+    background-color 220ms var(--modern-ease),
+    opacity 180ms ease;
+}
+.mini-card:hover,
+.stage-two-card:hover,
+.stage-two-risk-card:hover,
+.stage-three-card:hover,
+.current-price-card:hover,
+.stage-two-mini:hover {
+  z-index: 30;
+  transform: translate3d(0, -4px, 0) scale(1.006);
+  box-shadow: var(--modern-shadow-hover);
+}
+.mini-card--empty:hover,
+.stage-lock-card:hover,
+.stage-two-card.is-disabled:hover {
+  transform: none;
+}
+.stage-start-card:not(.stage-four-start-card),
+.stage-two-card.stage-start-card:not(.stage-four-start-card),
+.stage-three-card.stage-start-card:not(.stage-four-start-card) {
+  border: 0;
+  background: var(--stage-accent);
+  box-shadow: 0 18px 44px rgba(17, 24, 39, 0.14);
+}
+.stage-start-card:not(.stage-four-start-card):hover,
+.stage-start-card:not(.stage-four-start-card):focus-visible,
+.stage-two-card.stage-start-card:not(.stage-four-start-card):hover,
+.stage-two-card.stage-start-card:not(.stage-four-start-card):focus-visible,
+.stage-three-card.stage-start-card:not(.stage-four-start-card):hover,
+.stage-three-card.stage-start-card:not(.stage-four-start-card):focus-visible {
+  background: var(--stage-accent-strong);
+  box-shadow: 0 22px 52px rgba(17, 24, 39, 0.18);
+}
+.badge,
+.mode-toggle[aria-pressed="true"],
+.chip-btn {
+  border: 0;
+  background: var(--stage-soft);
+  color: var(--stage-accent-strong);
+}
+.app-shell--slide[data-stage-slide-index="0"] .product-summary-text {
+  grid-template-rows: auto minmax(76px, auto);
+  overflow: visible;
+}
+.app-shell--slide[data-stage-slide-index="0"] .product-summary-top {
+  max-height: none;
+  overflow: visible;
+}
+.product-summary-text {
+  grid-template-rows: auto minmax(64px, auto);
+  overflow: visible;
+}
+.product-summary-top {
+  max-height: none;
+  overflow: visible;
+}
+.product-summary-text .mini-muted {
+  white-space: normal;
+  overflow: visible;
+}
+
+.url-import {
+  flex: 1 1 380px;
+  max-width: 520px;
+  min-width: min(360px, 100%);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.36rem;
+  border-radius: 999px;
+  background: var(--modern-surface);
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.06);
+}
+.url-import[hidden] {
+  display: none !important;
+}
+.url-import__label {
+  padding-left: 0.55rem;
+  color: #8f96a3;
+  font-size: 0.72rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.url-import__input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #17191f;
+  font: inherit;
+  font-size: 0.8rem;
+}
+.url-import__input::placeholder {
+  color: #a4abb7;
+}
+.url-import__submit {
+  box-shadow: none;
+}
+.url-import__status {
+  grid-column: 2 / 4;
+  min-height: 0.9rem;
+  margin: -0.18rem 0.55rem 0.08rem 0;
+  color: #7d8592;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.url-import__status[data-tone='success'] {
+  color: #07855c;
+}
+.url-import__status[data-tone='error'] {
+  color: #d80027;
+}
+.url-import__status[data-tone='loading'] {
+  color: #2452d6;
+}
+@media (max-width: 1040px) {
+  .top {
+    flex-wrap: wrap;
+  }
+  .url-import {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
+/* Keep the final-step CTA flashy, and stop the Step 4 panel from animating down with the receipt. */
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card {
+  border: 0;
+  color: #fff;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.34), transparent 32%),
+    linear-gradient(135deg, #7c3aed 0%, #db2777 46%, #f97316 100%);
+  box-shadow: 0 24px 64px rgba(124, 58, 237, 0.28), 0 14px 36px rgba(249, 115, 22, 0.16);
+}
+.stage-three-card.stage-four-start-card:hover,
+.stage-three-card.stage-four-start-card:focus-visible,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:hover,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:focus-visible {
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.4), transparent 32%),
+    linear-gradient(135deg, #6d28d9 0%, #c026d3 42%, #ea580c 100%);
+  box-shadow: 0 28px 72px rgba(124, 58, 237, 0.34), 0 18px 42px rgba(249, 115, 22, 0.2);
+}
+.app-shell--slide[data-stage-slide-index="3"] .analysis-board:has(.stage-four-start-card) {
+  padding-bottom: 6.5rem;
+}
+.stage-four-zone.is-active:has(.stage-four-start-card) {
+  padding-bottom: 1.75rem;
+}
+.stage-four-zone.is-active:has(.stage-four-start-card) .stage-zone-grid {
+  padding-bottom: 1.25rem;
+}
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card {
+  margin-bottom: 0.75rem;
+}
+.stage-three-card.stage-four-start-card .stage-two-card-label,
+.purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-card-label,
+.stage-three-card.stage-four-start-card .stage-two-ready h3,
+.purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-ready h3,
+.stage-three-card.stage-four-start-card .stage-two-ready p:not(.stage-two-card-label),
+.purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-ready p:not(.stage-two-card-label) {
+  color: rgba(255, 255, 255, 0.9);
+}
+.stage-four-zone,
+.stage-four-zone.is-receipt-layout-animating {
+  transition: none !important;
+}
+.stage-four-zone::before {
+  transition: none !important;
+}
+
+/* Receipt mode: remove the large background panel behind the receipt. */
+.app-shell--slide .stage-four-zone.is-active:has(.purchase-receipt-stage)::before,
+.stage-four-zone.is-active:has(.purchase-receipt-stage)::before {
+  display: none !important;
+}
+.app-shell--slide .stage-four-zone.is-active:has(.purchase-receipt-stage),
+.stage-four-zone.is-active:has(.purchase-receipt-stage) {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Keep the Step 4 panel, but remove the inner wrapper behind the receipt paper. */
+.app-shell--slide .stage-four-zone.is-active:has(.purchase-receipt-stage)::before,
+.stage-four-zone.is-active:has(.purchase-receipt-stage)::before {
+  display: block !important;
+}
+.purchase-receipt-stage,
+.stage-four-zone .purchase-receipt-stage,
+.app-shell--slide .stage-four-zone .purchase-receipt-stage {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+.purchase-receipt-stage:hover,
+.stage-four-zone .purchase-receipt-stage:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.receipt-printer,
+.receipt-paper-reveal {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Restore scroll-follow receipt printing: the Step 4 height must grow with the paper. */
+.stage-four-zone {
+  min-height: var(--stage-four-receipt-height, auto) !important;
+  transition: min-height 0.42s cubic-bezier(0.22, 0.9, 0.26, 1) !important;
+}
+.stage-four-zone.is-receipt-layout-animating {
+  transition: min-height 7.8s linear !important;
+}
+
+/* Dashboard v2: calmer layout, stronger hierarchy, no heavy effects. */
+:root {
+  --dash-bg: #f3f5f8;
+  --dash-panel: #ffffff;
+  --dash-card: #ffffff;
+  --dash-text: #151922;
+  --dash-muted: #6c7482;
+  --dash-soft-shadow: 0 10px 28px rgba(18, 25, 38, 0.06);
+  --dash-card-shadow: 0 18px 48px rgba(18, 25, 38, 0.08);
+  --dash-hover-shadow: 0 22px 58px rgba(18, 25, 38, 0.12);
+  --dash-radius-lg: 28px;
+  --dash-radius-md: 20px;
+  --dash-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+body {
+  background: var(--dash-bg);
+  color: var(--dash-text);
+}
+.top {
+  max-width: 1280px;
+  align-items: center;
+  padding: 1rem 1.5rem 0.85rem;
+}
+.brand,
+.top-actions {
+  border: 0;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--dash-soft-shadow);
+}
+.brand {
+  padding: 0.44rem 0.78rem 0.44rem 0.44rem;
+  border-radius: 999px;
+}
+.brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+}
+h1 {
+  font-size: 1.17rem;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+.sub {
+  color: var(--dash-muted);
+  font-size: 0.76rem;
+}
+.top-actions {
+  padding: 0.36rem;
+  border-radius: 999px;
+  gap: 0.38rem;
+}
+.analysis-board,
+.app-shell--slide[data-stage-slide-index="0"] .analysis-board {
+  max-width: 1280px;
+}
+.stage-zone {
+  padding: 1.1rem 1.1rem 1.1rem 6.25rem;
+  border-radius: var(--dash-radius-lg);
+}
+.stage-zone::before {
+  border: 0;
+  border-radius: var(--dash-radius-lg);
+  background: var(--dash-panel);
+  box-shadow: var(--dash-card-shadow);
+}
+.stage-one-zone {
+  --stage-accent: #ff6f0f;
+  --stage-accent-dark: #d95700;
+  --stage-bg: #fff3ea;
+}
+.stage-two-zone {
+  --stage-accent: #3b6cff;
+  --stage-accent-dark: #254fd0;
+  --stage-bg: #eef3ff;
+}
+.stage-three-zone {
+  --stage-accent: #12a875;
+  --stage-accent-dark: #087f59;
+  --stage-bg: #eafaf4;
+}
+.stage-four-zone {
+  --stage-accent: #8b5cf6;
+  --stage-accent-dark: #6d3fe0;
+  --stage-bg: #f3efff;
+}
+.stage-zone-label {
+  top: 1.2rem;
+  left: 1.2rem;
+  width: 4.35rem;
+  padding: 0.62rem 0.52rem;
+  border: 0;
+  border-radius: 20px;
+  background: var(--stage-bg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.48);
+}
+.stage-zone-label b,
+.stage-two-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label b,
+.block-label,
+.stage-kicker {
+  color: var(--stage-accent);
+}
+.stage-zone-label span {
+  color: var(--stage-accent-dark);
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.current-price-card,
+.stage-two-mini,
+.stage-two-card--listing-text .stage-two-mini,
+.used-price-guide-card,
+.comparison-price-table-wrap {
+  border: 0;
+  background: var(--dash-card);
+  border-radius: var(--dash-radius-md);
+  box-shadow: var(--dash-soft-shadow);
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.current-price-card,
+.stage-two-mini {
+  transform: translate3d(0, 0, 0) scale(1);
+  transition: transform 190ms var(--dash-ease), box-shadow 190ms var(--dash-ease), opacity 160ms ease;
+}
+.mini-card:hover,
+.stage-two-card:hover,
+.stage-two-risk-card:hover,
+.stage-three-card:hover,
+.current-price-card:hover,
+.stage-two-mini:hover {
+  z-index: 30;
+  transform: translate3d(0, -4px, 0) scale(1.004);
+  box-shadow: var(--dash-hover-shadow);
+}
+.purchase-receipt-stage,
+.purchase-receipt-stage:hover,
+.mini-card--empty:hover,
+.stage-lock-card:hover,
+.stage-two-card.is-disabled:hover {
+  transform: none !important;
+}
+.stage-start-card:not(.stage-four-start-card),
+.stage-two-card.stage-start-card:not(.stage-four-start-card),
+.stage-three-card.stage-start-card:not(.stage-four-start-card) {
+  border: 0;
+  background: var(--stage-accent);
+  color: #fff;
+  box-shadow: 0 18px 42px rgba(18, 25, 38, 0.14);
+}
+.stage-start-card:not(.stage-four-start-card):hover,
+.stage-start-card:not(.stage-four-start-card):focus-visible,
+.stage-two-card.stage-start-card:not(.stage-four-start-card):hover,
+.stage-two-card.stage-start-card:not(.stage-four-start-card):focus-visible,
+.stage-three-card.stage-start-card:not(.stage-four-start-card):hover,
+.stage-three-card.stage-start-card:not(.stage-four-start-card):focus-visible {
+  background: var(--stage-accent-dark);
+  box-shadow: 0 22px 52px rgba(18, 25, 38, 0.18);
+}
+.badge,
+.mode-toggle[aria-pressed="true"],
+.chip-btn {
+  border: 0;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+}
+.btn {
+  box-shadow: 0 10px 24px rgba(255, 111, 15, 0.18);
+}
+.btn-secondary {
+  border: 0;
+  background: #fff;
+  box-shadow: none;
+}
+.app-shell--slide[data-stage-slide-index="0"] .product-summary-text,
+.product-summary-text {
+  grid-template-rows: auto minmax(64px, auto);
+  overflow: visible;
+}
+.app-shell--slide[data-stage-slide-index="0"] .product-summary-top,
+.product-summary-top {
+  max-height: none;
+  overflow: visible;
+}
+.product-summary-text .mini-muted {
+  white-space: normal;
+  overflow: visible;
+}
+.stage-two-card--listing-text .stage-two-mini-list {
+  gap: 0.62rem;
+}
+.stage-two-card--listing-text .stage-two-mini {
+  padding: 0.72rem 0.82rem;
+}
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card {
+  border: 0;
+  color: #fff;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.34), transparent 32%),
+    linear-gradient(135deg, #7c3aed 0%, #db2777 46%, #f97316 100%);
+  box-shadow: 0 24px 64px rgba(124, 58, 237, 0.28), 0 14px 36px rgba(249, 115, 22, 0.16);
+}
+.stage-three-card.stage-four-start-card:hover,
+.stage-three-card.stage-four-start-card:focus-visible,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:hover,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:focus-visible {
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.4), transparent 32%),
+    linear-gradient(135deg, #6d28d9 0%, #c026d3 42%, #ea580c 100%);
+  box-shadow: 0 28px 72px rgba(124, 58, 237, 0.34), 0 18px 42px rgba(249, 115, 22, 0.2);
+}
