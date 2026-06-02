@@ -47,7 +47,7 @@
           <p class="sub">가격 참고자료·하자·네고까지 구매 판단을 도와줍니다.</p>
           </div>
         </div>
-        <form id="urlImportForm" class="url-import" autocomplete="off" hidden aria-hidden="true">
+        <form id="urlImportForm" class="url-import" autocomplete="off">
           <label class="url-import__label" for="urlImportInput">매물 URL</label>
           <input
             id="urlImportInput"
@@ -58,7 +58,7 @@
             aria-label="매물 URL"
           />
           <button type="submit" id="btnUrlImport" class="btn btn-small url-import__submit">불러오기</button>
-          <span id="urlImportStatus" class="url-import__status" role="status" aria-live="polite"></span>
+          <div id="urlImportStatus" class="url-import__status" role="status" aria-live="polite"></div>
         </form>
         <div class="top-actions">
           <button type="button" id="btnLayoutMode" class="btn btn-secondary btn-small mode-toggle" aria-pressed="true">스크롤식</button>

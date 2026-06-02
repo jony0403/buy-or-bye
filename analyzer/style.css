@@ -21,6 +21,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  flex: 0 0 auto;
 }
 .brand-icon {
   width: 32px;
@@ -3013,9 +3014,8 @@ body {
 }
 
 .url-import {
-  flex: 1 1 380px;
-  max-width: 520px;
-  min-width: min(360px, 100%);
+  flex: 0 0 520px;
+  width: 520px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -3024,6 +3024,7 @@ body {
   border-radius: 999px;
   background: var(--modern-surface);
   box-shadow: 0 10px 28px rgba(17, 24, 39, 0.06);
+  position: relative;
 }
 .url-import[hidden] {
   display: none !important;
@@ -3052,13 +3053,7 @@ body {
   box-shadow: none;
 }
 .url-import__status {
-  grid-column: 2 / 4;
-  min-height: 0.9rem;
-  margin: -0.18rem 0.55rem 0.08rem 0;
-  color: #7d8592;
-  font-size: 0.66rem;
-  font-weight: 800;
-  line-height: 1.1;
+  display: none;
 }
 .url-import__status[data-tone='success'] {
   color: #07855c;

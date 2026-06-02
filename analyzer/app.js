@@ -3481,7 +3481,27 @@ function initMain() {
       if (d.ok) {
         setUrlImportStatus('불러옴', 'success');
         if ($urlImportInput) $urlImportInput.value = '';
-        window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+        
+        // IMPORTANT: Use the direct listing data returned from the extension
+        if (d.listing) {
+          // Clear and force render new data
+          clearCurrentAnalysisState();
+          latest = d.listing;
+          // Ensure it's in history too
+          if (!history.find(h => itemKey(h) === itemKey(d.listing))) {
+            history = [d.listing, ...history];
+          }
+          selectedKey = itemKey(d.listing);
+          renderItem(d.listing, null);
+          void ensureProductSummary(d.listing);
+        } else {
+          window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+        }
+
+        // Background sync to ensure storage consistency
+        window.setTimeout(() => {
+          window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+        }, 800);
       } else {
         setUrlImportStatus(d.error || '불러오기 실패', 'error');
       }

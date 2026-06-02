@@ -107,18 +107,28 @@ function sendMessageToTab(tabId, message, timeoutMs = 22_000) {
   });
 }
 
-async function importListingUrl(rawUrl) {
+  async function importListingUrl(rawUrl) {
   const target = classifyListingUrl(rawUrl);
+  // Ensure 'active: false' so it opens without taking focus
   const tab = await chrome.tabs.create({ url: target.url, active: false });
   if (tab.id == null) throw new Error('매물 탭을 열지 못했습니다.');
   try {
     await waitForTabComplete(tab.id);
-    const res = await sendMessageToTab(tab.id, { type: 'REFRESH_AND_SAVE' });
+    // Give context scripts a moment to initialize
+    await new Promise((r) => setTimeout(r, 800));
+    // Use SEND_TO_ANALYZER with instant:true to skip toast/countdown in the background tab
+    const res = await sendMessageToTab(tab.id, { type: 'SEND_TO_ANALYZER', instant: true });
     if (!res?.ok) throw new Error(res?.error || '매물 정보를 읽지 못했습니다.');
-    await pushAnalyzerTabs();
-    return { ok: true, platform: res.platform || target.platform };
+    
+    // Return result including listing for immediate UI refresh in analyzer
+    return { 
+      ok: true, 
+      platform: res.platform || target.platform,
+      listing: res.listing || null 
+    };
   } finally {
     try {
+      // Close tab immediately after sending request to send to analyzer
       await chrome.tabs.remove(tab.id);
     } catch {
       /* already closed */

@@ -316,7 +316,11 @@
     let lastResult = null;
     for (let i = 0; i < 3; i += 1) {
       lastResult = await refresh({ openOnSuccess: false, save: true });
-      if (lastResult?.ok) return lastResult;
+      if (lastResult?.ok) {
+        // Immediate sync to analyzer via storage push
+        if (typeof Root.saveListing === 'function') await Root.saveListing(latest);
+        return lastResult;
+      }
       await sleep(i === 0 ? 350 : 700);
     }
 
@@ -334,32 +338,38 @@
     return lastResult || { ok: false };
   }
 
-  async function sendListingAndOpenAnalyzer() {
+  async function sendListingAndOpenAnalyzer(opts = {}) {
     if (sendInFlight) return;
     sendInFlight = true;
     setPanelOpen(false);
     clearAnalyzerOpenCountdown();
     const cachedListing = latest;
     try {
-      showToast('분석 웹으로 전송 중...');
+      if (!opts.instant) showToast('분석 웹으로 전송 중...');
       const r = await refreshForSendWithRetry(cachedListing);
       if (!r?.ok) {
         hideToast();
         return;
       }
-      let secondsLeft = 3;
-      showToast(`전송됐습니다. ${secondsLeft}초 뒤 분석 웹으로 이동합니다.`);
-      analyzerOpenCountdownTimer = setInterval(() => {
-        secondsLeft -= 1;
-        if (secondsLeft > 0) {
-          showToast(`전송됐습니다. ${secondsLeft}초 뒤 분석 웹으로 이동합니다.`);
-        }
-      }, 1000);
-      analyzerOpenTimer = setTimeout(() => {
-        clearAnalyzerOpenCountdown();
-        hideToast();
+
+      if (opts.instant) {
+        // No countdown, just open the tab (if not already handled by background push)
         void chrome.runtime.sendMessage({ type: 'OPEN_ANALYZER_TAB' });
-      }, 3000);
+      } else {
+        let secondsLeft = 3;
+        showToast(`전송됐습니다. ${secondsLeft}초 뒤 분석 웹으로 이동합니다.`);
+        analyzerOpenCountdownTimer = setInterval(() => {
+          secondsLeft -= 1;
+          if (secondsLeft > 0) {
+            showToast(`전송됐습니다. ${secondsLeft}초 뒤 분석 웹으로 이동합니다.`);
+          }
+        }, 1000);
+        analyzerOpenTimer = setTimeout(() => {
+          clearAnalyzerOpenCountdown();
+          hideToast();
+          void chrome.runtime.sendMessage({ type: 'OPEN_ANALYZER_TAB' });
+        }, 3000);
+      }
     } catch {
       hideToast();
     } finally {
@@ -532,7 +542,26 @@
       render(data, data._warn || '');
       if (save && typeof Root.saveListing === 'function') await Root.saveListing(data);
       if (openOnSuccess) setPanelOpen(true);
-      return { ok: true, imageCount: data.imageUrls?.length ?? 0, platform: adapter.id };
+      return {
+        ok: true,
+        imageCount: data.imageUrls?.length ?? 0,
+        platform: adapter.id,
+        listing: {
+          platform: data.platform,
+          platformLabel: data.platformLabel,
+          itemId: data.itemId,
+          title: data.title,
+          price: data.price,
+          priceLabel: data.priceLabel,
+          shippingFee: data.shippingFee,
+          shippingFeeLabel: data.shippingFeeLabel || '',
+          body: data.body,
+          imageUrls: data.imageUrls || [],
+          seller: data.seller || null,
+          source: data.source,
+          exportedAt: new Date().toISOString(),
+        },
+      };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       render(null, msg);
@@ -585,7 +614,7 @@
             sendResponse(await refresh({ openOnSuccess: false, save: true }));
             break;
           case 'SEND_TO_ANALYZER':
-            void sendListingAndOpenAnalyzer();
+            void sendListingAndOpenAnalyzer({ instant: msg.instant === true });
             sendResponse({ ok: true });
             break;
           case 'COLLECT_SEARCH': {
@@ -671,7 +700,20 @@
       updateFloatingVisibility();
     }, 1200);
 
-    if (Root.getAdapter()?.isDetailPage?.()) void refresh({ openOnSuccess: false, save: false });
+    if (Root.getAdapter()?.isDetailPage?.()) {
+      void (async () => {
+        const r = await refresh({ openOnSuccess: false, save: true });
+        if (r?.ok) {
+          // Auto-send to analyzer when a supported detail page is opened
+          console.log('[MarketScrape] Auto-triggering SEND_TO_ANALYZER for detail page');
+          // For regular page browse, we can use the normal flow.
+          // But here let's use instant:true to close the tab IF it was opened by the extension.
+          // We check if it's the active tab. If it's NOT active, it's likely an import background tab.
+          const isImportTab = document.visibilityState === 'hidden';
+          void sendListingAndOpenAnalyzer({ instant: isImportTab });
+        }
+      })();
+    }
 
     void Root.tryAutoCollectSearch?.();
   };
