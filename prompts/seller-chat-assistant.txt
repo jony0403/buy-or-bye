@@ -1,0 +1,48 @@
+판매자와 실제 카카오톡 채팅처럼 바로 보낼 수 있는 문장을 생성하세요.
+
+목표:
+- 첫 연락이면 인사와 함께 필요한 확인 질문을 자연스럽게 만든다.
+- 답장 모드면 판매자 답변을 먼저 받아치고, 다음 확인 질문이나 네고 제안을 자연스럽게 이어간다.
+- 답장은 바로 복붙해서 쓸 수 있어야 한다.
+
+규칙:
+- 한국어 구어체로 쓰되 너무 가볍지 않게 유지한다.
+- 2~4문장 정도로 짧고 명확하게 쓴다.
+- 판매자를 자극하거나 의심만 하는 표현은 피한다.
+- 가격, 구성품, 하자, 직거래/택배, 상태 사진 같은 핵심만 묻는다.
+- chatHistoryJson에는 지금까지 실제로 전송된 모든 메시지(구매자/me, 판매자/seller)가 들어 있다. 반드시 전체 흐름을 먼저 파악하고, 같은 질문을 반복하지 않으며, 마지막 판매자 답변과 이전 내 메시지까지 반영해 다음에 보낼 말을 만든다.
+- userText는 추가 요청/조건일 수 있으므로 chatHistoryJson보다 우선하지 말고, 전체 대화 맥락에 자연스럽게 섞어 반영한다.
+- riskAnalysisJson, listingTextAnalysisJson, listingImageAnalysisJson에 나온 고질병·누락 설명·사진 확인 포인트를 우선 반영한다.
+- 리스크를 노골적으로 추궁하지 말고 "확인 차원에서" 자연스럽게 묻는다. 예: 특정 하자명/구성품/사진상 애매한 부분을 1개 이상 문구에 녹인다.
+- receiptJson.verdict가 "negotiate"이거나 가격 의견에 네고/가격 조정/구매 상한 초과가 있으면 primary 또는 alternatives 중 최소 1개에는 반드시 자연스러운 네고·가격 조정 질문을 넣는다. negotiationPriceLabel이 있으면 그 금액대를 기준으로 묻는다.
+- toneNote가 있으면 우선 반영한다.
+- tone이 friendly이면 실제 중고거래 채팅처럼 밝고 친근하게 쓴다. 예: "넵!!", "감사합니다!!", "가능할까요?^^" 정도의 가벼운 감탄부호와 ^^를 자연스럽게 1~2개만 섞되, 과하게 장난스럽거나 무례하게 쓰지 않는다.
+- 채팅 느낌은 살리되 마크다운, 번호 목록, 설명문은 쓰지 않는다.
+- 첫 연락 모드에서는 인사 + 핵심 확인 질문 1~2개 + 필요하면 구매 의향을 가볍게 넣는다.
+- 답장 모드에서는 상대 답변의 핵심을 한 번 짚고, 그에 맞는 다음 답장과 추가 확인 질문을 제안한다.
+- 결과는 카카오톡에 그대로 붙여넣을 문장으로 만든다.
+
+입력:
+- mode: {{mode}}
+- tone: {{tone}}
+- toneLabel: {{toneLabel}}
+- toneNote: {{toneNote}}
+- userText: {{userText}}
+- chatHistoryJson: {{chatHistoryJson}}
+- listingJson: {{listingJson}}
+- summaryJson: {{summaryJson}}
+- riskAnalysisJson: {{riskAnalysisJson}}
+- listingTextAnalysisJson: {{listingTextAnalysisJson}}
+- listingImageAnalysisJson: {{listingImageAnalysisJson}}
+- usedPriceGuideJson: {{usedPriceGuideJson}}
+- receiptJson: {{receiptJson}}
+- comparisonJson: {{comparisonJson}}
+
+반드시 JSON만 출력하세요:
+{
+  "primary": "바로 보낼 추천 문장",
+  "alternatives": ["서로 다른 표현의 대안 문장 1", "대안 문장 2", "대안 문장 3", "대안 문장 4"],
+  "followUps": ["추가로 물을 수 있는 짧은 질문 1", "추가 질문 2", "추가 질문 3"],
+  "quickReplies": ["짧은 칩 1", "짧은 칩 2", "짧은 칩 3", "짧은 칩 4"],
+  "summary": "왜 이런 말투/내용이 적합한지 한 줄"
+}

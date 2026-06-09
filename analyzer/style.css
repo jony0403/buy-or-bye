@@ -1,3 +1,5 @@
+/* Design source of truth: ../design.md. Keep UI changes aligned with that file. */
+
 * {
   box-sizing: border-box;
 }
@@ -5,23 +7,31 @@ body {
   margin: 0;
   font-family: Pretendard, system-ui, -apple-system, sans-serif;
   background: #f5f3ef;
-  color: #17191f;
+  color: #30343b;
   line-height: 1.5;
 }
 .top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: auto minmax(320px, 420px) 1fr;
+  align-items: center;
+  column-gap: 0.9rem;
+  row-gap: 0.6rem;
   padding: 1.25rem 1.5rem 0.5rem;
   max-width: 1180px;
   margin: 0 auto;
+  position: sticky;
+  top: 0;
+  z-index: 120;
+  background: rgba(245, 243, 239, 0.82);
+  border-radius: 0 0 28px 28px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  flex: 0 0 auto;
+  justify-self: start;
 }
 .brand-icon {
   width: 32px;
@@ -67,9 +77,14 @@ h1 {
   align-content: start;
   padding-top: clamp(2.25rem, 5svh, 4rem);
 }
+.app-shell--slide[data-stage-slide-index="4"] .analysis-board {
+  align-content: start;
+  padding-top: clamp(1.75rem, 4.5svh, 3.5rem);
+}
 .app-shell--slide[data-stage-slide-index="1"] .analysis-board:has(.stage-start-card),
 .app-shell--slide[data-stage-slide-index="2"] .analysis-board:has(.stage-start-card),
-.app-shell--slide[data-stage-slide-index="3"] .analysis-board:has(.stage-start-card) {
+.app-shell--slide[data-stage-slide-index="3"] .analysis-board:has(.stage-start-card),
+.app-shell--slide[data-stage-slide-index="4"] .analysis-board:has(.stage-start-card) {
   align-content: center;
   padding-top: clamp(1rem, 4svh, 3rem);
 }
@@ -346,6 +361,13 @@ h1 {
   overflow: visible;
   transition: min-height 0.42s cubic-bezier(0.22, 0.9, 0.26, 1);
 }
+.stage-five-zone {
+  padding-block: 1rem 1.2rem;
+  padding-right: 1.2rem;
+  animation: none;
+  clip-path: none;
+  overflow: visible;
+}
 .stage-four-zone.is-receipt-layout-animating {
   transition: min-height 7.8s linear;
 }
@@ -355,8 +377,18 @@ h1 {
   align-items: start;
   overflow: visible;
 }
+.stage-five-zone-grid {
+  grid-auto-rows: auto;
+  grid-auto-flow: row;
+  align-items: start;
+  grid-template-columns: 1fr;
+  overflow: visible;
+}
 .stage-four-zone::before {
   background: linear-gradient(90deg, rgba(253, 244, 255, 0.72), rgba(255, 247, 237, 0.55) 50%, rgba(248, 250, 252, 0.14));
+}
+.stage-five-zone::before {
+  background: linear-gradient(90deg, rgba(236, 253, 245, 0.74), rgba(236, 254, 255, 0.56) 50%, rgba(248, 250, 252, 0.14));
 }
 .stage-zone-label {
   position: absolute;
@@ -376,7 +408,7 @@ h1 {
   font-weight: 950;
 }
 .stage-two-zone .stage-zone-label b {
-  color: #00a05a;
+  color: #14b8a6;
 }
 .stage-three-zone .stage-zone-label b {
   color: #d80027;
@@ -410,7 +442,8 @@ h1 {
 .app-shell--slide[data-stage-slide-index="0"] .stage-one-zone,
 .app-shell--slide[data-stage-slide-index="1"] .stage-two-zone,
 .app-shell--slide[data-stage-slide-index="2"] .stage-three-zone,
-.app-shell--slide[data-stage-slide-index="3"] .stage-four-zone {
+.app-shell--slide[data-stage-slide-index="3"] .stage-four-zone,
+.app-shell--slide[data-stage-slide-index="4"] .stage-five-zone {
   display: block;
 }
 .app-shell--slide[data-stage-slide-index="0"] .stage-one-zone {
@@ -826,9 +859,9 @@ h1 {
 .stage-start-card:focus-visible {
   z-index: 30;
   transform: translateY(-4px);
-  border-color: rgba(0, 196, 113, 0.34);
-  background: #00a05a;
-  box-shadow: 0 22px 52px rgba(0, 160, 90, 0.22);
+  border-color: transparent;
+  background: #14b8a6;
+  box-shadow: none;
   outline: none;
 }
 .stage-start-card:hover::after,
@@ -899,9 +932,9 @@ h1 {
 .stage-two-card.stage-start-card:hover,
 .stage-two-card.stage-start-card:focus-visible {
   transform: translateY(-4px);
-  border-color: rgba(0, 196, 113, 0.34);
-  background: #00a05a;
-  box-shadow: 0 22px 52px rgba(0, 160, 90, 0.22);
+  border-color: transparent;
+  background: #14b8a6;
+  box-shadow: none;
 }
 .stage-two-risk-card .stage-two-card-label {
   margin: 0;
@@ -1361,6 +1394,484 @@ h1 {
 .direct-chat-form textarea:focus {
   border-color: rgba(255, 111, 15, 0.42);
   box-shadow: 0 0 0 3px rgba(255, 111, 15, 0.08);
+}
+.stage-five-card {
+  display: grid;
+  gap: 0.8rem;
+  grid-column: 1 / -1;
+}
+.seller-chat__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.seller-chat__meta {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.seller-chat__pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.45rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 111, 15, 0.08);
+  color: #8a4b00;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+.seller-chat__tone-row,
+.seller-chat__mode-toggle,
+.seller-chat__chips,
+.seller-chat__result-alt,
+.seller-chat__followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.seller-chat__tone,
+.seller-chat__mode,
+.seller-chat__chip {
+  border: 1px solid rgba(216, 0, 39, 0.12);
+  border-radius: 999px;
+  background: #fff;
+  color: #4b5563;
+  padding: 0.42rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  box-shadow: none;
+}
+.seller-chat__tone.is-active,
+.seller-chat__mode.is-active,
+.seller-chat__chip:hover {
+  border-color: rgba(18, 184, 134, 0.22);
+  background: rgba(18, 184, 134, 0.08);
+  color: #0f766e;
+}
+.seller-chat__note-label {
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #667085;
+}
+.seller-chat__note-input,
+.seller-chat__composer {
+  width: 100%;
+  border: 1px solid rgba(229, 232, 237, 0.98);
+  border-radius: 16px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  outline: none;
+}
+.seller-chat__note-input {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.78rem;
+}
+.seller-chat__note-input:focus,
+.seller-chat__composer:focus {
+  border-color: rgba(18, 184, 134, 0.28);
+  box-shadow: 0 0 0 3px rgba(18, 184, 134, 0.08);
+}
+.seller-chat__note {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: 14px;
+  background: rgba(18, 184, 134, 0.06);
+  color: #0f766e;
+  font-size: 0.74rem;
+}
+.seller-chat__thread {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.65rem;
+  border-radius: 18px;
+  background: #f7faf9;
+  border: 1px solid rgba(18, 184, 134, 0.08);
+  max-height: 22rem;
+  overflow: auto;
+}
+.seller-chat__empty {
+  padding: 0.2rem 0;
+  color: #667085;
+  font-size: 0.76rem;
+}
+.seller-chat__empty strong {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #111827;
+}
+.seller-chat__empty p {
+  margin: 0;
+  line-height: 1.5;
+}
+.seller-chat__row {
+  display: flex;
+}
+.seller-chat__row--left {
+  justify-content: flex-start;
+}
+.seller-chat__row--right {
+  justify-content: flex-end;
+}
+.seller-chat__bubble {
+  position: relative;
+  max-width: min(92%, 34rem);
+  padding: 0.65rem 0.78rem 0.6rem;
+  border-radius: 18px;
+  box-shadow: 0 8px 18px rgba(17, 24, 39, 0.06);
+  overflow: hidden;
+}
+.seller-chat__bubble p {
+  margin: 0.28rem 0 0;
+  white-space: pre-wrap;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.seller-chat__label {
+  display: inline-block;
+  font-size: 0.63rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.seller-chat__bubble--seller {
+  background: #fff;
+  border: 1px solid rgba(229, 232, 237, 0.95);
+  color: #111827;
+  border-top-left-radius: 8px;
+}
+.seller-chat__bubble--seller .seller-chat__label {
+  color: #9ca3af;
+}
+.seller-chat__bubble--assistant {
+  background: #e9f5ff;
+  border: 1px solid rgba(59, 108, 255, 0.14);
+  color: #173a7a;
+  border-top-right-radius: 8px;
+}
+.seller-chat__bubble--assistant .seller-chat__label {
+  color: #2f5fff;
+}
+.seller-chat__bubble--me {
+  background: #fff7ed;
+  border: 1px solid rgba(255, 111, 15, 0.14);
+  color: #7a3d00;
+  border-top-right-radius: 8px;
+}
+.seller-chat__bubble--me .seller-chat__label {
+  color: #d35400;
+}
+.seller-chat__copy {
+  margin-top: 0.45rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #155e75;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.66rem;
+  font-weight: 900;
+  box-shadow: none;
+}
+.seller-chat__copy--primary {
+  background: rgba(255, 255, 255, 0.92);
+}
+.seller-chat__result {
+  padding: 0.75rem;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(59, 108, 255, 0.12);
+  display: grid;
+  gap: 0.55rem;
+}
+.seller-chat__result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+.seller-chat__result-main {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  color: #173a7a;
+  white-space: pre-wrap;
+}
+.seller-chat__result-alt {
+  gap: 0.28rem;
+}
+.seller-chat__followups {
+  gap: 0.3rem;
+}
+.seller-chat__followup {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(59, 108, 255, 0.08);
+  color: #2446a6;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+.seller-chat__summary {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #6b7280;
+}
+.seller-chat__form {
+  display: grid;
+  gap: 0.5rem;
+}
+.seller-chat__composer {
+  min-height: 6rem;
+  resize: vertical;
+  padding: 0.72rem 0.82rem;
+  font-size: 0.82rem;
+}
+.seller-chat__form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.seller-chat__help {
+  margin: 0;
+  color: #667085;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+.seller-chat__error {
+  margin: 0;
+  color: #b42318;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.stage-five-zone {
+  padding-bottom: clamp(2rem, 7vh, 5rem);
+}
+.stage-five-zone-grid {
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: auto;
+}
+.stage-five-card,
+.stage-five-card:hover {
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  transform: none;
+}
+.seller-chat__phone {
+  width: min(440px, 100%);
+  min-height: min(720px, calc(100svh - 9rem));
+  max-height: none;
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto auto minmax(260px, 1fr) auto auto;
+  border-radius: 28px;
+  overflow: hidden;
+  background: #b7c9d8;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  box-shadow: 0 26px 70px rgba(17, 24, 39, 0.16);
+}
+.seller-chat__phone-head {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr) 2.4rem;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 3.7rem;
+  padding: 0.68rem 0.75rem;
+  background: #f7f7f7;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+}
+.seller-chat__back,
+.seller-chat__reset-icon {
+  width: 2.15rem;
+  height: 2.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #1f2937;
+  font-size: 1.35rem;
+  font-weight: 800;
+  box-shadow: none;
+}
+.seller-chat__reset-icon {
+  font-size: 1rem;
+}
+.seller-chat__title {
+  min-width: 0;
+  text-align: center;
+}
+.seller-chat__title strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 0.9rem;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seller-chat__title span {
+  display: block;
+  margin-top: 0.14rem;
+  color: #6b7280;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+.seller-chat__toolbar {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  background: rgba(255, 255, 255, 0.42);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.32);
+}
+.seller-chat__toolbar .seller-chat__mode-toggle,
+.seller-chat__toolbar .seller-chat__tone-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 0.05rem;
+  scrollbar-width: none;
+}
+.seller-chat__toolbar .seller-chat__mode-toggle::-webkit-scrollbar,
+.seller-chat__toolbar .seller-chat__tone-row::-webkit-scrollbar {
+  display: none;
+}
+.seller-chat__mode,
+.seller-chat__tone,
+.seller-chat__chip {
+  flex: 0 0 auto;
+  min-height: 2rem;
+  border: 0;
+  background: rgba(255, 255, 255, 0.9);
+  color: #374151;
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.07);
+}
+.seller-chat__mode.is-active,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover {
+  background: #fee500;
+  color: #201b00;
+}
+.seller-chat__note-input {
+  min-height: 2.25rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.48rem 0.75rem;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.75rem;
+}
+.seller-chat__note {
+  padding: 0.45rem 0.65rem;
+  background: rgba(255, 255, 255, 0.58);
+  color: #374151;
+}
+.seller-chat__thread {
+  align-content: end;
+  max-height: none;
+  min-height: 18rem;
+  padding: 1rem 0.78rem;
+  border: 0;
+  border-radius: 0;
+  background: #b7c9d8;
+}
+.seller-chat__empty {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0;
+}
+.seller-chat__empty .seller-chat__bubble {
+  max-width: 82%;
+}
+.seller-chat__bubble {
+  max-width: 82%;
+  border: 0;
+  border-radius: 18px;
+  box-shadow: 0 2px 4px rgba(17, 24, 39, 0.08);
+}
+.seller-chat__bubble--assistant,
+.seller-chat__bubble--seller {
+  background: #fff;
+  color: #111827;
+  border-top-left-radius: 6px;
+}
+.seller-chat__bubble--me {
+  background: #fee500;
+  color: #201b00;
+  border-top-right-radius: 6px;
+}
+.seller-chat__bubble p {
+  margin-top: 0.18rem;
+  color: inherit;
+  font-size: 0.84rem;
+}
+.seller-chat__label {
+  color: rgba(17, 24, 39, 0.46) !important;
+  font-size: 0.6rem;
+}
+.seller-chat__copy {
+  background: rgba(0, 0, 0, 0.07);
+  color: #374151;
+}
+.seller-chat__alts,
+.seller-chat__followups {
+  margin-top: 0.5rem;
+}
+.seller-chat__chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 0.55rem 0.65rem;
+  background: rgba(255, 255, 255, 0.3);
+  scrollbar-width: none;
+}
+.seller-chat__chips::-webkit-scrollbar {
+  display: none;
+}
+.seller-chat__form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.45rem;
+  padding: 0.62rem;
+  background: #f7f7f7;
+  border-top: 1px solid rgba(17, 24, 39, 0.08);
+}
+.seller-chat__composer {
+  min-height: 2.6rem;
+  max-height: 7rem;
+  border: 0;
+  border-radius: 20px;
+  resize: none;
+  padding: 0.68rem 0.82rem;
+  background: #fff;
+  font-size: 0.82rem;
+}
+.seller-chat__send {
+  min-width: 4.6rem;
+  min-height: 2.55rem;
+  border: 0;
+  border-radius: 18px;
+  padding: 0 0.9rem;
+  background: #fee500;
+  color: #201b00;
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: none;
+}
+.seller-chat__send:disabled {
+  opacity: 0.55;
+}
+.seller-chat__error {
+  margin: 0;
+  padding: 0.48rem 0.7rem;
+  background: #fff1f0;
 }
 .stage-two-card-head {
   margin-bottom: 0.15rem;
@@ -2713,7 +3224,9 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-self: end;
+  white-space: nowrap;
 }
 .btn-secondary {
   background: #fff;
@@ -2854,6 +3367,7 @@ body {
 }
 .top {
   max-width: 1260px;
+  grid-template-columns: auto minmax(320px, 420px) 1fr;
   align-items: center;
 }
 .analysis-board,
@@ -2903,6 +3417,11 @@ body {
   --stage-accent-strong: #6d3fe0;
   --stage-soft: #f3efff;
 }
+.stage-five-zone {
+  --stage-accent: #14b8a6;
+  --stage-accent-strong: #0f766e;
+  --stage-soft: #e6fffb;
+}
 .stage-zone {
   padding: 1rem 1rem 1rem 6rem;
   border-radius: 28px;
@@ -2927,6 +3446,7 @@ body {
 .stage-two-zone .stage-zone-label b,
 .stage-three-zone .stage-zone-label b,
 .stage-four-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label b,
 .stage-kicker,
 .block-label {
   color: var(--stage-accent);
@@ -3020,8 +3540,8 @@ body {
 }
 
 .url-import {
-  flex: 0 0 520px;
-  width: 520px;
+  flex: none;
+  width: min(420px, 100%);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -3057,6 +3577,7 @@ body {
 }
 .url-import__submit {
   box-shadow: none;
+  white-space: nowrap;
 }
 .url-import__status {
   display: none;
@@ -3100,46 +3621,2029 @@ body {
     linear-gradient(135deg, #6d28d9 0%, #c026d3 42%, #ea580c 100%);
   box-shadow: 0 28px 72px rgba(124, 58, 237, 0.34), 0 18px 42px rgba(249, 115, 22, 0.2);
 }
+/* Step 5 tail override: must remain after dashboard-v2. */
+.stage-five-panel button,
+.stage-five-panel a {
+  cursor: pointer !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__context {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.48rem 0.68rem;
+  background: #fff;
+  border-bottom: 1px solid rgba(229, 232, 237, 0.68);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__seller {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.62rem;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 auto;
+  border-radius: 16px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__seller strong {
+  display: block;
+  color: #151922;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__seller p {
+  margin: 0.12rem 0 0;
+  overflow: hidden;
+  color: #6c7482;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__listing-link {
+  flex: 0 0 auto;
+  padding: 0.28rem 0.58rem;
+  border-radius: 999px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.32rem;
+  padding: 0.32rem 0.58rem 0.4rem;
+  background: #fff;
+  border-top: 1px solid rgba(229, 232, 237, 0.68);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__composer--reply {
+  background: #f8fafc !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send--reply {
+  background: #3b6cff !important;
+  box-shadow: 0 10px 24px rgba(59, 108, 255, 0.16) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode {
+  border-color: rgba(20, 184, 166, 0.26) !important;
+  background: linear-gradient(180deg, #f0fffb 0%, #dcfaf3 100%) !important;
+  color: #0f766e !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.1) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active {
+  background: linear-gradient(135deg, #14b8a6 0%, #0f766e 100%) !important;
+  color: #fff !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__listing-link:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send:hover {
+  transform: translate3d(0, -1px, 0);
+  box-shadow: 0 8px 18px rgba(18, 25, 38, 0.09) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone button,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone a {
+  transition: transform 180ms var(--dash-ease), box-shadow 180ms var(--dash-ease), background 180ms ease, color 180ms ease;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.8rem;
+  height: 1.8rem;
+  margin-top: 0.45rem;
+  border: 1px solid rgba(229, 232, 237, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--stage-accent-dark);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__bubble--me .seller-chat__copy--icon {
+  background: rgba(255, 255, 255, 0.78);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:focus-visible {
+  transform: translate3d(0, -1px, 0);
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(18, 25, 38, 0.11);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use {
+  min-height: 1.8rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.68rem;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use:focus-visible {
+  background: var(--stage-accent);
+  color: #fff;
+}
+@media (max-width: 720px) {
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__context {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 5 final-tight controls. Keep at file end. */
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__context {
+  padding: 0.48rem 0.68rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar {
+  gap: 0.24rem !important;
+  padding: 0.28rem 0.5rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row {
+  gap: 0.24rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chip {
+  min-height: 0 !important;
+  height: 1.7rem !important;
+  padding: 0 0.5rem !important;
+  border-radius: 999px !important;
+  font-size: 0.69rem !important;
+  line-height: 1 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer {
+  min-height: 0 !important;
+  height: 2.05rem !important;
+  padding: 0.26rem 0.56rem !important;
+  border-radius: 12px !important;
+  font-size: 0.74rem !important;
+  line-height: 1.2 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__empty-reply,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+  gap: 0.28rem !important;
+  padding: 0.28rem 0.5rem 0.34rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__send {
+  min-height: 0 !important;
+  height: 2rem !important;
+  min-width: 4rem !important;
+  padding: 0 0.58rem !important;
+  border-radius: 12px !important;
+  font-size: 0.72rem !important;
+}
+
+/* Step 5 real final compact override: match normal small controls. */
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__phone-head,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__context {
+  padding: 0.48rem 0.68rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar {
+  gap: 0.24rem !important;
+  padding: 0.28rem 0.5rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chips {
+  gap: 0.24rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chip {
+  min-height: 0 !important;
+  height: 1.7rem !important;
+  padding: 0 0.5rem !important;
+  border-radius: 999px !important;
+  font-size: 0.69rem !important;
+  line-height: 1 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input {
+  min-height: 0 !important;
+  height: 2rem !important;
+  padding: 0.22rem 0.56rem !important;
+  border-radius: 12px !important;
+  font-size: 0.73rem !important;
+  line-height: 1.2 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer {
+  min-height: 0 !important;
+  height: 2.15rem !important;
+  padding: 0.28rem 0.56rem !important;
+  border-radius: 12px !important;
+  font-size: 0.74rem !important;
+  line-height: 1.22 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__empty-reply,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+  gap: 0.28rem !important;
+  padding: 0.28rem 0.5rem 0.34rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__send {
+  min-height: 0 !important;
+  height: 2rem !important;
+  min-width: 4rem !important;
+  padding: 0 0.58rem !important;
+  border-radius: 12px !important;
+  font-size: 0.72rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chips {
+  padding: 0.42rem 0.5rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread {
+  gap: 0.42rem !important;
+  padding: 0.48rem 0.5rem !important;
+}
+
+/* Real EOF fixes: no comparison row bars, compact Step 5 controls. */
+body .app-shell .stage-zone .hist-meta,
+body .app-shell .stage-zone .comparison-price-list .hist-meta,
+body .app-shell .stage-zone .comparison-price-list .meta:not(.empty) {
+  background: transparent !important;
+  color: #8f96a3 !important;
+}
+body .app-shell .stage-five-panel .seller-chat__toolbar {
+  gap: 0.28rem !important;
+  padding: 0.38rem 0.62rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__tone-row {
+  gap: 0.28rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__tone,
+body .app-shell .stage-five-panel .seller-chat__chip {
+  min-height: 1.62rem !important;
+  padding: 0.14rem 0.5rem !important;
+  font-size: 0.7rem !important;
+  line-height: 1.1 !important;
+}
+body .app-shell .stage-five-panel .seller-chat__note-input,
+body .app-shell .stage-five-panel .seller-chat__composer {
+  min-height: 1.78rem !important;
+  padding: 0.32rem 0.58rem !important;
+  border-radius: 13px !important;
+  font-size: 0.74rem !important;
+  line-height: 1.25 !important;
+}
+body .app-shell .stage-five-panel .seller-chat__form,
+body .app-shell .stage-five-panel .seller-chat__empty-reply {
+  padding: 0.32rem 0.58rem 0.4rem !important;
+  gap: 0.32rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__form-label {
+  margin-bottom: 0 !important;
+  font-size: 0.64rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__send {
+  min-width: 4.2rem !important;
+  min-height: 1.78rem !important;
+  padding: 0 0.56rem !important;
+  border-radius: 13px !important;
+  font-size: 0.72rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__chips .seller-chat__chip {
+  min-height: 1.85rem !important;
+  padding: 0.26rem 0.68rem !important;
+}
+
+/* Final Step 5 compact sizing override. */
+body .app-shell .stage-five-panel .seller-chat__toolbar {
+  gap: 0.28rem !important;
+  padding: 0.38rem 0.62rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__tone-row {
+  gap: 0.28rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__tone,
+body .app-shell .stage-five-panel .seller-chat__chip {
+  min-height: 1.62rem !important;
+  padding: 0.14rem 0.5rem !important;
+  font-size: 0.7rem !important;
+  line-height: 1.1 !important;
+}
+body .app-shell .stage-five-panel .seller-chat__note-input,
+body .app-shell .stage-five-panel .seller-chat__composer {
+  min-height: 1.78rem !important;
+  padding: 0.32rem 0.58rem !important;
+  border-radius: 13px !important;
+  font-size: 0.74rem !important;
+  line-height: 1.25 !important;
+}
+body .app-shell .stage-five-panel .seller-chat__form,
+body .app-shell .stage-five-panel .seller-chat__empty-reply {
+  padding: 0.32rem 0.58rem 0.4rem !important;
+  gap: 0.32rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__form-label {
+  margin-bottom: 0 !important;
+  font-size: 0.64rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__send {
+  min-width: 4.2rem !important;
+  min-height: 1.78rem !important;
+  padding: 0 0.56rem !important;
+  border-radius: 13px !important;
+  font-size: 0.72rem !important;
+}
+body .app-shell .stage-five-panel .seller-chat__chips .seller-chat__chip {
+  min-height: 1.85rem !important;
+  padding: 0.26rem 0.68rem !important;
+}
+
+/* Step 5 compact chat controls. Real EOF override. */
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0.34rem !important;
+  padding: 0.46rem 0.72rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__mode-toggle {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.38rem !important;
+  padding: 0.18rem !important;
+  border-radius: 15px !important;
+  background: #f3f6f8 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 0.32rem !important;
+  overflow-x: auto !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__mode {
+  min-height: 1.9rem !important;
+  padding: 0.26rem 0.62rem !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: #5b6472 !important;
+  box-shadow: none !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active {
+  background: #151922 !important;
+  color: #fff !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chip {
+  min-height: 1.72rem !important;
+  padding: 0.2rem 0.56rem !important;
+  background: #fff !important;
+  color: #4b5563 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer {
+  min-height: 1.95rem !important;
+  padding: 0.38rem 0.64rem !important;
+  border-radius: 15px !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 0.38rem !important;
+  padding: 0.38rem 0.68rem 0.46rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form-label {
+  grid-column: 1 / -1;
+  margin: 0 0 0.02rem 0.2rem;
+  color: #6b7280;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form-label--reply {
+  color: #315fd6;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__send {
+  align-self: stretch !important;
+  min-width: 4.6rem !important;
+  min-height: 1.95rem !important;
+  padding: 0 0.66rem !important;
+  border-radius: 14px !important;
+  white-space: nowrap !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__send--reply {
+  background: #3b6cff !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(59, 108, 255, 0.16) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card {
+  position: relative !important;
+  padding: 0.68rem 2.4rem 0.68rem 0.78rem !important;
+  cursor: pointer !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use {
+  display: none !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon {
+  width: 1.45rem !important;
+  min-width: 1.45rem !important;
+  height: 1.45rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #6b7280 !important;
+  box-shadow: none !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:hover,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:focus-visible {
+  background: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon .material-symbols-rounded {
+  font-size: 1.08rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card .seller-chat__copy--icon {
+  position: absolute !important;
+  right: 0.72rem !important;
+  bottom: 0.62rem !important;
+}
+body .app-shell .stage-five-zone .stage-zone-label {
+  width: 4.9rem !important;
+}
+body .app-shell .stage-five-zone .stage-zone-label b {
+  line-height: 1.15 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chips {
+  gap: 0.4rem !important;
+  padding: 0.62rem 0.82rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chips .seller-chat__chip {
+  min-height: 2.1rem !important;
+  padding: 0.38rem 0.78rem !important;
+  border: 0 !important;
+  background: var(--stage-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.16) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chips .seller-chat__chip:hover,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chips .seller-chat__chip:focus-visible {
+  background: var(--stage-accent-dark) !important;
+  color: #fff !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread {
+  position: relative !important;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(20, 184, 166, 0.09) 0 7rem, transparent 7.2rem),
+    radial-gradient(circle at 85% 32%, rgba(59, 108, 255, 0.08) 0 6rem, transparent 6.2rem),
+    linear-gradient(180deg, #f7fbfc 0%, #eef7f5 100%) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle, rgba(20, 184, 166, 0.11) 1px, transparent 1.4px),
+    radial-gradient(circle, rgba(59, 108, 255, 0.08) 1px, transparent 1.4px);
+  background-position: 0 0, 18px 18px;
+  background-size: 36px 36px;
+  content: '';
+  opacity: 0.45;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread > * {
+  position: relative;
+  z-index: 1;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__empty {
+  display: grid !important;
+  gap: 0.7rem !important;
+  align-content: start !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__empty-reply {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 0.38rem !important;
+  width: min(720px, 100%);
+  padding: 0.64rem;
+  border: 1px solid rgba(229, 232, 237, 0.9);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 10px 28px rgba(18, 25, 38, 0.07);
+  backdrop-filter: blur(8px);
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__empty-reply .seller-chat__form-label {
+  grid-column: 1 / -1;
+}
+
+/* Per-step accent surfaces for notices, query chips, and local actions. */
+body .app-shell .stage-zone .comparison-caution,
+body .app-shell .stage-zone .stage-three-skip-note,
+body .app-shell .stage-zone .meta.empty {
+  border: 1px solid color-mix(in srgb, var(--stage-accent) 16%, transparent) !important;
+  background: #fff !important;
+  color: color-mix(in srgb, var(--stage-accent-dark) 72%, #2f3745) !important;
+}
+body .app-shell .stage-zone .comparison-caution {
+  border-left: 3px solid var(--stage-accent) !important;
+  box-shadow: 0 8px 22px rgba(18, 25, 38, 0.04) !important;
+}
+body .app-shell .stage-zone .stage-three-skip-note {
+  margin: 0.55rem 0 0 !important;
+  padding: 0.52rem 0.7rem !important;
+  border-radius: 14px !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  line-height: 1.4 !important;
+}
+body .app-shell .stage-zone .search-query-chip {
+  background: color-mix(in srgb, var(--stage-accent) 10%, #fff) !important;
+  color: var(--stage-accent-dark) !important;
+}
+body .app-shell .stage-zone .hist-meta {
+  background: transparent !important;
+  color: #8f96a3 !important;
+}
+body .app-shell .stage-zone .chip-btn,
+body .app-shell .stage-zone .price-source-link {
+  border: 1px solid color-mix(in srgb, var(--stage-accent) 18%, transparent) !important;
+  background: color-mix(in srgb, var(--stage-accent) 10%, #fff) !important;
+  color: var(--stage-accent-dark) !important;
+}
+body .app-shell .stage-zone .chip-btn:hover,
+body .app-shell .stage-zone .price-source-link:hover {
+  background: var(--stage-accent) !important;
+  color: #fff !important;
+}
+body .app-shell .stage-zone .chip-btn--ghost {
+  background: #fff !important;
+}
+body .app-shell .stage-two-risk-card {
+  min-height: 5.1rem !important;
+  padding: 0.46rem 0.62rem !important;
+  gap: 0.55rem !important;
+}
+body .app-shell .stage-two-risk-card__icon {
+  width: 2.25rem !important;
+  height: 2.25rem !important;
+  border-radius: 14px !important;
+  font-size: 1.16rem !important;
+}
+body .app-shell .stage-two-risk-card h3 {
+  font-size: 0.78rem !important;
+}
+body .app-shell .stage-two-risk-card p:not(.stage-two-card-label) {
+  font-size: 0.64rem !important;
+  line-height: 1.32 !important;
+}
+.seller-chat-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.4rem;
+  z-index: 9999;
+  padding: 0.62rem 0.86rem;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.94);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: 0 16px 38px rgba(17, 24, 39, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(-50%, 10px, 0) scale(0.98);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.seller-chat-toast.is-visible {
+  opacity: 1;
+  transform: translate3d(-50%, 0, 0) scale(1);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar,
+.seller-chat__toolbar {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0.48rem !important;
+  padding: 0.62rem 0.82rem !important;
+  background: #fff !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode-toggle,
+.seller-chat__mode-toggle {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.38rem !important;
+  padding: 0.18rem !important;
+  border-radius: 15px !important;
+  background: #f3f6f8 !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row,
+.seller-chat__tone-row {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 0.32rem !important;
+  overflow-x: auto !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode,
+.seller-chat__mode {
+  min-height: 2.08rem !important;
+  padding: 0.34rem 0.72rem !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: #5b6472 !important;
+  box-shadow: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active,
+.seller-chat__mode.is-active {
+  background: #151922 !important;
+  color: #fff !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip,
+.seller-chat__tone,
+.seller-chat__chip {
+  min-height: 1.92rem !important;
+  padding: 0.32rem 0.64rem !important;
+  background: #fff !important;
+  color: #4b5563 !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__note-input,
+.seller-chat__note-input,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__composer,
+.seller-chat__composer {
+  min-height: 2.45rem !important;
+  padding: 0.58rem 0.76rem !important;
+  border-radius: 20px !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+.seller-chat__form,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form,
+.seller-chat__reply-form {
+  padding: 0.68rem 0.82rem 0.78rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send,
+.seller-chat__send {
+  min-height: 2.35rem !important;
+  padding: 0 0.72rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card,
+.seller-chat__suggestion-card {
+  position: relative !important;
+  padding: 0.68rem 2.4rem 0.68rem 0.78rem !important;
+  cursor: pointer !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+.seller-chat__suggestion-card:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:focus-visible,
+.seller-chat__suggestion-card:focus-visible {
+  background: var(--stage-bg) !important;
+  color: #143c3a !important;
+  outline: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use,
+.seller-chat__suggestion-use {
+  display: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon,
+.seller-chat__copy--icon {
+  width: 1.45rem !important;
+  min-width: 1.45rem !important;
+  height: 1.45rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #6b7280 !important;
+  box-shadow: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:hover,
+.seller-chat__copy--icon:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:focus-visible,
+.seller-chat__copy--icon:focus-visible {
+  background: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon .material-symbols-rounded,
+.seller-chat__copy--icon .material-symbols-rounded {
+  font-size: 1.08rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card .seller-chat__copy--icon,
+.seller-chat__suggestion-card .seller-chat__copy--icon {
+  position: absolute !important;
+  right: 0.72rem !important;
+  bottom: 0.62rem !important;
+}
+
+/* Step 5 compact chat controls. Keep this as the real final override. */
+.stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar,
+.seller-chat__toolbar {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0.48rem !important;
+  padding: 0.62rem 0.82rem !important;
+  background: #fff !important;
+  border-bottom: 1px solid rgba(229, 232, 237, 0.68) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode-toggle,
+.seller-chat__mode-toggle {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.38rem !important;
+  width: 100%;
+  padding: 0.18rem;
+  border-radius: 15px;
+  background: #f3f6f8;
+  overflow: visible !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row,
+.seller-chat__tone-row {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 0.32rem !important;
+  overflow-x: auto !important;
+  padding: 0.02rem 0.02rem 0.08rem !important;
+  scrollbar-width: none;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row::-webkit-scrollbar,
+.seller-chat__tone-row::-webkit-scrollbar {
+  display: none;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode,
+.seller-chat__mode {
+  justify-content: center !important;
+  min-height: 2.08rem !important;
+  padding: 0.34rem 0.72rem !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: #5b6472 !important;
+  font-size: 0.77rem !important;
+  font-weight: 950 !important;
+  box-shadow: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active,
+.seller-chat__mode.is-active {
+  background: #151922 !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(18, 25, 38, 0.14) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip,
+.seller-chat__tone,
+.seller-chat__chip {
+  flex: 0 0 auto !important;
+  min-height: 1.92rem !important;
+  padding: 0.32rem 0.64rem !important;
+  border: 1px solid rgba(229, 232, 237, 0.95) !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  color: #4b5563 !important;
+  font-size: 0.72rem !important;
+  font-weight: 850 !important;
+  box-shadow: 0 2px 8px rgba(18, 25, 38, 0.04) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone.is-active,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip:hover,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover {
+  border-color: rgba(20, 184, 166, 0.2) !important;
+  background: var(--stage-bg) !important;
+  color: var(--stage-accent-dark) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__note-input,
+.seller-chat__note-input {
+  min-height: 2.15rem !important;
+  padding: 0.45rem 0.68rem !important;
+  border-radius: 18px !important;
+  font-size: 0.76rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+.seller-chat__form {
+  padding: 0.68rem 0.82rem 0.78rem !important;
+  gap: 0.42rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form,
+.seller-chat__reply-form {
+  padding: 0.62rem 0.82rem 0.78rem !important;
+  gap: 0.42rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__composer,
+.seller-chat__composer {
+  min-height: 2.45rem !important;
+  max-height: 6.5rem !important;
+  padding: 0.62rem 0.78rem !important;
+  border-radius: 20px !important;
+  font-size: 0.8rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send,
+.seller-chat__send {
+  min-width: 4.15rem !important;
+  min-height: 2.35rem !important;
+  padding: 0 0.72rem !important;
+  border-radius: 18px !important;
+  font-size: 0.76rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card,
+.seller-chat__suggestion-card {
+  position: relative;
+  padding: 0.68rem 2.4rem 0.68rem 0.78rem !important;
+  cursor: pointer;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:focus-visible,
+.seller-chat__suggestion-card:hover,
+.seller-chat__suggestion-card:focus-visible {
+  background: var(--stage-bg) !important;
+  color: #143c3a !important;
+  outline: none;
+}
+.seller-chat__suggestion-label {
+  color: rgba(17, 24, 39, 0.46) !important;
+  font-size: 0.63rem !important;
+  font-weight: 900 !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-actions,
+.seller-chat__suggestion-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  margin-top: 0.38rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-actions small,
+.seller-chat__suggestion-actions small {
+  color: rgba(17, 24, 39, 0.46);
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use,
+.seller-chat__suggestion-use {
+  display: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon,
+.seller-chat__copy--icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 1.45rem !important;
+  min-width: 1.45rem !important;
+  height: 1.45rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #6b7280 !important;
+  box-shadow: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:focus-visible,
+.seller-chat__copy--icon:hover,
+.seller-chat__copy--icon:focus-visible {
+  background: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+  transform: translate3d(0, -1px, 0);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon .material-symbols-rounded,
+.seller-chat__copy--icon .material-symbols-rounded {
+  font-size: 1.08rem !important;
+  font-weight: 600;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__bubble .seller-chat__copy--icon,
+.seller-chat__bubble .seller-chat__copy--icon {
+  margin-top: 0.42rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card .seller-chat__copy--icon,
+.seller-chat__suggestion-card .seller-chat__copy--icon {
+  position: absolute;
+  right: 0.72rem;
+  bottom: 0.62rem;
+}
+
+/* Stage transition polish: prevent result-card animations from replaying on every step switch. */
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.35rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+}
+.stage-two-risk-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.74rem;
+  cursor: default;
+}
+.stage-two-risk-card__body {
+  min-width: 0;
+}
+.stage-two-risk-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.65rem;
+  height: 2.65rem;
+  flex: 0 0 auto;
+  border-radius: 16px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.08);
+}
+.stage-two-risk-card.risk-risk .stage-two-risk-card__icon {
+  background: rgba(216, 0, 39, 0.08);
+  color: #d80027;
+}
+.stage-two-risk-card.risk-caution .stage-two-risk-card__icon,
+.stage-two-risk-card.risk-neutral .stage-two-risk-card__icon {
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+}
+.stage-two-risk-card.risk-safe .stage-two-risk-card__icon {
+  background: rgba(35, 134, 84, 0.1);
+  color: #238654;
+}
+.mini-card--product:not(.mini-card--loading),
+.stage-two-risk-card:not(.is-loading),
+.stage-two-card[data-listing-text-analysis]:not(.is-loading),
+.stage-two-card[data-listing-image-analysis]:not(.is-loading),
+.stage-three-card.used-price-guide-card:not(.is-loading),
+.stage-three-card.purchase-receipt-card:not(.is-loading),
+.comparison-filter-result,
+.purchase-receipt-stage,
+.stage-two-mini {
+  animation-fill-mode: backwards !important;
+}
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .mini-card--product:not(.mini-card--loading),
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .stage-two-risk-card:not(.is-loading),
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .stage-two-card[data-listing-text-analysis]:not(.is-loading),
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .stage-two-card[data-listing-image-analysis]:not(.is-loading),
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .stage-three-card.used-price-guide-card:not(.is-loading),
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .stage-three-card.purchase-receipt-card:not(.is-loading),
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .comparison-filter-result,
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .purchase-receipt-stage,
+.app-shell--slide:not(.is-ai-result-updating):not(.is-stage-starting) .stage-two-mini {
+  animation: none !important;
+  animation-delay: 0ms !important;
+}
+.app-shell--slide.is-stage-sliding .mini-card,
+.app-shell--slide.is-stage-sliding .stage-two-card,
+.app-shell--slide.is-stage-sliding .stage-two-risk-card,
+.app-shell--slide.is-stage-sliding .stage-three-card,
+.app-shell--slide.is-stage-sliding .current-price-card,
+.app-shell--slide.is-stage-sliding .stage-two-mini {
+  animation: none !important;
+}
+
+/* Step 5 compact chat controls. Keep this last. */
+.stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar,
+.seller-chat__toolbar {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 0.48rem !important;
+  padding: 0.62rem 0.82rem !important;
+  background: #fff !important;
+  border-bottom: 1px solid rgba(229, 232, 237, 0.68) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode-toggle,
+.seller-chat__mode-toggle {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.38rem !important;
+  width: 100%;
+  padding: 0.18rem;
+  border-radius: 15px;
+  background: #f3f6f8;
+  overflow: visible !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row,
+.seller-chat__tone-row {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 0.32rem !important;
+  overflow-x: auto !important;
+  padding: 0.02rem 0.02rem 0.08rem !important;
+  scrollbar-width: none;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row::-webkit-scrollbar,
+.seller-chat__tone-row::-webkit-scrollbar {
+  display: none;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode,
+.seller-chat__mode {
+  justify-content: center !important;
+  min-height: 2.08rem !important;
+  padding: 0.34rem 0.72rem !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: #5b6472 !important;
+  font-size: 0.77rem !important;
+  font-weight: 950 !important;
+  box-shadow: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active,
+.seller-chat__mode.is-active {
+  background: #151922 !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(18, 25, 38, 0.14) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip,
+.seller-chat__tone,
+.seller-chat__chip {
+  flex: 0 0 auto !important;
+  min-height: 1.92rem !important;
+  padding: 0.32rem 0.64rem !important;
+  border: 1px solid rgba(229, 232, 237, 0.95) !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  color: #4b5563 !important;
+  font-size: 0.72rem !important;
+  font-weight: 850 !important;
+  box-shadow: 0 2px 8px rgba(18, 25, 38, 0.04) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone.is-active,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip:hover,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover {
+  border-color: rgba(20, 184, 166, 0.2) !important;
+  background: var(--stage-bg) !important;
+  color: var(--stage-accent-dark) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__note-input,
+.seller-chat__note-input {
+  min-height: 2.15rem !important;
+  padding: 0.45rem 0.68rem !important;
+  border-radius: 18px !important;
+  font-size: 0.76rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+.seller-chat__form {
+  padding: 0.68rem 0.82rem 0.78rem !important;
+  gap: 0.42rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form,
+.seller-chat__reply-form {
+  padding: 0.62rem 0.82rem 0.78rem !important;
+  gap: 0.42rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__composer,
+.seller-chat__composer {
+  min-height: 2.45rem !important;
+  max-height: 6.5rem !important;
+  padding: 0.62rem 0.78rem !important;
+  border-radius: 20px !important;
+  font-size: 0.8rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send,
+.seller-chat__send {
+  min-width: 4.15rem !important;
+  min-height: 2.35rem !important;
+  padding: 0 0.72rem !important;
+  border-radius: 18px !important;
+  font-size: 0.76rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card,
+.seller-chat__suggestion-card {
+  position: relative;
+  padding: 0.68rem 2.4rem 0.68rem 0.78rem !important;
+  cursor: pointer;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:focus-visible,
+.seller-chat__suggestion-card:hover,
+.seller-chat__suggestion-card:focus-visible {
+  background: var(--stage-bg) !important;
+  color: #143c3a !important;
+  outline: none;
+}
+.seller-chat__suggestion-label {
+  color: rgba(17, 24, 39, 0.46) !important;
+  font-size: 0.63rem !important;
+  font-weight: 900 !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-actions,
+.seller-chat__suggestion-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  margin-top: 0.38rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-actions small,
+.seller-chat__suggestion-actions small {
+  color: rgba(17, 24, 39, 0.46);
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use,
+.seller-chat__suggestion-use {
+  display: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon,
+.seller-chat__copy--icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 1.45rem !important;
+  min-width: 1.45rem !important;
+  height: 1.45rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #6b7280 !important;
+  box-shadow: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon:focus-visible,
+.seller-chat__copy--icon:hover,
+.seller-chat__copy--icon:focus-visible {
+  background: transparent !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+  transform: translate3d(0, -1px, 0);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon .material-symbols-rounded,
+.seller-chat__copy--icon .material-symbols-rounded {
+  font-size: 1.08rem !important;
+  font-weight: 600;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__bubble .seller-chat__copy--icon,
+.seller-chat__bubble .seller-chat__copy--icon {
+  margin-top: 0.42rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card .seller-chat__copy--icon,
+.seller-chat__suggestion-card .seller-chat__copy--icon {
+  position: absolute;
+  right: 0.72rem;
+  bottom: 0.62rem;
+}
+
+/* Keep Step 5 controls after dashboard-v2 overrides. */
+.stage-five-panel button,
+.stage-five-panel a {
+  cursor: pointer !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.48rem 0.68rem;
+  background: #fff;
+  border-bottom: 1px solid rgba(229, 232, 237, 0.68);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__seller {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.62rem;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 auto;
+  border-radius: 16px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__seller strong {
+  display: block;
+  color: #151922;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__seller p {
+  margin: 0.12rem 0 0;
+  overflow: hidden;
+  color: #6c7482;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__listing-link {
+  flex: 0 0 auto;
+  padding: 0.28rem 0.58rem;
+  border-radius: 999px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.45rem;
+  padding: 0.85rem 1.1rem 1.05rem;
+  background: #fff;
+  border-top: 1px solid rgba(229, 232, 237, 0.68);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__composer--reply {
+  background: #f8fafc !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send--reply {
+  background: #3b6cff !important;
+  box-shadow: 0 10px 24px rgba(59, 108, 255, 0.16) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode {
+  border-color: rgba(20, 184, 166, 0.26) !important;
+  background: linear-gradient(180deg, #f0fffb 0%, #dcfaf3 100%) !important;
+  color: #0f766e !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.1) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active {
+  background: linear-gradient(135deg, #14b8a6 0%, #0f766e 100%) !important;
+  color: #fff !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__listing-link:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: 0 12px 28px rgba(18, 25, 38, 0.11) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone button,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone a {
+  transition: transform 180ms var(--dash-ease), box-shadow 180ms var(--dash-ease), background 180ms ease, color 180ms ease;
+}
+@media (max-width: 720px) {
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__context {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+    grid-template-columns: 1fr;
+  }
+}
+.app-shell .stage-five-panel .seller-chat__toolbar {
+  gap: 0.28rem !important;
+  padding: 0.38rem 0.62rem !important;
+}
+.app-shell .stage-five-panel .seller-chat__tone-row {
+  gap: 0.28rem !important;
+}
+.app-shell .stage-five-panel .seller-chat__tone,
+.app-shell .stage-five-panel .seller-chat__chip {
+  min-height: 1.62rem !important;
+  padding: 0.14rem 0.5rem !important;
+  font-size: 0.7rem !important;
+  line-height: 1.1 !important;
+}
+.app-shell .stage-five-panel .seller-chat__note-input,
+.app-shell .stage-five-panel .seller-chat__composer {
+  min-height: 1.78rem !important;
+  padding: 0.32rem 0.58rem !important;
+  border-radius: 13px !important;
+  font-size: 0.74rem !important;
+  line-height: 1.25 !important;
+}
+.app-shell .stage-five-panel .seller-chat__form,
+.app-shell .stage-five-panel .seller-chat__empty-reply {
+  padding: 0.32rem 0.58rem 0.4rem !important;
+  gap: 0.32rem !important;
+}
+.app-shell .stage-five-panel .seller-chat__form-label {
+  margin-bottom: 0 !important;
+  font-size: 0.64rem !important;
+}
+.app-shell .stage-five-panel .seller-chat__send {
+  min-width: 4.2rem !important;
+  min-height: 1.78rem !important;
+  padding: 0 0.56rem !important;
+  border-radius: 13px !important;
+  font-size: 0.72rem !important;
+}
+.app-shell .stage-five-panel .seller-chat__chips .seller-chat__chip {
+  min-height: 1.85rem !important;
+  padding: 0.26rem 0.68rem !important;
+}
+
+/* Step 5 interaction polish. */
+.stage-five-panel button,
+.stage-five-panel a,
+.seller-chat__mode,
+.seller-chat__tone,
+.seller-chat__chip,
+.seller-chat__suggestion-card,
+.seller-chat__send,
+.seller-chat__delete,
+.seller-chat__reset-icon,
+.seller-chat__listing-link {
+  cursor: pointer;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode {
+  border-color: rgba(20, 184, 166, 0.26) !important;
+  background: linear-gradient(180deg, #f0fffb 0%, #dcfaf3 100%) !important;
+  color: #0f766e !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.1) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active {
+  background: linear-gradient(135deg, #14b8a6 0%, #0f766e 100%) !important;
+  color: #fff !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+.seller-chat__listing-link:hover,
+.seller-chat__send:hover {
+  transform: translate3d(0, -2px, 0);
+  box-shadow: 0 12px 28px rgba(18, 25, 38, 0.11) !important;
+}
+.seller-chat__context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.78rem 1.1rem;
+  background: #fff;
+  border-bottom: 1px solid rgba(229, 232, 237, 0.68);
+}
+.seller-chat__seller {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.62rem;
+}
+.seller-chat__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  flex: 0 0 auto;
+  border-radius: 16px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+.seller-chat__seller strong {
+  display: block;
+  color: #151922;
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+.seller-chat__seller p {
+  margin: 0.12rem 0 0;
+  overflow: hidden;
+  color: #6c7482;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seller-chat__listing-link {
+  flex: 0 0 auto;
+  padding: 0.44rem 0.72rem;
+  border-radius: 999px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-decoration: none;
+  transition: transform 180ms var(--dash-ease), box-shadow 180ms var(--dash-ease), background 180ms ease;
+}
+.seller-chat__reply-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.45rem;
+  padding: 0.85rem 1.1rem 1.05rem;
+  background: #fff;
+  border-top: 1px solid rgba(229, 232, 237, 0.68);
+}
+.seller-chat__composer--reply {
+  background: #f8fafc !important;
+}
+.seller-chat__send--reply {
+  background: #3b6cff !important;
+  box-shadow: 0 10px 24px rgba(59, 108, 255, 0.16) !important;
+}
+.seller-chat__phone button,
+.seller-chat__phone a {
+  transition: transform 180ms var(--dash-ease), box-shadow 180ms var(--dash-ease), background 180ms ease, color 180ms ease;
+}
+@media (max-width: 720px) {
+  .seller-chat__context {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .seller-chat__reply-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Step 5 final-final: restore CTA card after older Step 5 overrides and add soft chat motion. */
+@keyframes sellerChatPopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.96);
+    filter: blur(2px);
+  }
+  58% {
+    opacity: 1;
+    transform: translate3d(0, -3px, 0) scale(1.015);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+@keyframes sellerSuggestionRise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+@keyframes sellerStageCardIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+.stage-five-zone-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: auto !important;
+  overflow: visible !important;
+}
+.stage-five-start-card,
+.stage-five-start-card:hover,
+.stage-five-start-card:focus-visible {
+  display: block !important;
+  width: 100% !important;
+  min-height: 12rem !important;
+  padding: 0.9rem !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: var(--dash-radius-md, 20px) !important;
+  background: var(--stage-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 18px 42px rgba(18, 25, 38, 0.14) !important;
+  transform: translate3d(0, 0, 0) scale(1) !important;
+  animation: sellerStageCardIn 420ms var(--dash-ease, cubic-bezier(0.22, 1, 0.36, 1)) both !important;
+}
+.stage-five-start-card:hover,
+.stage-five-start-card:focus-visible {
+  background: var(--stage-accent-dark) !important;
+  box-shadow: 0 22px 52px rgba(18, 25, 38, 0.18) !important;
+  transform: translate3d(0, -4px, 0) scale(1.004) !important;
+}
+.stage-five-start-card .stage-two-ready {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 10rem !important;
+  text-align: center !important;
+}
+.stage-five-start-card::after {
+  right: 1rem;
+  color: rgba(255, 255, 255, 0.95);
+  content: '>';
+}
+.stage-five-start-card .stage-two-card-label,
+.stage-five-start-card h3,
+.stage-five-start-card p,
+.stage-five-start-card .stage-start-card__cta {
+  color: rgba(255, 255, 255, 0.94) !important;
+}
+.stage-five-start-card h3 {
+  margin: 0.18rem 0 !important;
+  font-size: 1rem !important;
+}
+.stage-five-start-card p {
+  max-width: 42rem;
+  margin: 0.35rem auto 0 !important;
+}
+.stage-five-card:not(.stage-five-start-card),
+.stage-five-card:not(.stage-five-start-card):hover,
+.stage-five-card:not(.stage-five-start-card):focus-within {
+  width: 100% !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone {
+  width: min(980px, 100%) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 auto;
+  overflow: visible !important;
+  border-radius: var(--dash-radius-lg, 28px);
+  background: var(--dash-card, #fff);
+  box-shadow: var(--dash-card-shadow, 0 18px 48px rgba(18, 25, 38, 0.08));
+  animation: sellerStageCardIn 360ms var(--dash-ease, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__row {
+  animation: sellerChatPopIn 360ms cubic-bezier(0.2, 0.9, 0.2, 1.18) both;
+  transform-origin: center bottom;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__row--left {
+  transform-origin: left bottom;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__row--right {
+  transform-origin: right bottom;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions {
+  background: #fff;
+  border-top: 1px solid rgba(229, 232, 237, 0.68);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card {
+  animation: sellerSuggestionRise 280ms var(--dash-ease, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:nth-of-type(2) {
+  animation-delay: 35ms;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:nth-of-type(3) {
+  animation-delay: 70ms;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:nth-of-type(4) {
+  animation-delay: 105ms;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:nth-of-type(5) {
+  animation-delay: 140ms;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:nth-of-type(6) {
+  animation-delay: 175ms;
+}
+@keyframes aiResultPopIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.975);
+    filter: blur(2px);
+  }
+  62% {
+    opacity: 1;
+    transform: translate3d(0, -2px, 0) scale(1.01);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+.mini-card--product:not(.mini-card--loading),
+.stage-two-risk-card:not(.is-loading),
+.stage-two-card[data-listing-text-analysis]:not(.is-loading),
+.stage-two-card[data-listing-image-analysis]:not(.is-loading),
+.stage-three-card.used-price-guide-card:not(.is-loading),
+.stage-three-card.purchase-receipt-card:not(.is-loading),
+.comparison-filter-result,
+.purchase-receipt-stage {
+  animation: aiResultPopIn 380ms cubic-bezier(0.2, 0.9, 0.2, 1.12) both;
+  transform-origin: center bottom;
+}
+.stage-two-mini {
+  animation: aiResultPopIn 320ms cubic-bezier(0.2, 0.9, 0.2, 1.08) both;
+}
+.stage-two-mini:nth-child(2) {
+  animation-delay: 45ms;
+}
+.stage-two-mini:nth-child(3) {
+  animation-delay: 90ms;
+}
+.stage-two-mini:nth-child(4) {
+  animation-delay: 135ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-five-start-card,
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__phone,
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__row,
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card,
+  .mini-card--product:not(.mini-card--loading),
+  .stage-two-risk-card:not(.is-loading),
+  .stage-two-card[data-listing-text-analysis]:not(.is-loading),
+  .stage-two-card[data-listing-image-analysis]:not(.is-loading),
+  .stage-three-card.used-price-guide-card:not(.is-loading),
+  .stage-three-card.purchase-receipt-card:not(.is-loading),
+  .comparison-filter-result,
+  .purchase-receipt-stage,
+  .stage-two-mini {
+    animation: none !important;
+  }
+}
+
+/* Step 5 final override: dashboard-style assistant, matching the rest of the analyzer. */
+.stage-five-zone {
+  overflow: visible !important;
+}
+.stage-five-zone-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: auto !important;
+  justify-items: stretch;
+  overflow: visible !important;
+}
+.stage-five-start-card,
+.stage-five-start-card:hover,
+.stage-five-start-card:focus-visible {
+  min-height: 12rem !important;
+  padding: 0.9rem !important;
+  overflow: hidden !important;
+  background: var(--stage-accent) !important;
+  color: #fff !important;
+  border: 0 !important;
+  box-shadow: 0 18px 42px rgba(18, 25, 38, 0.14) !important;
+  transform: translate3d(0, 0, 0) scale(1) !important;
+}
+.stage-five-start-card:hover,
+.stage-five-start-card:focus-visible {
+  background: var(--stage-accent-dark) !important;
+  transform: translate3d(0, -4px, 0) scale(1.004) !important;
+}
+.stage-five-start-card .stage-two-card-label,
+.stage-five-start-card h3,
+.stage-five-start-card p {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+.stage-five-card:not(.stage-five-start-card),
+.stage-five-card:not(.stage-five-start-card):hover,
+.stage-five-card:not(.stage-five-start-card):focus-within {
+  width: 100%;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone {
+  width: min(980px, 100%) !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto auto minmax(220px, auto) auto auto;
+  overflow: visible !important;
+  border: 0;
+  border-radius: var(--dash-radius-lg, 28px);
+  background: var(--dash-card, #fff);
+  box-shadow: var(--dash-card-shadow, 0 18px 48px rgba(18, 25, 38, 0.08));
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 0;
+  padding: 0.62rem 0.78rem 0.5rem;
+  background: #fff;
+  border-bottom: 1px solid rgba(229, 232, 237, 0.78);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__back {
+  display: none;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__title {
+  text-align: left;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__title strong {
+  color: #151922;
+  font-size: 1.02rem;
+  line-height: 1.25;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__title span {
+  color: #6c7482;
+  font-size: 0.74rem;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reset-icon {
+  width: auto;
+  height: 2rem;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  font-size: 0.74rem;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reset-icon::after {
+  content: ' 초기화';
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 0.28rem;
+  padding: 0.38rem 0.62rem;
+  background: #fff;
+  border-bottom: 1px solid rgba(229, 232, 237, 0.68);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode-toggle,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  overflow: visible;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__note-input {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(229, 232, 237, 0.92);
+  background: #f9fafb;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip {
+  min-height: 1.62rem;
+  padding: 0.14rem 0.5rem;
+  background: #fff;
+  color: #4b5563;
+  border: 1px solid rgba(229, 232, 237, 0.9);
+  box-shadow: 0 4px 12px rgba(18, 25, 38, 0.04);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone.is-active,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chip:hover {
+  background: var(--stage-bg);
+  color: var(--stage-accent-dark);
+  border-color: rgba(20, 184, 166, 0.18);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__thread {
+  align-content: start;
+  min-height: 12rem;
+  padding: 0.64rem 0.68rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #f3f7f8 100%);
+  border: 0;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__bubble {
+  max-width: min(78%, 40rem);
+  border: 1px solid rgba(229, 232, 237, 0.86);
+  background: #fff;
+  color: #242730;
+  box-shadow: 0 8px 20px rgba(18, 25, 38, 0.06);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__bubble--me {
+  background: var(--stage-bg);
+  color: #143c3a;
+  border-color: rgba(20, 184, 166, 0.18);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chips,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__form {
+  background: #fff;
+  border-top: 1px solid rgba(229, 232, 237, 0.68);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions {
+  padding: 0.58rem 0.68rem;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card {
+  border: 1px solid rgba(229, 232, 237, 0.86);
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(18, 25, 38, 0.05);
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:focus-visible {
+  background: var(--stage-bg);
+  color: #143c3a;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chips {
+  flex-wrap: wrap;
+  padding: 0.5rem 0.68rem;
+  overflow: visible;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__form {
+  padding: 0.32rem 0.58rem 0.4rem;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__composer {
+  min-height: 1.78rem;
+  padding: 0.32rem 0.58rem;
+  border: 1px solid rgba(229, 232, 237, 0.94);
+  background: #fff;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__send {
+  background: var(--stage-accent);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.18);
+}
+.app-shell--slide[data-stage-slide-index="4"] .analysis-board {
+  align-content: start;
+  padding-top: clamp(1rem, 3svh, 2.5rem);
+  padding-bottom: 5rem;
+}
+@media (max-width: 720px) {
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar {
+    grid-template-columns: 1fr;
+  }
+  .stage-five-card:not(.stage-five-start-card) .seller-chat__bubble {
+    max-width: 92%;
+  }
+}
+
+/* Step 5 must behave like a chat screen, not a dashboard card. Keep this last. */
+.stage-five-zone {
+  overflow: visible !important;
+}
+.stage-five-zone-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: auto !important;
+  justify-items: center;
+  overflow: visible !important;
+}
+.stage-five-card,
+.stage-five-card:hover,
+.stage-five-card:focus-within {
+  width: 100%;
+  min-height: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.app-shell--slide[data-stage-slide-index="4"] .analysis-board {
+  align-content: start;
+  padding-top: clamp(1rem, 3svh, 2.5rem);
+  padding-bottom: 5rem;
+}
+.seller-chat__phone {
+  width: min(440px, calc(100vw - 2rem));
+  min-height: min(720px, calc(100svh - 8.5rem));
+}
+@media (max-width: 640px) {
+  .stage-five-zone {
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+  }
+  .seller-chat__phone {
+    width: 100%;
+    min-height: calc(100svh - 8rem);
+    border-radius: 22px;
+  }
+  .seller-chat__toolbar {
+    padding: 0.5rem;
+  }
+  .seller-chat__thread {
+    min-height: 15rem;
+    padding: 0.8rem 0.62rem;
+  }
+  .seller-chat__bubble {
+    max-width: 88%;
+  }
+  .seller-chat__form {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+  .seller-chat__send {
+    min-width: 3.9rem;
+    padding-inline: 0.72rem;
+  }
+}
+.seller-chat__suggestions {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.62rem;
+  background: rgba(255, 255, 255, 0.22);
+  border-top: 1px solid rgba(255, 255, 255, 0.28);
+}
+.seller-chat__suggestions-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #263241;
+}
+.seller-chat__suggestions-head strong {
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+.seller-chat__suggestions-head span {
+  color: rgba(38, 50, 65, 0.7);
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+.seller-chat__suggestion-card {
+  display: grid;
+  gap: 0.18rem;
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  padding: 0.72rem 0.82rem;
+  background: #fff;
+  color: #111827;
+  text-align: left;
+  box-shadow: 0 4px 14px rgba(17, 24, 39, 0.08);
+}
+.seller-chat__suggestion-card:hover,
+.seller-chat__suggestion-card:focus-visible {
+  background: #fee500;
+  color: #201b00;
+}
+.seller-chat__suggestion-card span {
+  color: rgba(17, 24, 39, 0.48);
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+.seller-chat__suggestion-card strong {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.seller-chat__suggestions.is-loading .seller-chat__suggestion-card {
+  background: rgba(255, 255, 255, 0.84);
+}
+.seller-chat__delete {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.32rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  color: rgba(17, 24, 39, 0.62);
+  font-size: 0.8rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: none;
+}
+.seller-chat__delete + .seller-chat__label {
+  padding-right: 1.1rem;
+}
 
 @media (max-width: 1180px) {
   .top {
-    gap: 0.75rem;
+    grid-template-columns: auto minmax(300px, 360px) 1fr;
+    column-gap: 0.75rem;
   }
 
   .url-import {
-    flex: 1 1 460px;
     min-width: 0;
-    width: auto;
+    width: min(360px, 100%);
     max-width: 100%;
   }
 
   .top-actions {
-    flex: 0 1 auto;
     justify-content: flex-end;
     min-width: 0;
+  }
+
+  .top-actions .btn {
+    white-space: nowrap;
   }
 }
 
 @media (max-width: 980px) {
   .top {
-    flex-wrap: wrap;
-    align-items: stretch;
+    grid-template-columns: auto minmax(260px, 320px) 1fr;
+    align-items: center;
   }
 
   .brand {
-    flex: 1 1 100%;
     min-width: 0;
   }
 
   .url-import {
-    flex: 1 1 100%;
-    width: 100%;
-    max-width: none;
+    width: min(320px, 100%);
+    max-width: 100%;
   }
 
   .top-actions {
-    flex: 1 1 100%;
-    justify-content: flex-start;
+    flex-wrap: nowrap;
   }
 
   .top-actions .btn {
@@ -3155,7 +5659,9 @@ body {
   }
 
   .top {
-    gap: 0.6rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 0.55rem;
+    row-gap: 0.45rem;
   }
 
   .brand {
@@ -3168,6 +5674,8 @@ body {
   }
 
   .url-import {
+    grid-column: 2;
+    width: 100%;
     grid-template-columns: auto minmax(0, 1fr);
     gap: 0.35rem;
     padding: 0.32rem;
@@ -3183,12 +5691,38 @@ body {
   }
 
   .top-actions {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    justify-content: flex-end;
     gap: 0.35rem;
   }
 
   .top-actions .btn {
     min-width: 0;
     flex: 1 1 calc(50% - 0.175rem);
+    padding-inline: 0.65rem;
+  }
+
+  .seller-chat__head {
+    flex-direction: column;
+  }
+
+  .seller-chat__meta {
+    justify-content: flex-start;
+  }
+
+  .seller-chat__bubble {
+    max-width: 100%;
+  }
+
+  .seller-chat__form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .seller-chat__form-actions .btn,
+  .seller-chat__form-actions .chip-btn {
+    width: 100%;
   }
 }
 .app-shell--slide[data-stage-slide-index="3"] .analysis-board:has(.stage-four-start-card) {
@@ -3264,220 +5798,3136 @@ body {
   transition: min-height 7.8s linear !important;
 }
 
-/* Dashboard v2: calmer layout, stronger hierarchy, no heavy effects. */
-:root {
-  --dash-bg: #f3f5f8;
-  --dash-panel: #ffffff;
-  --dash-card: #ffffff;
-  --dash-text: #151922;
-  --dash-muted: #6c7482;
-  --dash-soft-shadow: 0 10px 28px rgba(18, 25, 38, 0.06);
-  --dash-card-shadow: 0 18px 48px rgba(18, 25, 38, 0.08);
-  --dash-hover-shadow: 0 22px 58px rgba(18, 25, 38, 0.12);
-  --dash-radius-lg: 28px;
-  --dash-radius-md: 20px;
-  --dash-ease: cubic-bezier(0.22, 1, 0.36, 1);
+/* Preserve only: functional left rail + hidden legacy top header. */
+body::before,
+body::after {
+  display: none !important;
+  content: none !important;
 }
-body {
-  background: var(--dash-bg);
-  color: var(--dash-text);
+@media (min-width: 1081px) {
+  .app-shell {
+    padding-left: 5.7rem !important;
+  }
 }
 .top {
-  max-width: 1280px;
-  align-items: center;
-  padding: 1rem 1.5rem 0.85rem;
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
-.brand,
-.top-actions {
-  border: 0;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: var(--dash-soft-shadow);
+.dashboard-rail {
+  position: fixed !important;
+  top: 0.85rem !important;
+  bottom: 0.85rem !important;
+  left: 0.85rem !important;
+  z-index: 180 !important;
+  width: 4.72rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 0.72rem !important;
+  padding: 0.66rem 0.42rem !important;
+  border-radius: 28px !important;
+  background: linear-gradient(180deg, #ff7a18 0%, #ff6f0f 48%, #e85d04 100%) !important;
+  box-shadow: 0 22px 52px rgba(232, 93, 4, 0.24) !important;
+  box-sizing: border-box !important;
+  contain: layout paint !important;
 }
-.brand {
-  padding: 0.44rem 0.78rem 0.44rem 0.44rem;
-  border-radius: 999px;
+.dashboard-rail__logo {
+  display: grid !important;
+  place-items: center !important;
+  width: 3rem !important;
+  height: 3rem !important;
+  border-radius: 21px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: 0 12px 28px rgba(84, 50, 18, 0.18) !important;
 }
-.brand-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
+.dashboard-rail__logo img {
+  width: 1.75rem !important;
+  height: 1.75rem !important;
+  border-radius: 10px !important;
 }
-h1 {
-  font-size: 1.17rem;
-  line-height: 1.12;
-  letter-spacing: -0.035em;
+.dashboard-rail__nav {
+  display: grid !important;
+  gap: 0.52rem !important;
+  width: 100% !important;
 }
-.sub {
-  color: var(--dash-muted);
-  font-size: 0.76rem;
+.dashboard-rail__btn,
+.dashboard-rail__btn--accent {
+  display: grid !important;
+  place-items: center !important;
+  gap: 0.08rem !important;
+  width: 3.55rem !important;
+  min-width: 3.55rem !important;
+  max-width: 3.55rem !important;
+  min-height: 3.18rem !important;
+  margin: 0 auto !important;
+  border: 0 !important;
+  border-radius: 20px !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  transform: none !important;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease !important;
 }
-.top-actions {
-  padding: 0.36rem;
-  border-radius: 999px;
-  gap: 0.38rem;
+.dashboard-rail__btn .material-symbols-rounded {
+  font-size: 1.38rem !important;
+  line-height: 1 !important;
 }
-.analysis-board,
-.app-shell--slide[data-stage-slide-index="0"] .analysis-board {
-  max-width: 1280px;
+.dashboard-rail__btn small {
+  font-size: 0.58rem !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em !important;
 }
-.stage-zone {
-  padding: 1.1rem 1.1rem 1.1rem 6.25rem;
-  border-radius: var(--dash-radius-lg);
-}
-.stage-zone::before {
-  border: 0;
-  border-radius: var(--dash-radius-lg);
-  background: var(--dash-panel);
-  box-shadow: var(--dash-card-shadow);
-}
-.stage-one-zone {
-  --stage-accent: #ff6f0f;
-  --stage-accent-dark: #d95700;
-  --stage-bg: #fff3ea;
-}
-.stage-two-zone {
-  --stage-accent: #3b6cff;
-  --stage-accent-dark: #254fd0;
-  --stage-bg: #eef3ff;
-}
-.stage-three-zone {
-  --stage-accent: #12a875;
-  --stage-accent-dark: #087f59;
-  --stage-bg: #eafaf4;
-}
-.stage-four-zone {
-  --stage-accent: #8b5cf6;
-  --stage-accent-dark: #6d3fe0;
-  --stage-bg: #f3efff;
-}
-.stage-zone-label {
-  top: 1.2rem;
-  left: 1.2rem;
-  width: 4.35rem;
-  padding: 0.62rem 0.52rem;
-  border: 0;
-  border-radius: 20px;
-  background: var(--stage-bg);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.48);
-}
-.stage-zone-label b,
-.stage-two-zone .stage-zone-label b,
-.stage-three-zone .stage-zone-label b,
-.stage-four-zone .stage-zone-label b,
-.block-label,
-.stage-kicker {
-  color: var(--stage-accent);
-}
-.stage-zone-label span {
-  color: var(--stage-accent-dark);
-}
-.mini-card,
-.stage-two-card,
-.stage-two-risk-card,
-.stage-three-card,
-.current-price-card,
-.stage-two-mini,
-.stage-two-card--listing-text .stage-two-mini,
-.used-price-guide-card,
-.comparison-price-table-wrap {
-  border: 0;
-  background: var(--dash-card);
-  border-radius: var(--dash-radius-md);
-  box-shadow: var(--dash-soft-shadow);
-}
-.mini-card,
-.stage-two-card,
-.stage-two-risk-card,
-.stage-three-card,
-.current-price-card,
-.stage-two-mini {
-  transform: translate3d(0, 0, 0) scale(1);
-  transition: transform 190ms var(--dash-ease), box-shadow 190ms var(--dash-ease), opacity 160ms ease;
-}
-.mini-card:hover,
-.stage-two-card:hover,
-.stage-two-risk-card:hover,
-.stage-three-card:hover,
-.current-price-card:hover,
-.stage-two-mini:hover {
-  z-index: 30;
-  transform: translate3d(0, -4px, 0) scale(1.004);
-  box-shadow: var(--dash-hover-shadow);
-}
-.purchase-receipt-stage,
-.purchase-receipt-stage:hover,
-.mini-card--empty:hover,
-.stage-lock-card:hover,
-.stage-two-card.is-disabled:hover {
+.dashboard-rail__btn:hover,
+.dashboard-rail__btn:focus-visible,
+.dashboard-rail__btn.is-active,
+.dashboard-rail__btn--accent:hover,
+.dashboard-rail__btn--accent:focus-visible {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #e85d04 !important;
+  box-shadow: 0 12px 26px rgba(84, 50, 18, 0.17) !important;
+  outline: none !important;
   transform: none !important;
 }
-.stage-start-card:not(.stage-four-start-card),
-.stage-two-card.stage-start-card:not(.stage-four-start-card),
-.stage-three-card.stage-start-card:not(.stage-four-start-card) {
-  border: 0;
-  background: var(--stage-accent);
-  color: #fff;
-  box-shadow: 0 18px 42px rgba(18, 25, 38, 0.14);
+.dashboard-rail__btn--accent:not(:hover):not(:focus-visible):not(.is-active) {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #fff !important;
 }
-.stage-start-card:not(.stage-four-start-card):hover,
-.stage-start-card:not(.stage-four-start-card):focus-visible,
-.stage-two-card.stage-start-card:not(.stage-four-start-card):hover,
-.stage-two-card.stage-start-card:not(.stage-four-start-card):focus-visible,
-.stage-three-card.stage-start-card:not(.stage-four-start-card):hover,
-.stage-three-card.stage-start-card:not(.stage-four-start-card):focus-visible {
-  background: var(--stage-accent-dark);
-  box-shadow: 0 22px 52px rgba(18, 25, 38, 0.18);
+.dashboard-rail-panel {
+  position: absolute !important;
+  left: calc(100% + 0.72rem) !important;
+  top: 0.42rem !important;
+  width: min(24rem, calc(100vw - 7.4rem)) !important;
+  padding: 0.84rem !important;
+  border: 1px solid rgba(231, 226, 220, 0.96) !important;
+  border-radius: 24px !important;
+  background: #fff !important;
+  box-shadow: 0 24px 64px rgba(45, 36, 20, 0.16) !important;
+  opacity: 0 !important;
+  transform: translate3d(-8px, 0, 0) scale(0.98) !important;
+  transform-origin: left top !important;
+  transition: opacity 160ms ease, transform 160ms ease !important;
 }
-.badge,
-.mode-toggle[aria-pressed="true"],
-.chip-btn {
-  border: 0;
-  background: var(--stage-bg);
-  color: var(--stage-accent-dark);
+.dashboard-rail-panel.is-open {
+  opacity: 1 !important;
+  transform: translate3d(0, 0, 0) scale(1) !important;
 }
-.btn {
-  box-shadow: 0 10px 24px rgba(255, 111, 15, 0.18);
+.dashboard-rail-panel__head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.8rem !important;
+  margin-bottom: 0.7rem !important;
 }
-.btn-secondary {
-  border: 0;
-  background: #fff;
-  box-shadow: none;
+.dashboard-rail-panel__close {
+  width: 1.85rem !important;
+  height: 1.85rem !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #fff3ea !important;
+  color: #8a4a18 !important;
+  cursor: pointer !important;
 }
-.app-shell--slide[data-stage-slide-index="0"] .product-summary-text,
-.product-summary-text {
-  grid-template-rows: auto minmax(64px, auto);
-  overflow: visible;
+.dashboard-rail-import {
+  display: grid !important;
+  gap: 0.52rem !important;
 }
-.app-shell--slide[data-stage-slide-index="0"] .product-summary-top,
-.product-summary-top {
-  max-height: none;
-  overflow: visible;
+.dashboard-rail-import div {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 0.42rem !important;
 }
-.product-summary-text .mini-muted {
-  white-space: normal;
-  overflow: visible;
+.dashboard-rail-import input {
+  min-height: 2.4rem !important;
+  min-width: 0 !important;
+  border: 1px solid #e7e2dc !important;
+  border-radius: 15px !important;
+  padding: 0 0.78rem !important;
+  background: #fffaf5 !important;
+  color: #17191f !important;
+  outline: none !important;
 }
-.stage-two-card--listing-text .stage-two-mini-list {
-  gap: 0.62rem;
+.dashboard-rail-import button {
+  min-height: 2.4rem !important;
+  border: 0 !important;
+  border-radius: 15px !important;
+  padding: 0 0.86rem !important;
+  background: #ff6f0f !important;
+  color: #fff !important;
+  font-size: 0.76rem !important;
+  font-weight: 950 !important;
+  cursor: pointer !important;
 }
-.stage-two-card--listing-text .stage-two-mini {
-  padding: 0.72rem 0.82rem;
+.dashboard-rail-import p,
+.dashboard-rail-import label {
+  margin: 0 !important;
+  color: #6f7785 !important;
+  font-size: 0.72rem !important;
+  font-weight: 850 !important;
+}
+.direct-chat-popover {
+  position: fixed !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 210 !important;
+  width: min(520px, calc(100vw - 7.6rem)) !important;
+}
+@media (max-width: 1080px) {
+  .app-shell {
+    padding-left: 0 !important;
+    padding-bottom: 5.4rem !important;
+  }
+  .dashboard-rail {
+    top: auto !important;
+    right: 0.72rem !important;
+    bottom: 0.72rem !important;
+    left: 0.72rem !important;
+    width: auto !important;
+    height: 4.65rem !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    border-radius: 26px !important;
+    overflow-x: auto !important;
+  }
+  .dashboard-rail__logo {
+    display: none !important;
+  }
+  .dashboard-rail__nav {
+    display: flex !important;
+    justify-content: center !important;
+    gap: 0.42rem !important;
+    min-width: max-content !important;
+  }
+  .dashboard-rail__btn,
+  .dashboard-rail__btn--accent {
+    width: 3.35rem !important;
+    min-width: 3.35rem !important;
+    max-width: 3.35rem !important;
+    min-height: 3.2rem !important;
+  }
+  .dashboard-rail-panel {
+    top: auto !important;
+    bottom: calc(100% + 0.7rem) !important;
+    left: 50% !important;
+    width: min(30rem, calc(100vw - 1.6rem)) !important;
+    transform: translate3d(-50%, 8px, 0) scale(0.98) !important;
+    transform-origin: bottom center !important;
+  }
+  .dashboard-rail-panel.is-open {
+    transform: translate3d(-50%, 0, 0) scale(1) !important;
+  }
+}
+
+/* Rail URL panel fix + visible non-sticky brand header. */
+.top {
+  position: relative !important;
+  top: auto !important;
+  z-index: 20 !important;
+  display: grid !important;
+  grid-template-columns: auto !important;
+  width: min(1180px, calc(100% - 3rem)) !important;
+  height: auto !important;
+  max-width: 1180px !important;
+  margin: 0 auto !important;
+  padding: 1.05rem 1.5rem 0.45rem !important;
+  overflow: visible !important;
+  clip: auto !important;
+  clip-path: none !important;
+  white-space: normal !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.top .brand,
+.brand {
+  display: flex !important;
+  align-items: center !important;
+  justify-self: start !important;
+  gap: 0.65rem !important;
+  width: fit-content !important;
+  min-height: 0 !important;
+  padding: 0.64rem 0.9rem 0.64rem 0.7rem !important;
+  border: 1px solid rgba(231, 226, 220, 0.78) !important;
+  border-radius: 24px !important;
+  background: rgba(255, 255, 255, 0.86) !important;
+  box-shadow: 0 10px 28px rgba(20, 20, 24, 0.06) !important;
+}
+.brand-icon {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+.top h1,
+h1 {
+  margin: 0 !important;
+  color: #17191f !important;
+  font-size: 1.18rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em !important;
+}
+.top .sub,
+.sub {
+  margin: 0.18rem 0 0 !important;
+  color: #5c6470 !important;
+  font-size: 0.78rem !important;
+}
+.top .url-import,
+.top .top-actions {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+.dashboard-rail {
+  overflow: visible !important;
+  contain: none !important;
+}
+.dashboard-rail-panel[hidden] {
+  display: none !important;
+}
+.dashboard-rail-panel.is-open {
+  display: block !important;
+  pointer-events: auto !important;
+}
+@media (max-width: 1080px) {
+  .top {
+    width: min(100% - 1rem, 1180px) !important;
+    padding-top: 0.72rem !important;
+  }
+  .top .brand,
+  .brand {
+    width: 100% !important;
+  }
+  .dashboard-rail {
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+  }
+}
+
+/* Dashboard color skin: align brand with content, remove outline strokes. */
+.top {
+  width: min(100% - 3rem, 1180px) !important;
+  max-width: 1180px !important;
+  padding: 1.05rem 0 0.45rem !important;
+}
+.top .brand,
+.brand {
+  margin-left: 0 !important;
+  border: 0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 16px 38px rgba(33, 24, 18, 0.12) !important;
+}
+body {
+  background:
+    radial-gradient(circle at 14% 12%, rgba(255, 111, 15, 0.12), transparent 24rem),
+    radial-gradient(circle at 88% 18%, rgba(124, 58, 237, 0.11), transparent 24rem),
+    #f5f3ef !important;
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.used-price-guide-card,
+.comparison-price-layout,
+.current-price-card,
+.purchase-receipt-paper,
+.seller-chat__phone,
+.stage-slide-controls,
+.direct-chat-card,
+.recent-drawer {
+  border: 0 !important;
+  box-shadow: 0 16px 40px rgba(30, 24, 18, 0.11) !important;
+}
+.stage-zone::before {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+.stage-one-zone::before {
+  background: linear-gradient(90deg, rgba(255, 111, 15, 0.2), rgba(255, 193, 7, 0.12) 44%, rgba(255, 255, 255, 0.18)) !important;
+}
+.stage-two-zone::before {
+  background: linear-gradient(90deg, rgba(0, 160, 90, 0.2), rgba(20, 184, 166, 0.12) 48%, rgba(255, 255, 255, 0.16)) !important;
+}
+.stage-three-zone::before {
+  background: linear-gradient(90deg, rgba(216, 0, 39, 0.14), rgba(255, 111, 15, 0.12) 48%, rgba(255, 255, 255, 0.16)) !important;
+}
+.stage-four-zone::before {
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.18), rgba(219, 39, 119, 0.11) 48%, rgba(255, 255, 255, 0.16)) !important;
+}
+.stage-five-zone::before {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.18), rgba(59, 108, 255, 0.11) 48%, rgba(255, 255, 255, 0.16)) !important;
+}
+.mini-card--hero {
+  background: #fff1e7 !important;
+}
+.stage-two-risk-card:nth-of-type(1),
+.stage-two-card:nth-of-type(1) {
+  background: #ffffff !important;
+}
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card {
+  border: 0 !important;
+  background: #ff6f0f !important;
+  color: #fff !important;
+  box-shadow: 0 18px 42px rgba(255, 111, 15, 0.24) !important;
+}
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-two-card.stage-start-card:focus-visible,
+.stage-three-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:focus-visible,
+.purchase-receipt-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:focus-visible,
+.stage-five-start-card:hover,
+.stage-five-start-card:focus-visible {
+  background: #7c3aed !important;
+  color: #fff !important;
+  box-shadow: 0 22px 54px rgba(124, 58, 237, 0.28) !important;
 }
 .stage-three-card.stage-four-start-card,
 .purchase-receipt-card.stage-start-card.stage-four-start-card {
-  border: 0;
-  color: #fff;
-  background:
-    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.34), transparent 32%),
-    linear-gradient(135deg, #7c3aed 0%, #db2777 46%, #f97316 100%);
-  box-shadow: 0 24px 64px rgba(124, 58, 237, 0.28), 0 14px 36px rgba(249, 115, 22, 0.16);
+  background: linear-gradient(135deg, #7c3aed 0%, #db2777 52%, #ff6f0f 100%) !important;
+  box-shadow: 0 24px 64px rgba(124, 58, 237, 0.26) !important;
+}
+.btn,
+.chip-btn,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send {
+  border: 0 !important;
+  box-shadow: 0 10px 24px rgba(255, 111, 15, 0.18) !important;
+}
+.btn-secondary,
+.chip-btn--ghost,
+.stage-three-actions .price-source-link {
+  border: 0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 8px 20px rgba(30, 24, 18, 0.08) !important;
+}
+.dashboard-rail {
+  border: 0 !important;
+  box-shadow: 0 24px 58px rgba(124, 58, 237, 0.22) !important;
+  background: linear-gradient(180deg, #7c3aed 0%, #8b5cf6 50%, #6d28d9 100%) !important;
+}
+.dashboard-rail__btn:hover,
+.dashboard-rail__btn:focus-visible,
+.dashboard-rail__btn.is-active {
+  color: #7c3aed !important;
+}
+@media (max-width: 1080px) {
+  .top {
+    width: min(100% - 1rem, 1180px) !important;
+    padding-inline: 0 !important;
+  }
+}
+
+/* Solid dashboard skin + Pretendard. */
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: Pretendard, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+body {
+  background: #f4f1ec !important;
+  background-image: none !important;
+}
+.top h1,
+h1,
+.item-title,
+.stage-two-ready h3,
+.stage-three-head h3,
+.used-price-guide-card h4 {
+  letter-spacing: -0.045em !important;
+}
+.top .brand,
+.brand {
+  box-shadow: 0 18px 42px rgba(31, 22, 16, 0.14) !important;
+}
+.stage-one-zone::before {
+  background: rgba(255, 77, 0, 0.14) !important;
+}
+.stage-two-zone::before {
+  background: rgba(0, 208, 132, 0.14) !important;
+}
+.stage-three-zone::before {
+  background: rgba(255, 0, 92, 0.11) !important;
+}
+.stage-four-zone::before {
+  background: rgba(138, 44, 255, 0.13) !important;
+}
+.stage-five-zone::before {
+  background: rgba(0, 208, 177, 0.13) !important;
+}
+.stage-zone-label b {
+  color: #ff4d00 !important;
+}
+.stage-two-zone .stage-zone-label b {
+  color: #00b96f !important;
+}
+.stage-three-zone .stage-zone-label b {
+  color: #ff005c !important;
+}
+.stage-four-zone .stage-zone-label b {
+  color: #8a2cff !important;
+}
+.stage-five-zone .stage-zone-label b {
+  color: #00b8a9 !important;
+}
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card,
+.btn,
+.chip-btn,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send {
+  background: #ff4d00 !important;
+  color: #fff !important;
+  box-shadow: 0 16px 36px rgba(255, 77, 0, 0.26) !important;
+}
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-two-card.stage-start-card:focus-visible,
+.stage-three-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:focus-visible,
+.purchase-receipt-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:focus-visible,
+.stage-five-start-card:hover,
+.stage-five-start-card:focus-visible,
+.btn:hover,
+.chip-btn:hover,
+.url-import__submit:hover,
+.dashboard-rail-import button:hover,
+.seller-chat__send:hover {
+  background: #8a2cff !important;
+  color: #fff !important;
+  box-shadow: 0 20px 48px rgba(138, 44, 255, 0.28) !important;
+}
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card {
+  background: linear-gradient(135deg, #7a2cff 0%, #ff2aa3 52%, #ff6a00 100%) !important;
+  box-shadow: 0 24px 62px rgba(138, 44, 255, 0.32) !important;
 }
 .stage-three-card.stage-four-start-card:hover,
 .stage-three-card.stage-four-start-card:focus-visible,
 .purchase-receipt-card.stage-start-card.stage-four-start-card:hover,
 .purchase-receipt-card.stage-start-card.stage-four-start-card:focus-visible {
+  background: linear-gradient(135deg, #5f1dff 0%, #ec008c 48%, #ff4d00 100%) !important;
+  box-shadow: 0 28px 72px rgba(236, 0, 140, 0.32) !important;
+}
+.dashboard-rail {
+  background: #7a2cff !important;
+  background-image: none !important;
+  box-shadow: 0 26px 62px rgba(122, 44, 255, 0.3) !important;
+}
+.dashboard-rail__btn:hover,
+.dashboard-rail__btn:focus-visible,
+.dashboard-rail__btn.is-active {
+  color: #7a2cff !important;
+}
+.seller-chat__mode.is-active,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover {
+  background: #00d0b1 !important;
+  color: #05211d !important;
+}
+
+/* Step 5 proportion tuning: compact tone controls, larger chat canvas. */
+.stage-five-card:not(.stage-five-start-card) .seller-chat__phone,
+.seller-chat__phone {
+  grid-template-rows: auto auto auto minmax(24rem, 1fr) auto auto auto !important;
+  min-height: min(780px, calc(100svh - 5.8rem)) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar,
+.seller-chat__toolbar {
+  gap: 0.22rem !important;
+  padding: 0.28rem 0.58rem !important;
+  min-height: 0 !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone-row,
+.seller-chat__tone-row {
+  gap: 0.22rem !important;
+  min-height: 0 !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+.seller-chat__tone {
+  height: 1.52rem !important;
+  min-height: 1.52rem !important;
+  padding: 0 0.48rem !important;
+  font-size: 0.66rem !important;
+  line-height: 1 !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__note-input,
+.seller-chat__note-input {
+  height: 1.65rem !important;
+  min-height: 1.65rem !important;
+  padding: 0.18rem 0.54rem !important;
+  border-radius: 999px !important;
+  font-size: 0.68rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__note,
+.seller-chat__note {
+  margin: 0 !important;
+  padding: 0.22rem 0.54rem !important;
+  font-size: 0.65rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__thread,
+.seller-chat__thread {
+  min-height: 24rem !important;
+  padding: 1.15rem 1rem !important;
+  align-content: start !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__empty,
+.seller-chat__empty {
+  min-height: 15rem !important;
+  align-items: start !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__empty .seller-chat__bubble,
+.seller-chat__empty .seller-chat__bubble {
+  max-width: min(560px, 72%) !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__chips,
+.seller-chat__chips {
+  padding: 0.42rem 0.62rem !important;
+}
+.stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form,
+.stage-five-card:not(.stage-five-start-card) .seller-chat__empty-reply,
+.seller-chat__form,
+.seller-chat__reply-form,
+.seller-chat__empty-reply {
+  padding: 0.42rem 0.62rem 0.5rem !important;
+}
+.seller-chat__reset-icon,
+.seller-chat__back {
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease !important;
+}
+.seller-chat__reset-icon:hover,
+.seller-chat__reset-icon:focus-visible {
+  background: #8a2cff !important;
+  color: #fff !important;
+  transform: rotate(-18deg) scale(1.04) !important;
+  box-shadow: 0 10px 22px rgba(138, 44, 255, 0.22) !important;
+  outline: none !important;
+}
+.seller-chat__back:hover,
+.seller-chat__back:focus-visible {
+  background: rgba(0, 208, 177, 0.16) !important;
+  color: #008f7c !important;
+  outline: none !important;
+}
+
+/* Refined solid-color pass: no button gradients, Pretendard, softer text. */
+:root {
+  --ui-text-strong: #2f343b;
+  --ui-text: #3d434c;
+  --ui-text-muted: #727984;
+  --step-1-solid: #f97316;
+  --step-2-solid: #15935f;
+  --step-3-solid: #e11d48;
+  --step-4-solid: #7c3aed;
+  --step-5-solid: #0f9f90;
+  --surface-bg: #f4f1ec;
+}
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: Pretendard, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+body {
+  color: var(--ui-text) !important;
+  background: var(--surface-bg) !important;
+  background-image: none !important;
+}
+h1,
+h2,
+h3,
+h4,
+strong,
+b,
+.item-title,
+.mini-value,
+.price,
+.listing-price-line,
+.current-price-card__price,
+.seller-chat__empty strong,
+.seller-chat__suggestion-text {
+  color: var(--ui-text-strong) !important;
+}
+.mini-muted,
+.block-label,
+.seller-chat__empty p,
+.seller-chat__context p {
+  color: var(--ui-text-muted) !important;
+}
+.stage-zone::before {
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.stage-one-zone::before {
+  background: rgba(249, 115, 22, 0.11) !important;
+}
+.stage-two-zone::before {
+  background: rgba(21, 147, 95, 0.11) !important;
+}
+.stage-three-zone::before {
+  background: rgba(225, 29, 72, 0.1) !important;
+}
+.stage-four-zone::before {
+  background: rgba(124, 58, 237, 0.1) !important;
+}
+.stage-five-zone::before {
+  background: rgba(15, 159, 144, 0.1) !important;
+}
+.stage-zone-label,
+.stage-zone-label b {
+  background-image: none !important;
+}
+.stage-one-zone .stage-zone-label b {
+  color: var(--step-1-solid) !important;
+}
+.stage-two-zone .stage-zone-label b {
+  color: var(--step-2-solid) !important;
+}
+.stage-three-zone .stage-zone-label b {
+  color: var(--step-3-solid) !important;
+}
+.stage-four-zone .stage-zone-label b {
+  color: var(--step-4-solid) !important;
+}
+.stage-five-zone .stage-zone-label b {
+  color: var(--step-5-solid) !important;
+}
+button,
+.btn,
+.chip-btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.seller-chat__tone,
+.seller-chat__chip,
+.seller-chat__mode,
+.price-source-link,
+.seller-chat__listing-link {
+  background-image: none !important;
+}
+.btn,
+.chip-btn,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card {
+  border: 0 !important;
+  background: var(--step-1-solid) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 30px rgba(249, 115, 22, 0.22) !important;
+}
+.stage-two-zone .stage-start-card,
+.stage-two-zone .btn,
+.stage-two-zone .chip-btn {
+  background: var(--step-2-solid) !important;
+  box-shadow: 0 14px 30px rgba(21, 147, 95, 0.2) !important;
+}
+.stage-three-zone .stage-start-card,
+.stage-three-zone .btn,
+.stage-three-zone .chip-btn,
+.stage-three-actions .chip-btn,
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card {
+  background: var(--step-3-solid) !important;
+  box-shadow: 0 14px 30px rgba(225, 29, 72, 0.2) !important;
+}
+.stage-four-zone .stage-start-card,
+.stage-four-zone .btn,
+.stage-four-zone .chip-btn {
+  background: var(--step-4-solid) !important;
+  box-shadow: 0 14px 30px rgba(124, 58, 237, 0.2) !important;
+}
+.stage-five-zone .stage-start-card,
+.stage-five-zone .btn,
+.stage-five-zone .chip-btn,
+.stage-five-zone .seller-chat__send,
+.stage-five-start-card {
+  background: var(--step-5-solid) !important;
+  box-shadow: 0 14px 30px rgba(15, 159, 144, 0.2) !important;
+}
+.chip-btn--ghost,
+.stage-three-actions .chip-btn--ghost {
+  background: #eef2f5 !important;
+  color: var(--ui-text-strong) !important;
+  box-shadow: none !important;
+}
+.btn:hover,
+.chip-btn:hover,
+.url-import__submit:hover,
+.dashboard-rail-import button:hover,
+.seller-chat__send:hover,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-five-start-card:hover {
+  filter: brightness(0.94) !important;
+  color: #fff !important;
+  background-image: none !important;
+}
+.chip-btn--ghost:hover,
+.stage-three-actions .chip-btn--ghost:hover {
+  background: #dfe6ec !important;
+  color: var(--ui-text-strong) !important;
+  filter: none !important;
+}
+.seller-chat__tone,
+.seller-chat__chip,
+.seller-chat__mode {
+  color: var(--ui-text-strong) !important;
+  background: #edf6f4 !important;
+  box-shadow: none !important;
+}
+.seller-chat__mode.is-active,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover {
+  background: var(--step-5-solid) !important;
+  color: #fff !important;
+}
+.dashboard-rail {
+  background: var(--step-4-solid) !important;
+  background-image: none !important;
+}
+.dashboard-rail__btn:hover,
+.dashboard-rail__btn:focus-visible,
+.dashboard-rail__btn.is-active {
+  color: var(--step-4-solid) !important;
+  background-image: none !important;
+}
+
+/* Vivid solid surfaces + cleaner shadows + Step 3 refinement. */
+:root {
+  --step-1-solid: #ff6b00;
+  --step-2-solid: #00a86b;
+  --step-3-solid: #f31559;
+  --step-4-solid: #7b3cff;
+  --step-5-solid: #00a99a;
+  --clean-shadow: 0 7px 16px rgba(47, 52, 59, 0.08);
+  --clean-shadow-hover: 0 10px 20px rgba(47, 52, 59, 0.11);
+}
+.stage-zone::before {
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.stage-one-zone::before {
+  background: rgba(255, 107, 0, 0.22) !important;
+}
+.stage-two-zone::before {
+  background: rgba(0, 168, 107, 0.22) !important;
+}
+.stage-three-zone::before {
+  background: rgba(243, 21, 89, 0.22) !important;
+}
+.stage-four-zone::before {
+  background: rgba(123, 60, 255, 0.2) !important;
+}
+.stage-five-zone::before {
+  background: rgba(0, 169, 154, 0.2) !important;
+}
+.stage-zone-label {
+  width: auto !important;
+  min-width: 4.65rem !important;
+  padding: 0.54rem 0.68rem !important;
+  border-radius: 1.4rem !important;
+  align-items: center !important;
+  text-align: center !important;
+  background: #fff6ed !important;
+  box-shadow: 0 4px 10px rgba(47, 52, 59, 0.07) !important;
+}
+.stage-zone-label b,
+.stage-zone-label span {
+  line-height: 1.16 !important;
+}
+.stage-one-zone .stage-zone-label {
+  background: #fff0e5 !important;
+}
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span {
+  color: var(--step-1-solid) !important;
+}
+.stage-two-zone .stage-zone-label {
+  background: #e8fff4 !important;
+}
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span {
+  color: var(--step-2-solid) !important;
+}
+.stage-three-zone .stage-zone-label {
+  background: #fff0f5 !important;
+}
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span {
+  color: var(--step-3-solid) !important;
+}
+.stage-four-zone .stage-zone-label {
+  background: #f4efff !important;
+}
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span {
+  color: var(--step-4-solid) !important;
+}
+.stage-five-zone .stage-zone-label {
+  background: #e8fffb !important;
+}
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: var(--step-5-solid) !important;
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.used-price-guide-card,
+.comparison-filter-result,
+.current-price-card,
+.seller-chat__phone,
+.purchase-receipt-card,
+.top .brand,
+.brand,
+.dashboard-rail,
+.direct-chat-card,
+.rail-popover,
+.dashboard-rail-panel {
+  box-shadow: var(--clean-shadow) !important;
+}
+.mini-card:hover,
+.stage-two-card:hover,
+.stage-two-risk-card:hover,
+.stage-three-card:hover,
+.used-price-guide-card:hover,
+.current-price-card:hover {
+  box-shadow: var(--clean-shadow-hover) !important;
+}
+.btn,
+.chip-btn,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card {
+  box-shadow: 0 6px 12px rgba(47, 52, 59, 0.12) !important;
+}
+.stage-two-zone .stage-start-card,
+.stage-two-zone .btn,
+.stage-two-zone .chip-btn {
+  background: var(--step-2-solid) !important;
+  box-shadow: 0 6px 12px rgba(0, 168, 107, 0.18) !important;
+}
+.stage-three-zone .stage-start-card,
+.stage-three-zone .btn,
+.stage-three-zone .chip-btn,
+.stage-three-actions .chip-btn,
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card {
+  background: var(--step-3-solid) !important;
+  box-shadow: 0 6px 12px rgba(243, 21, 89, 0.18) !important;
+}
+.stage-four-zone .stage-start-card,
+.stage-four-zone .btn,
+.stage-four-zone .chip-btn {
+  background: var(--step-4-solid) !important;
+  box-shadow: 0 6px 12px rgba(123, 60, 255, 0.18) !important;
+}
+.stage-five-zone .stage-start-card,
+.stage-five-zone .btn,
+.stage-five-zone .chip-btn,
+.stage-five-zone .seller-chat__send,
+.stage-five-start-card {
+  background: var(--step-5-solid) !important;
+  box-shadow: 0 6px 12px rgba(0, 169, 154, 0.18) !important;
+}
+.stage-three-zone-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+  grid-auto-rows: auto !important;
+  gap: 0.82rem !important;
+  align-items: start !important;
+}
+.stage-three-card {
+  grid-column: 1 / -1 !important;
+  border: 0 !important;
+  border-radius: 1.35rem !important;
+  background: #fff !important;
+}
+.stage-three-card[data-stage-three-search-card],
+.stage-three-card.used-price-guide-card {
+  padding: 0.85rem !important;
+}
+.stage-three-head {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: start !important;
+  gap: 0.85rem !important;
+  padding: 0.82rem !important;
+  border-radius: 1.05rem !important;
+  background: #fff1f6 !important;
+}
+.stage-three-head h3 {
+  color: var(--ui-text-strong) !important;
+  font-size: clamp(1rem, 1.5vw, 1.25rem) !important;
+  letter-spacing: -0.035em !important;
+}
+.stage-three-head p:not(.stage-two-card-label) {
+  max-width: 64rem !important;
+  color: #5f6670 !important;
+}
+.stage-three-actions {
+  align-self: stretch !important;
+  display: grid !important;
+  grid-template-columns: repeat(3, auto) !important;
+  align-content: start !important;
+  justify-content: end !important;
+  gap: 0.35rem !important;
+}
+.stage-three-card .search-query-list {
+  justify-content: flex-start !important;
+  gap: 0.42rem !important;
+  margin-top: 0.7rem !important;
+  padding: 0.5rem !important;
+  border-radius: 0.95rem !important;
+  background: #fff7fa !important;
+}
+.stage-three-zone .search-query-chip {
+  background: #ffe1eb !important;
+  color: #b8003e !important;
+  box-shadow: none !important;
+}
+.stage-three-comps {
+  margin-top: 0.78rem !important;
+}
+.stage-three-comps .comparison-filter-result {
+  padding: 0 !important;
+  border-radius: 1.05rem !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.comparison-price-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.55fr) !important;
+  gap: 0.78rem !important;
+  align-items: stretch !important;
+}
+.comparison-price-list,
+.current-price-card {
+  min-width: 0 !important;
+  padding: 0.78rem !important;
+  border-radius: 1rem !important;
+  background: #fff !important;
+  box-shadow: 0 5px 12px rgba(47, 52, 59, 0.07) !important;
+}
+.comp-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)) !important;
+  gap: 0.46rem !important;
+  margin-top: 0.5rem !important;
+}
+.comp-list li {
+  border: 0 !important;
+  border-radius: 0.9rem !important;
+  background: #f8fafc !important;
+  box-shadow: none !important;
+}
+.used-price-guide-card {
+  gap: 0.7rem !important;
+  background: #fff !important;
+}
+.used-price-guide-card .mini-card-head {
+  padding: 0.72rem !important;
+  border-radius: 1rem !important;
+  background: #fff1f6 !important;
+}
+.used-price-guide-card h4 {
+  color: var(--ui-text-strong) !important;
+  font-size: clamp(1rem, 1.45vw, 1.22rem) !important;
+}
+.comparison-price-table-wrap {
+  border: 0 !important;
+  border-radius: 1rem !important;
+  background: #fff7fa !important;
+  box-shadow: inset 0 0 0 1px rgba(243, 21, 89, 0.08) !important;
+}
+.comparison-price-table th {
+  background: #ffe1eb !important;
+  color: #8a123a !important;
+}
+.comparison-price-table td {
+  border-bottom-color: rgba(243, 21, 89, 0.09) !important;
+}
+.comparison-caution {
+  border: 0 !important;
+  border-radius: 0.95rem !important;
+  background: #fff7fa !important;
+  color: #6a4452 !important;
+}
+@media (max-width: 860px) {
+  .stage-three-head,
+  .comparison-price-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .stage-three-actions {
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)) !important;
+    justify-content: stretch !important;
+  }
+}
+
+/* Final shadow cleanup: keep depth crisp, not blurry. */
+.app-shell :where(
+  .mini-card,
+  .stage-zone-label,
+  .stage-two-card,
+  .stage-two-risk-card,
+  .stage-three-card,
+  .used-price-guide-card,
+  .comparison-price-list,
+  .current-price-card,
+  .seller-chat__phone,
+  .seller-chat__bubble,
+  .direct-chat-card,
+  .dashboard-rail-panel,
+  .rail-popover,
+  .top .brand,
+  .brand
+) {
+  box-shadow: 0 5px 12px rgba(47, 52, 59, 0.075) !important;
+}
+.app-shell :where(
+  .mini-card,
+  .stage-two-card,
+  .stage-two-risk-card,
+  .stage-three-card,
+  .used-price-guide-card,
+  .current-price-card
+):hover {
+  box-shadow: 0 7px 14px rgba(47, 52, 59, 0.1) !important;
+}
+.app-shell :where(
+  .btn,
+  .chip-btn,
+  .stage-start-card,
+  .url-import__submit,
+  .dashboard-rail-import button,
+  .seller-chat__send
+) {
+  box-shadow: 0 4px 9px rgba(47, 52, 59, 0.12) !important;
+}
+.dashboard-rail {
+  box-shadow: 0 7px 18px rgba(47, 52, 59, 0.12) !important;
+}
+
+/* Step 3 readability pass: flat actions, no green accents, less copy. */
+.stage-three-zone {
+  --step-3-panel-bg: #ffedf3;
+  --step-3-chip-bg: #ffd9e6;
+  --step-3-chip-text: #a40f3f;
+}
+.stage-three-zone::before {
+  background: #ffccd9 !important;
+}
+.stage-three-card[data-stage-three-search-card] {
+  padding: 0.78rem !important;
+  background: #fff !important;
+}
+.stage-three-head {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  padding: 0.72rem 0.78rem !important;
+  background: var(--step-3-panel-bg) !important;
+  box-shadow: none !important;
+}
+.stage-three-head .stage-two-card-label {
+  color: #a40f3f !important;
+}
+.stage-three-head h3 {
+  margin-top: 0.1rem !important;
+  font-size: clamp(1.05rem, 1.65vw, 1.32rem) !important;
+  line-height: 1.24 !important;
+}
+.stage-three-actions {
+  grid-template-columns: repeat(3, auto) !important;
+  gap: 0.38rem !important;
+}
+.stage-three-actions .chip-btn,
+.stage-three-actions .price-source-link,
+.stage-three-zone .price-source-link,
+.stage-three-zone .chip-btn,
+.stage-three-zone .btn {
+  border: 0 !important;
+  background: #f31559 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.stage-three-actions .chip-btn--ghost {
+  background: #f2e7ec !important;
+  color: #6f263f !important;
+  box-shadow: none !important;
+}
+.stage-three-actions .chip-btn:hover,
+.stage-three-actions .price-source-link:hover,
+.stage-three-zone .chip-btn:hover,
+.stage-three-zone .price-source-link:hover {
+  background: #c91049 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.stage-three-actions .chip-btn--ghost:hover {
+  background: #e9d8df !important;
+  color: #5a1f34 !important;
+}
+.stage-three-card .search-query-list {
+  margin-top: 0.58rem !important;
+  padding: 0.5rem 0.58rem !important;
+  background: #fff8fb !important;
+  box-shadow: none !important;
+}
+.stage-three-zone .search-query-chip,
+body .app-shell .stage-three-zone .search-query-chip {
+  background: var(--step-3-chip-bg) !important;
+  color: var(--step-3-chip-text) !important;
+  box-shadow: none !important;
+}
+.stage-three-comps {
+  margin-top: 0.5rem !important;
+}
+.stage-three-status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin: 0.08rem 0 0 !important;
+  padding: 0.34rem 0.58rem !important;
+  border-radius: 999px;
+  background: #f2e7ec;
+  color: #6f263f;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+.used-price-guide-card {
+  padding: 0.92rem !important;
+}
+.used-price-guide-card .mini-card-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.used-price-guide-card .mini-card-head .chip-btn,
+.used-price-guide-card .used-price-guide-btn {
+  background: #f31559 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.used-price-guide-card h4 {
+  margin-top: 0.25rem !important;
+  margin-bottom: 0 !important;
+}
+.used-price-guide-card > .mini-muted {
+  margin-top: -0.1rem !important;
+  max-width: 72rem !important;
+}
+.comparison-price-table-wrap {
+  background: #fff !important;
+  box-shadow: none !important;
+}
+.comparison-price-table {
+  min-width: 0 !important;
+}
+.comparison-price-table th {
+  background: #ffd9e6 !important;
+  color: #7a1232 !important;
+  font-size: 0.74rem !important;
+}
+.comparison-price-table td {
+  padding-block: 0.72rem !important;
+  color: var(--ui-text) !important;
+}
+.comparison-price-table td:nth-child(2) {
+  color: var(--ui-text-strong) !important;
+  font-weight: 900 !important;
+}
+.comparison-caution,
+.comparison-price-list .meta.empty {
+  box-shadow: none !important;
+}
+.app-shell :where(
+  button,
+  .btn,
+  .chip-btn,
+  .price-source-link,
+  .seller-chat__send,
+  .url-import__submit,
+  .dashboard-rail-import button
+) {
+  box-shadow: none !important;
+}
+@media (max-width: 980px) {
+  .stage-three-head {
+    grid-template-columns: 1fr !important;
+  }
+  .stage-three-actions {
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)) !important;
+  }
+}
+
+/* Unified modern dashboard skin: one accent across every step. */
+:root {
+  --dash-bg: #f5f7fb;
+  --dash-surface: #ffffff;
+  --dash-surface-soft: #f7f8fc;
+  --dash-accent: #6d3df5;
+  --dash-accent-hover: #5125c9;
+  --dash-accent-soft: #ede9fe;
+  --dash-accent-softer: #f3f0ff;
+  --dash-text: #20242c;
+  --dash-muted: #697282;
+  --dash-line: #e6e9f1;
+  --dash-shadow: 0 6px 16px rgba(32, 36, 44, 0.06);
+}
+html,
+body {
+  background: var(--dash-bg) !important;
+  color: var(--dash-text) !important;
+}
+body,
+.app-shell,
+.analysis-board {
+  background-image: none !important;
+}
+.top .brand,
+.brand,
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.used-price-guide-card,
+.comparison-price-list,
+.current-price-card,
+.comparison-filter-result,
+.seller-chat__phone,
+.direct-chat-card,
+.dashboard-rail-panel,
+.rail-popover,
+.ai-gate__panel {
+  border: 1px solid var(--dash-line) !important;
+  background: var(--dash-surface) !important;
+  box-shadow: var(--dash-shadow) !important;
+}
+.mini-card:hover,
+.stage-two-card:hover,
+.stage-two-risk-card:hover,
+.stage-three-card:hover,
+.used-price-guide-card:hover,
+.current-price-card:hover {
+  box-shadow: 0 8px 18px rgba(32, 36, 44, 0.075) !important;
+}
+.stage-zone::before,
+.stage-one-zone::before,
+.stage-two-zone::before,
+.stage-three-zone::before,
+.stage-four-zone::before,
+.stage-five-zone::before {
+  background: #eef2ff !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+.stage-zone-label,
+.stage-one-zone .stage-zone-label,
+.stage-two-zone .stage-zone-label,
+.stage-three-zone .stage-zone-label,
+.stage-four-zone .stage-zone-label,
+.stage-five-zone .stage-zone-label {
+  background: var(--dash-accent-soft) !important;
+  border: 1px solid rgba(109, 61, 245, 0.12) !important;
+  box-shadow: none !important;
+}
+.stage-zone-label b,
+.stage-zone-label span,
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span,
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span,
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span,
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span,
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: #5b21b6 !important;
+}
+h1,
+h2,
+h3,
+h4,
+strong,
+b,
+.item-title,
+.mini-value,
+.price,
+.listing-price-line,
+.current-price-card__price,
+.seller-chat__empty strong,
+.seller-chat__suggestion-text {
+  color: var(--dash-text) !important;
+}
+.mini-muted,
+.block-label,
+.stage-two-card-label,
+.hist-meta,
+.meta,
+.seller-chat__empty p,
+.seller-chat__context p,
+.stage-three-head p:not(.stage-two-card-label) {
+  color: var(--dash-muted) !important;
+}
+.btn,
+.chip-btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.price-source-link,
+.stage-three-actions .chip-btn,
+.stage-three-actions .price-source-link,
+.used-price-guide-card .used-price-guide-btn,
+.used-price-guide-card .mini-card-head .chip-btn {
+  border: 0 !important;
+  background: var(--dash-accent) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.btn:hover,
+.chip-btn:hover,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-five-start-card:hover,
+.url-import__submit:hover,
+.dashboard-rail-import button:hover,
+.seller-chat__send:hover,
+.price-source-link:hover,
+.stage-three-actions .chip-btn:hover,
+.stage-three-actions .price-source-link:hover,
+.used-price-guide-card .used-price-guide-btn:hover {
+  background: var(--dash-accent-hover) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.chip-btn--ghost,
+.stage-three-actions .chip-btn--ghost {
+  background: #eef1f7 !important;
+  color: var(--dash-text) !important;
+  box-shadow: none !important;
+}
+.chip-btn--ghost:hover,
+.stage-three-actions .chip-btn--ghost:hover {
+  background: #e1e5ee !important;
+  color: var(--dash-text) !important;
+}
+.search-query-chip,
+body .app-shell .stage-zone .search-query-chip,
+body .app-shell .stage-three-zone .search-query-chip,
+.seller-chat__tone,
+.seller-chat__chip,
+.seller-chat__mode,
+.stage-three-status-pill {
+  border: 0 !important;
+  background: var(--dash-accent-soft) !important;
+  color: #5b21b6 !important;
+  box-shadow: none !important;
+}
+.seller-chat__mode.is-active,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover {
+  background: var(--dash-accent) !important;
+  color: #fff !important;
+}
+.stage-three-head,
+.used-price-guide-card .mini-card-head,
+.stage-three-card .search-query-list,
+.comparison-caution {
+  background: var(--dash-surface-soft) !important;
+  box-shadow: none !important;
+}
+.comparison-price-table-wrap {
+  border: 1px solid var(--dash-line) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+.comparison-price-table th {
+  background: var(--dash-accent-soft) !important;
+  color: #5b21b6 !important;
+}
+.comparison-price-table td {
+  border-bottom-color: var(--dash-line) !important;
+}
+.comp-list li {
+  background: var(--dash-surface-soft) !important;
+}
+.dashboard-rail {
+  border: 1px solid var(--dash-line) !important;
+  background: #fff !important;
+  background-image: none !important;
+  box-shadow: var(--dash-shadow) !important;
+}
+.dashboard-rail__logo,
+.dashboard-rail__btn {
+  color: var(--dash-muted) !important;
+}
+.dashboard-rail__btn:hover,
+.dashboard-rail__btn:focus-visible,
+.dashboard-rail__btn.is-active {
+  background: var(--dash-accent-soft) !important;
+  color: var(--dash-accent) !important;
+}
+.seller-chat__phone {
+  background: #eef2ff !important;
+}
+.seller-chat__thread {
+  background: #eef2ff !important;
+}
+.seller-chat__bubble--me {
+  background: var(--dash-accent) !important;
+  color: #fff !important;
+}
+
+/* Final fix: Step 3 top action buttons must be filled mint. */
+.stage-three-zone .stage-three-actions .chip-btn,
+.stage-three-zone .stage-three-actions .chip-btn--ghost,
+.stage-three-zone .stage-three-actions .price-source-link,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link {
+  border: 0 !important;
+  background: #14b8a6 !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.stage-three-zone .stage-three-actions .chip-btn *,
+.stage-three-zone .stage-three-actions .chip-btn--ghost *,
+.stage-three-zone .stage-three-actions .price-source-link *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link * {
+  color: #fff !important;
+}
+.stage-three-zone .stage-three-actions .chip-btn:hover,
+.stage-three-zone .stage-three-actions .chip-btn--ghost:hover,
+.stage-three-zone .stage-three-actions .price-source-link:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link:hover {
+  background: #0f8f82 !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+
+/* Absolute final theme lock: vivid gradients + no white hover buttons. */
+.stage-one-zone::before {
+  background: linear-gradient(90deg, rgba(255, 193, 7, 0.55) 0%, rgba(255, 111, 15, 0.28) 42%, rgba(255, 255, 255, 0.82) 100%) !important;
+}
+.stage-two-zone::before {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.45) 0%, rgba(96, 165, 250, 0.28) 44%, rgba(255, 255, 255, 0.84) 100%) !important;
+}
+.stage-three-zone::before {
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.42) 0%, rgba(167, 139, 250, 0.27) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.stage-four-zone::before {
+  background: linear-gradient(90deg, rgba(244, 63, 94, 0.42) 0%, rgba(249, 168, 212, 0.28) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.stage-five-zone::before {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.46) 0%, rgba(45, 212, 191, 0.27) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.seller-chat__chip,
+.seller-chat__tone,
+.seller-chat__mode,
+.chip-btn,
+.btn,
+.price-source-link,
+.seller-chat__send {
+  background: #14b8a6 !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+.seller-chat__chip:hover,
+.seller-chat__tone:hover,
+.seller-chat__tone.is-active,
+.seller-chat__mode:hover,
+.seller-chat__mode.is-active,
+.chip-btn:hover,
+.btn:hover,
+.price-source-link:hover,
+.seller-chat__send:hover {
+  background: #0f8f82 !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+
+/* EOF override: glass step surfaces and text-only labels. */
+.stage-zone::before,
+.stage-one-zone::before,
+.stage-two-zone::before,
+.stage-three-zone::before,
+.stage-four-zone::before,
+.stage-five-zone::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 250, 252, 0.38) 58%, rgba(255, 255, 255, 0.18) 100%) !important;
+  border: 1px solid rgba(210, 218, 228, 0.78) !important;
+  box-shadow: 0 10px 28px rgba(32, 36, 44, 0.07) !important;
+}
+.stage-zone-label,
+.stage-one-zone .stage-zone-label,
+.stage-two-zone .stage-zone-label,
+.stage-three-zone .stage-zone-label,
+.stage-four-zone .stage-zone-label,
+.stage-five-zone .stage-zone-label {
+  min-width: 0 !important;
+  width: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  align-items: flex-start !important;
+}
+.stage-zone-label b,
+.stage-zone-label span,
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span,
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span,
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span,
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span,
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: #20242c !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.74), 0 8px 18px rgba(32, 36, 44, 0.1) !important;
+}
+.receipt-reprint-btn {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+  min-width: 2.35rem !important;
+  min-height: 2.35rem !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+}
+.receipt-reprint-btn .material-symbols-rounded {
+  color: #fff !important;
+  font-size: 1.25rem !important;
+  line-height: 1 !important;
+  transition: transform 160ms ease;
+}
+.receipt-reprint-btn:hover .material-symbols-rounded {
+  transform: rotate(90deg);
+}
+
+/* Absolute final glass layer: no colored step fills, label text only. */
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.56);
+  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  --glass-line: rgba(210, 218, 228, 0.78);
+  --glass-text: #20242c;
+  --glass-muted: #667085;
+  --glass-shadow: 0 10px 28px rgba(32, 36, 44, 0.07);
+}
+.stage-zone::before,
+.stage-one-zone::before,
+.stage-two-zone::before,
+.stage-three-zone::before,
+.stage-four-zone::before,
+.stage-five-zone::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 250, 252, 0.38) 58%, rgba(255, 255, 255, 0.18) 100%) !important;
+  border: 1px solid var(--glass-line) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+.stage-zone-label,
+.stage-one-zone .stage-zone-label,
+.stage-two-zone .stage-zone-label,
+.stage-three-zone .stage-zone-label,
+.stage-four-zone .stage-zone-label,
+.stage-five-zone .stage-zone-label {
+  min-width: 0 !important;
+  width: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  align-items: flex-start !important;
+}
+.stage-zone-label b,
+.stage-zone-label span,
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span,
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span,
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span,
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span,
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: var(--glass-text) !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.74), 0 8px 18px rgba(32, 36, 44, 0.1) !important;
+}
+.stage-zone-label b {
+  font-size: 0.82rem !important;
+  font-weight: 950 !important;
+}
+.stage-zone-label span {
+  margin-top: 0.08rem !important;
+  color: var(--glass-muted) !important;
+  font-size: 0.72rem !important;
+  font-weight: 850 !important;
+}
+.receipt-reprint-btn {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+  min-width: 2.35rem !important;
+  min-height: 2.35rem !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+}
+.receipt-reprint-btn .material-symbols-rounded {
+  color: #fff !important;
+  font-size: 1.25rem !important;
+  line-height: 1 !important;
+  transition: transform 160ms ease;
+}
+.receipt-reprint-btn:hover .material-symbols-rounded {
+  transform: rotate(90deg);
+}
+
+/* Final glass direction: remove step colors, keep lightweight translucent surfaces. */
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.56);
+  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  --glass-line: rgba(210, 218, 228, 0.78);
+  --glass-text: #20242c;
+  --glass-muted: #667085;
+  --glass-shadow: 0 10px 28px rgba(32, 36, 44, 0.07);
+}
+.stage-zone::before,
+.stage-one-zone::before,
+.stage-two-zone::before,
+.stage-three-zone::before,
+.stage-four-zone::before,
+.stage-five-zone::before {
   background:
-    radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.4), transparent 32%),
-    linear-gradient(135deg, #6d28d9 0%, #c026d3 42%, #ea580c 100%);
-  box-shadow: 0 28px 72px rgba(124, 58, 237, 0.34), 0 18px 42px rgba(249, 115, 22, 0.2);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 250, 252, 0.38) 58%, rgba(255, 255, 255, 0.18) 100%) !important;
+  border: 1px solid var(--glass-line) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+.stage-zone-label,
+.stage-one-zone .stage-zone-label,
+.stage-two-zone .stage-zone-label,
+.stage-three-zone .stage-zone-label,
+.stage-four-zone .stage-zone-label,
+.stage-five-zone .stage-zone-label {
+  min-width: 0 !important;
+  width: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  align-items: flex-start !important;
+}
+.stage-zone-label b,
+.stage-zone-label span,
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span,
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span,
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span,
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span,
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: var(--glass-text) !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.74), 0 8px 18px rgba(32, 36, 44, 0.1) !important;
+}
+.stage-zone-label b {
+  font-size: 0.82rem !important;
+  font-weight: 950 !important;
+}
+.stage-zone-label span {
+  margin-top: 0.08rem !important;
+  color: var(--glass-muted) !important;
+  font-size: 0.72rem !important;
+  font-weight: 850 !important;
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.used-price-guide-card,
+.comparison-price-list,
+.current-price-card,
+.seller-chat__phone,
+.purchase-receipt-card,
+.dashboard-rail-panel,
+.rail-popover,
+.direct-chat-card {
+  border: 1px solid var(--glass-line) !important;
+  background: var(--glass-bg-strong) !important;
+  box-shadow: 0 8px 22px rgba(32, 36, 44, 0.055) !important;
+}
+.receipt-reprint-btn {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+  min-width: 2.35rem !important;
+  min-height: 2.35rem !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+}
+.receipt-reprint-btn .material-symbols-rounded {
+  color: #fff !important;
+  font-size: 1.25rem !important;
+  line-height: 1 !important;
+}
+.receipt-reprint-btn:hover .material-symbols-rounded {
+  transform: rotate(90deg);
+}
+.receipt-reprint-btn .material-symbols-rounded {
+  transition: transform 160ms ease;
+}
+
+/* Absolute final theme lock: vivid gradients + no white hover buttons. */
+:root {
+  --app-mint: #14b8a6;
+  --app-mint-hover: #0f8f82;
+  --app-muted: #667085;
+  --app-line: #e5eaf1;
+}
+.stage-one-zone::before {
+  background: linear-gradient(90deg, rgba(255, 193, 7, 0.55) 0%, rgba(255, 111, 15, 0.28) 42%, rgba(255, 255, 255, 0.82) 100%) !important;
+}
+.stage-two-zone::before {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.45) 0%, rgba(96, 165, 250, 0.28) 44%, rgba(255, 255, 255, 0.84) 100%) !important;
+}
+.stage-three-zone::before {
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.42) 0%, rgba(167, 139, 250, 0.27) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.stage-four-zone::before {
+  background: linear-gradient(90deg, rgba(244, 63, 94, 0.42) 0%, rgba(249, 168, 212, 0.28) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.stage-five-zone::before {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.46) 0%, rgba(45, 212, 191, 0.27) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.btn,
+.chip-btn,
+.stage-slide-controls .btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.seller-chat__chip,
+.seller-chat__tone,
+.seller-chat__mode,
+.purchase-receipt-btn,
+.used-price-guide-btn,
+.price-source-link,
+.stage-three-actions .chip-btn,
+.stage-three-actions .chip-btn--ghost,
+.stage-three-actions .price-source-link {
+  border: 0 !important;
+  background: var(--app-mint) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+.btn:hover,
+.btn:focus-visible,
+.chip-btn:hover,
+.chip-btn:focus-visible,
+.stage-slide-controls .btn:hover,
+.stage-slide-controls .btn:focus-visible,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-five-start-card:hover,
+.url-import__submit:hover,
+.url-import__submit:focus-visible,
+.dashboard-rail-import button:hover,
+.dashboard-rail-import button:focus-visible,
+.seller-chat__send:hover,
+.seller-chat__send:focus-visible,
+.seller-chat__chip:hover,
+.seller-chat__chip:focus-visible,
+.seller-chat__tone:hover,
+.seller-chat__tone:focus-visible,
+.seller-chat__tone.is-active,
+.seller-chat__mode:hover,
+.seller-chat__mode:focus-visible,
+.seller-chat__mode.is-active,
+.purchase-receipt-btn:hover,
+.purchase-receipt-btn:focus-visible,
+.used-price-guide-btn:hover,
+.used-price-guide-btn:focus-visible,
+.price-source-link:hover,
+.price-source-link:focus-visible,
+.stage-three-actions .chip-btn:hover,
+.stage-three-actions .chip-btn:focus-visible,
+.stage-three-actions .chip-btn--ghost:hover,
+.stage-three-actions .chip-btn--ghost:focus-visible,
+.stage-three-actions .price-source-link:hover,
+.stage-three-actions .price-source-link:focus-visible {
+  background: var(--app-mint-hover) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+.btn *,
+.chip-btn *,
+.stage-slide-controls .btn *,
+.stage-start-card *,
+.stage-two-card.stage-start-card *,
+.stage-three-card.stage-start-card *,
+.purchase-receipt-card.stage-start-card *,
+.stage-five-start-card *,
+.url-import__submit *,
+.dashboard-rail-import button *,
+.seller-chat__send *,
+.seller-chat__chip *,
+.seller-chat__tone *,
+.seller-chat__mode *,
+.purchase-receipt-btn *,
+.used-price-guide-btn *,
+.price-source-link *,
+.stage-three-actions .chip-btn *,
+.stage-three-actions .chip-btn--ghost *,
+.stage-three-actions .price-source-link * {
+  color: #fff !important;
+}
+.stage-three-head,
+.used-price-guide-card .mini-card-head,
+.stage-three-card .search-query-list,
+.comparison-caution,
+.comparison-price-table th {
+  background: #f8fafc !important;
+  color: var(--app-muted) !important;
+}
+.comparison-price-table-wrap,
+.comparison-price-table td {
+  border-color: var(--app-line) !important;
+}
+
+/* Final vivid step backgrounds: remove peach, use distinct saturated tints. */
+.stage-one-zone::before {
+  background: #ffe45c !important;
+}
+.stage-two-zone::before {
+  background: #93c5fd !important;
+}
+.stage-three-zone::before {
+  background: #c4b5fd !important;
+}
+.stage-four-zone::before {
+  background: #f9a8d4 !important;
+}
+.stage-five-zone::before {
+  background: #7ddfd2 !important;
+}
+.stage-one-zone .stage-zone-label {
+  background: #fff3a3 !important;
+  border-color: #ffd43b !important;
+}
+.stage-two-zone .stage-zone-label {
+  background: #dbeafe !important;
+  border-color: #60a5fa !important;
+}
+.stage-three-zone .stage-zone-label {
+  background: #ede9fe !important;
+  border-color: #a78bfa !important;
+}
+.stage-four-zone .stage-zone-label {
+  background: #fce7f3 !important;
+  border-color: #f472b6 !important;
+}
+.stage-five-zone .stage-zone-label {
+  background: #ccfbf1 !important;
+  border-color: #2dd4bf !important;
+}
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span {
+  color: #d97706 !important;
+}
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span {
+  color: #1d4ed8 !important;
+}
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span {
+  color: #6d28d9 !important;
+}
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span {
+  color: #be185d !important;
+}
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: #0f766e !important;
+}
+
+/* Final theme lock: vivid step gradients + stable mint button hovers. */
+:root {
+  --app-mint: #14b8a6;
+  --app-mint-hover: #0f8f82;
+  --app-text: #20242c;
+  --app-muted: #667085;
+  --app-line: #e5eaf1;
+}
+.stage-one-zone::before {
+  background: linear-gradient(90deg, rgba(255, 193, 7, 0.55) 0%, rgba(255, 111, 15, 0.28) 42%, rgba(255, 255, 255, 0.82) 100%) !important;
+}
+.stage-two-zone::before {
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.45) 0%, rgba(96, 165, 250, 0.28) 44%, rgba(255, 255, 255, 0.84) 100%) !important;
+}
+.stage-three-zone::before {
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.42) 0%, rgba(167, 139, 250, 0.27) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.stage-four-zone::before {
+  background: linear-gradient(90deg, rgba(244, 63, 94, 0.42) 0%, rgba(249, 168, 212, 0.28) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.stage-five-zone::before {
+  background: linear-gradient(90deg, rgba(20, 184, 166, 0.46) 0%, rgba(45, 212, 191, 0.27) 44%, rgba(255, 255, 255, 0.86) 100%) !important;
+}
+.btn,
+.chip-btn,
+.stage-slide-controls .btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.seller-chat__chip,
+.seller-chat__tone,
+.seller-chat__mode,
+.purchase-receipt-btn,
+.used-price-guide-btn,
+.price-source-link,
+.stage-three-actions .chip-btn,
+.stage-three-actions .chip-btn--ghost,
+.stage-three-actions .price-source-link {
+  border: 0 !important;
+  background: var(--app-mint) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.btn:hover,
+.btn:focus-visible,
+.chip-btn:hover,
+.chip-btn:focus-visible,
+.stage-slide-controls .btn:hover,
+.stage-slide-controls .btn:focus-visible,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-five-start-card:hover,
+.url-import__submit:hover,
+.url-import__submit:focus-visible,
+.dashboard-rail-import button:hover,
+.dashboard-rail-import button:focus-visible,
+.seller-chat__send:hover,
+.seller-chat__send:focus-visible,
+.seller-chat__chip:hover,
+.seller-chat__chip:focus-visible,
+.seller-chat__tone:hover,
+.seller-chat__tone:focus-visible,
+.seller-chat__tone.is-active,
+.seller-chat__mode:hover,
+.seller-chat__mode:focus-visible,
+.seller-chat__mode.is-active,
+.purchase-receipt-btn:hover,
+.purchase-receipt-btn:focus-visible,
+.used-price-guide-btn:hover,
+.used-price-guide-btn:focus-visible,
+.price-source-link:hover,
+.price-source-link:focus-visible,
+.stage-three-actions .chip-btn:hover,
+.stage-three-actions .chip-btn:focus-visible,
+.stage-three-actions .chip-btn--ghost:hover,
+.stage-three-actions .chip-btn--ghost:focus-visible,
+.stage-three-actions .price-source-link:hover,
+.stage-three-actions .price-source-link:focus-visible {
+  background: var(--app-mint-hover) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+.btn *,
+.chip-btn *,
+.stage-slide-controls .btn *,
+.stage-start-card *,
+.stage-two-card.stage-start-card *,
+.stage-three-card.stage-start-card *,
+.purchase-receipt-card.stage-start-card *,
+.stage-five-start-card *,
+.url-import__submit *,
+.dashboard-rail-import button *,
+.seller-chat__send *,
+.seller-chat__chip *,
+.seller-chat__tone *,
+.seller-chat__mode *,
+.purchase-receipt-btn *,
+.used-price-guide-btn *,
+.price-source-link *,
+.stage-three-actions .chip-btn *,
+.stage-three-actions .chip-btn--ghost *,
+.stage-three-actions .price-source-link * {
+  color: #fff !important;
+}
+.stage-three-head,
+.used-price-guide-card .mini-card-head,
+.stage-three-card .search-query-list,
+.comparison-caution,
+.comparison-price-table th {
+  background: #f8fafc !important;
+  color: var(--app-muted) !important;
+}
+.comparison-price-table-wrap,
+.comparison-price-table td {
+  border-color: var(--app-line) !important;
+}
+
+/* Final cleanup: no peach surfaces, all action buttons mint, vivid step accents. */
+:root {
+  --dash-accent-soft: #eef2ff;
+  --dash-accent-softer: #f8fafc;
+}
+.chip-btn--ghost,
+.stage-three-actions .chip-btn--ghost {
+  background: #14b8a6 !important;
+  color: #fff !important;
+}
+.seller-chat__phone,
+.seller-chat__thread {
+  background: color-mix(in srgb, #14b8a6 10%, #fff) !important;
+}
+.stage-one-zone::before {
+  background: color-mix(in srgb, #ff6f0f 12%, #fff) !important;
+}
+.stage-two-zone::before {
+  background: color-mix(in srgb, #2563eb 11%, #fff) !important;
+}
+.stage-three-zone::before {
+  background: color-mix(in srgb, #7c3aed 10%, #fff) !important;
+}
+.stage-four-zone::before {
+  background: color-mix(in srgb, #f43f5e 10%, #fff) !important;
+}
+.stage-five-zone::before {
+  background: color-mix(in srgb, #14b8a6 11%, #fff) !important;
+}
+
+/* Final dashboard color system: saturated step accents, mint actions, neutral guide table. */
+:root {
+  --step1-accent: #ff6f0f;
+  --step2-accent: #2563eb;
+  --step3-accent: #7c3aed;
+  --step4-accent: #f43f5e;
+  --step5-accent: #14b8a6;
+  --mint-action: #14b8a6;
+  --mint-action-hover: #0f8f82;
+  --neutral-bg: #f5f7fb;
+  --neutral-panel: #f8fafc;
+  --neutral-line: #e5eaf1;
+  --neutral-text: #20242c;
+  --neutral-muted: #667085;
+}
+.stage-one-zone::before {
+  background: color-mix(in srgb, var(--step1-accent) 12%, #fff) !important;
+}
+.stage-two-zone::before {
+  background: color-mix(in srgb, var(--step2-accent) 11%, #fff) !important;
+}
+.stage-three-zone::before {
+  background: color-mix(in srgb, var(--step3-accent) 10%, #fff) !important;
+}
+.stage-four-zone::before {
+  background: color-mix(in srgb, var(--step4-accent) 10%, #fff) !important;
+}
+.stage-five-zone::before {
+  background: color-mix(in srgb, var(--step5-accent) 11%, #fff) !important;
+}
+.stage-one-zone .stage-zone-label {
+  background: color-mix(in srgb, var(--step1-accent) 13%, #fff) !important;
+  border-color: color-mix(in srgb, var(--step1-accent) 22%, #fff) !important;
+}
+.stage-two-zone .stage-zone-label {
+  background: color-mix(in srgb, var(--step2-accent) 12%, #fff) !important;
+  border-color: color-mix(in srgb, var(--step2-accent) 22%, #fff) !important;
+}
+.stage-three-zone .stage-zone-label {
+  background: color-mix(in srgb, var(--step3-accent) 12%, #fff) !important;
+  border-color: color-mix(in srgb, var(--step3-accent) 22%, #fff) !important;
+}
+.stage-four-zone .stage-zone-label {
+  background: color-mix(in srgb, var(--step4-accent) 12%, #fff) !important;
+  border-color: color-mix(in srgb, var(--step4-accent) 22%, #fff) !important;
+}
+.stage-five-zone .stage-zone-label {
+  background: color-mix(in srgb, var(--step5-accent) 13%, #fff) !important;
+  border-color: color-mix(in srgb, var(--step5-accent) 22%, #fff) !important;
+}
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span {
+  color: var(--step1-accent) !important;
+}
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span {
+  color: var(--step2-accent) !important;
+}
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span {
+  color: var(--step3-accent) !important;
+}
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span {
+  color: var(--step4-accent) !important;
+}
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: var(--step5-accent) !important;
+}
+.btn,
+.chip-btn,
+.stage-slide-controls .btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.purchase-receipt-btn,
+.used-price-guide-btn,
+.used-price-guide-card .mini-card-head .chip-btn,
+.stage-three-zone .stage-three-actions .chip-btn,
+.stage-three-zone .stage-three-actions .chip-btn--ghost,
+.stage-three-zone .stage-three-actions .price-source-link {
+  border: 0 !important;
+  background: var(--mint-action) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.btn *,
+.chip-btn *,
+.stage-slide-controls .btn *,
+.stage-start-card *,
+.stage-two-card.stage-start-card *,
+.stage-three-card.stage-start-card *,
+.purchase-receipt-card.stage-start-card *,
+.stage-five-start-card *,
+.url-import__submit *,
+.dashboard-rail-import button *,
+.seller-chat__send *,
+.purchase-receipt-btn *,
+.used-price-guide-btn *,
+.used-price-guide-card .mini-card-head .chip-btn *,
+.stage-three-zone .stage-three-actions .chip-btn *,
+.stage-three-zone .stage-three-actions .chip-btn--ghost *,
+.stage-three-zone .stage-three-actions .price-source-link * {
+  color: #fff !important;
+}
+.btn:hover,
+.chip-btn:hover,
+.stage-slide-controls .btn:hover,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-five-start-card:hover,
+.url-import__submit:hover,
+.dashboard-rail-import button:hover,
+.seller-chat__send:hover,
+.purchase-receipt-btn:hover,
+.used-price-guide-btn:hover,
+.used-price-guide-card .mini-card-head .chip-btn:hover,
+.stage-three-zone .stage-three-actions .chip-btn:hover,
+.stage-three-zone .stage-three-actions .chip-btn--ghost:hover,
+.stage-three-zone .stage-three-actions .price-source-link:hover {
+  background: var(--mint-action-hover) !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+.used-price-guide-card {
+  background: #fff !important;
+}
+.used-price-guide-card .mini-card-head,
+.used-price-guide-card .comparison-price-table-wrap,
+.used-price-guide-card .comparison-caution {
+  background: #fff !important;
+  border-color: var(--neutral-line) !important;
+}
+.used-price-guide-card .stage-two-card-label {
+  color: var(--neutral-muted) !important;
+}
+.used-price-guide-card h4 {
+  color: var(--neutral-text) !important;
+}
+.used-price-guide-card .comparison-price-table th {
+  background: var(--neutral-panel) !important;
+  color: var(--neutral-muted) !important;
+}
+.used-price-guide-card .comparison-price-table td {
+  border-bottom-color: var(--neutral-line) !important;
+}
+.used-price-guide-card .comparison-price-table-wrap {
+  box-shadow: none !important;
+}
+
+/* Final fix: Step 3 top action buttons must be filled mint. */
+.stage-three-zone .stage-three-actions .chip-btn,
+.stage-three-zone .stage-three-actions .chip-btn--ghost,
+.stage-three-zone .stage-three-actions .price-source-link,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link {
+  border: 0 !important;
+  background: #14b8a6 !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.stage-three-zone .stage-three-actions .chip-btn *,
+.stage-three-zone .stage-three-actions .chip-btn--ghost *,
+.stage-three-zone .stage-three-actions .price-source-link *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link * {
+  color: #fff !important;
+}
+.stage-three-zone .stage-three-actions .chip-btn:hover,
+.stage-three-zone .stage-three-actions .chip-btn--ghost:hover,
+.stage-three-zone .stage-three-actions .price-source-link:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link:hover {
+  background: #0f8f82 !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+
+/* App polish pass: consistent spacing, mint buttons, vertical related-list. */
+:root {
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+  --clean-line: #e7ebf0;
+  --clean-panel: #f6f7fb;
+  --clean-panel-2: #f9fafc;
+  --mint-action: #14b8a6;
+  --mint-action-hover: #0f8f82;
+}
+.analysis-board {
+  gap: var(--space-4) !important;
+}
+.stage-zone {
+  padding-block: var(--space-4) var(--space-4) !important;
+  padding-right: var(--space-4) !important;
+}
+.stage-zone-grid,
+.stage-two-zone-grid,
+.stage-three-zone-grid,
+.stage-four-zone-grid,
+.stage-five-zone-grid {
+  gap: var(--space-3) !important;
+}
+.mini-card,
+.stage-two-card,
+.stage-two-risk-card,
+.stage-three-card,
+.used-price-guide-card,
+.comparison-price-list,
+.current-price-card {
+  border-color: var(--clean-line) !important;
+  border-radius: var(--radius-card) !important;
+}
+.stage-three-zone::before {
+  background: #f3f5f9 !important;
+}
+.stage-three-head,
+.used-price-guide-card .mini-card-head,
+.stage-three-card .search-query-list,
+.comparison-caution {
+  background: var(--clean-panel) !important;
+  border-radius: 0.875rem !important;
+}
+.stage-three-card[data-stage-three-search-card],
+.stage-three-card.used-price-guide-card {
+  padding: var(--space-3) !important;
+}
+.stage-three-head {
+  padding: var(--space-3) !important;
+}
+.stage-three-card .search-query-list {
+  margin-top: var(--space-2) !important;
+  padding: var(--space-2) !important;
+}
+.stage-three-comps {
+  margin-top: var(--space-2) !important;
+}
+.comparison-price-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.34fr) !important;
+  gap: var(--space-3) !important;
+}
+.stage-three-zone .comp-list,
+.comp-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: var(--space-2) !important;
+  margin: var(--space-2) 0 0 !important;
+  padding: 0 !important;
+}
+.stage-three-zone .comp-list li,
+.comp-list li {
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: var(--space-2) !important;
+  min-height: 3.5rem !important;
+  padding: var(--space-2) !important;
+  border: 1px solid var(--clean-line) !important;
+  border-radius: 0.75rem !important;
+  background: #fff !important;
+}
+.comp-thumb {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 0.7rem !important;
+}
+.comp-list a {
+  color: #2f5fb8 !important;
+}
+.comparison-caution {
+  margin-top: var(--space-2) !important;
+  padding: var(--space-3) !important;
+  border: 1px solid var(--clean-line) !important;
+  color: #4f5867 !important;
+}
+.comparison-price-table-wrap {
+  border-color: var(--clean-line) !important;
+}
+.comparison-price-table th {
+  background: var(--clean-panel) !important;
+  color: #4f5867 !important;
+}
+.search-query-chip,
+body .app-shell .stage-zone .search-query-chip,
+body .app-shell .stage-three-zone .search-query-chip {
+  background: #eef1f6 !important;
+  color: #4f5867 !important;
+}
+.btn,
+.chip-btn,
+.stage-slide-controls .btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.purchase-receipt-btn,
+.used-price-guide-btn {
+  background: var(--mint-action) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.btn *,
+.chip-btn *,
+.stage-slide-controls .btn *,
+.stage-start-card *,
+.stage-two-card.stage-start-card *,
+.stage-three-card.stage-start-card *,
+.purchase-receipt-card.stage-start-card *,
+.stage-five-start-card *,
+.url-import__submit *,
+.dashboard-rail-import button *,
+.seller-chat__send *,
+.purchase-receipt-btn *,
+.used-price-guide-btn * {
+  color: #fff !important;
+}
+.btn:hover,
+.chip-btn:hover,
+.stage-slide-controls .btn:hover,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-five-start-card:hover,
+.url-import__submit:hover,
+.dashboard-rail-import button:hover,
+.seller-chat__send:hover,
+.purchase-receipt-btn:hover,
+.used-price-guide-btn:hover {
+  background: var(--mint-action-hover) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.chip-btn--ghost,
+.stage-three-actions .chip-btn--ghost {
+  background: #eef1f6 !important;
+  color: #4f5867 !important;
+}
+.chip-btn--ghost:hover,
+.stage-three-actions .chip-btn--ghost:hover {
+  background: #dfe4ee !important;
+  color: #2f3642 !important;
+}
+.stage-slide-controls {
+  gap: var(--space-3) !important;
+}
+.stage-slide-controls .btn {
+  min-width: 7.8rem !important;
+}
+@media (max-width: 820px) {
+  .comparison-price-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .stage-zone {
+    padding-right: var(--space-2) !important;
+  }
+}
+
+/* Step 3 simplification + filled mint action buttons. */
+:root {
+  --dash-neutral-panel: #f6f7fb;
+  --dash-neutral-chip: #eef1f6;
+  --dash-neutral-text: #4f5867;
+  --dash-mint: #14b8a6;
+  --dash-mint-hover: #0f8f82;
+}
+.stage-three-zone::before {
+  background: #f1f3f8 !important;
+}
+.stage-three-zone .stage-zone-label {
+  background: #f7f8fc !important;
+  border-color: #e6e9f1 !important;
+}
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span {
+  color: var(--dash-neutral-text) !important;
+}
+.stage-three-card[data-stage-three-search-card],
+.stage-three-card.used-price-guide-card {
+  background: #fff !important;
+}
+.stage-three-head,
+.used-price-guide-card .mini-card-head,
+.stage-three-card .search-query-list,
+.comparison-caution {
+  background: var(--dash-neutral-panel) !important;
+}
+.stage-three-head .stage-two-card-label,
+.used-price-guide-card .stage-two-card-label {
+  color: var(--dash-neutral-text) !important;
+}
+.stage-three-zone .search-query-chip,
+body .app-shell .stage-three-zone .search-query-chip,
+.stage-three-status-pill {
+  background: var(--dash-neutral-chip) !important;
+  color: var(--dash-neutral-text) !important;
+}
+.stage-three-actions .chip-btn,
+.stage-three-actions .price-source-link,
+.stage-three-zone .price-source-link {
+  background: #eef1f6 !important;
+  background-image: none !important;
+  color: var(--dash-neutral-text) !important;
+}
+.stage-three-actions .chip-btn:hover,
+.stage-three-actions .price-source-link:hover,
+.stage-three-zone .price-source-link:hover {
+  background: #dfe4ee !important;
+  color: #2f3642 !important;
+}
+.comparison-price-table th {
+  background: #eef1f6 !important;
+  color: var(--dash-neutral-text) !important;
+}
+.used-price-guide-card .used-price-guide-btn,
+.used-price-guide-card .mini-card-head .chip-btn,
+.purchase-receipt-btn,
+.seller-chat__send,
+.stage-five-zone .chip-btn,
+.stage-five-zone .btn {
+  background: var(--dash-mint) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.used-price-guide-card .used-price-guide-btn *,
+.used-price-guide-card .mini-card-head .chip-btn *,
+.purchase-receipt-btn *,
+.seller-chat__send *,
+.stage-five-zone .chip-btn *,
+.stage-five-zone .btn * {
+  color: #fff !important;
+}
+.used-price-guide-card .used-price-guide-btn:hover,
+.used-price-guide-card .mini-card-head .chip-btn:hover,
+.purchase-receipt-btn:hover,
+.seller-chat__send:hover,
+.stage-five-zone .chip-btn:hover,
+.stage-five-zone .btn:hover {
+  background: var(--dash-mint-hover) !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+.used-price-guide-card .used-price-guide-btn:hover *,
+.used-price-guide-card .mini-card-head .chip-btn:hover *,
+.purchase-receipt-btn:hover *,
+.seller-chat__send:hover *,
+.stage-five-zone .chip-btn:hover *,
+.stage-five-zone .btn:hover * {
+  color: #fff !important;
+}
+
+/* Carrot correction: solid accent only, especially Step 4 CTA. */
+:root {
+  --dash-accent-gradient: none;
+}
+.btn,
+.chip-btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.price-source-link,
+.stage-three-actions .chip-btn,
+.stage-three-actions .price-source-link,
+.used-price-guide-card .used-price-guide-btn,
+.used-price-guide-card .mini-card-head .chip-btn {
+  background: var(--dash-accent) !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+.btn:hover,
+.chip-btn:hover,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-three-card.stage-four-start-card:hover,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:hover,
+.stage-five-start-card:hover,
+.url-import__submit:hover,
+.dashboard-rail-import button:hover,
+.seller-chat__send:hover,
+.price-source-link:hover,
+.stage-three-actions .chip-btn:hover,
+.stage-three-actions .price-source-link:hover,
+.used-price-guide-card .used-price-guide-btn:hover {
+  background: var(--dash-accent-hover) !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+.stage-start-card *,
+.stage-two-card.stage-start-card *,
+.stage-three-card.stage-start-card *,
+.purchase-receipt-card.stage-start-card *,
+.stage-three-card.stage-four-start-card *,
+.purchase-receipt-card.stage-start-card.stage-four-start-card *,
+.stage-five-start-card *,
+.stage-start-card:hover *,
+.stage-start-card:focus-visible *,
+.stage-two-card.stage-start-card:hover *,
+.stage-three-card.stage-start-card:hover *,
+.purchase-receipt-card.stage-start-card:hover *,
+.stage-three-card.stage-four-start-card:hover *,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:hover *,
+.stage-five-start-card:hover * {
+  color: #fff !important;
+}
+.dashboard-rail {
+  background: var(--dash-accent) !important;
+  background-image: none !important;
+}
+
+/* Green/success-like button states use Step 5 mint with white text. */
+:root {
+  --dash-mint: #14b8a6;
+  --dash-mint-hover: #0f9f90;
+}
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-two-card.stage-start-card:focus-visible,
+.stage-three-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:focus-visible,
+.purchase-receipt-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:focus-visible,
+.stage-five-start-card:hover,
+.stage-five-start-card:focus-visible {
+  border-color: transparent !important;
+  background: var(--dash-mint) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.stage-start-card:hover *,
+.stage-start-card:focus-visible *,
+.stage-two-card.stage-start-card:hover *,
+.stage-two-card.stage-start-card:focus-visible *,
+.stage-three-card.stage-start-card:hover *,
+.stage-three-card.stage-start-card:focus-visible *,
+.purchase-receipt-card.stage-start-card:hover *,
+.purchase-receipt-card.stage-start-card:focus-visible *,
+.stage-five-start-card:hover *,
+.stage-five-start-card:focus-visible * {
+  color: #fff !important;
+}
+.seller-chat__mode.is-active,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover,
+.seller-chat__send:hover,
+.stage-five-zone .chip-btn:hover,
+.stage-five-zone .btn:hover {
+  background: var(--dash-mint) !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+.seller-chat__mode.is-active *,
+.seller-chat__tone.is-active *,
+.seller-chat__chip:hover *,
+.seller-chat__send:hover *,
+.stage-five-zone .chip-btn:hover *,
+.stage-five-zone .btn:hover * {
+  color: #fff !important;
+}
+.seller-chat__bubble--assistant,
+.seller-chat__bubble--seller {
+  background: #fff !important;
+  color: var(--dash-text) !important;
+}
+
+/* Carrot dashboard accent: gradient by default, solid on hover. */
+:root {
+  --dash-bg: #f5f7fb;
+  --dash-surface: #ffffff;
+  --dash-surface-soft: #f8fafc;
+  --dash-accent: #ff6f0f;
+  --dash-accent-hover: #d94f00;
+  --dash-accent-soft: #eef2ff;
+  --dash-accent-softer: #f8fafc;
+  --dash-accent-gradient: none;
+  --dash-text: #20242c;
+  --dash-muted: #697282;
+  --dash-line: #e5eaf1;
+  --dash-shadow: 0 6px 16px rgba(72, 49, 30, 0.07);
+}
+html,
+body {
+  background: var(--dash-bg) !important;
+}
+.stage-zone::before,
+.stage-one-zone::before,
+.stage-two-zone::before,
+.stage-three-zone::before,
+.stage-four-zone::before,
+.stage-five-zone::before {
+  background: #f1f5f9 !important;
+}
+.stage-zone-label,
+.stage-one-zone .stage-zone-label,
+.stage-two-zone .stage-zone-label,
+.stage-three-zone .stage-zone-label,
+.stage-four-zone .stage-zone-label,
+.stage-five-zone .stage-zone-label {
+  background: var(--dash-accent-soft) !important;
+  border-color: rgba(255, 111, 15, 0.18) !important;
+}
+.stage-zone-label b,
+.stage-zone-label span,
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span,
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span,
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span,
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span,
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: var(--dash-accent-hover) !important;
+}
+.btn,
+.chip-btn,
+.stage-start-card,
+.stage-two-card.stage-start-card,
+.stage-three-card.stage-start-card,
+.purchase-receipt-card.stage-start-card,
+.stage-three-card.stage-four-start-card,
+.purchase-receipt-card.stage-start-card.stage-four-start-card,
+.stage-five-start-card,
+.url-import__submit,
+.dashboard-rail-import button,
+.seller-chat__send,
+.price-source-link,
+.stage-three-actions .chip-btn,
+.stage-three-actions .price-source-link,
+.used-price-guide-card .used-price-guide-btn,
+.used-price-guide-card .mini-card-head .chip-btn {
+  background: #ff6f0f !important;
+  background-image: var(--dash-accent-gradient) !important;
+  color: #fff !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+.btn *,
+.chip-btn *,
+.stage-start-card *,
+.stage-two-card.stage-start-card *,
+.stage-three-card.stage-start-card *,
+.purchase-receipt-card.stage-start-card *,
+.stage-three-card.stage-four-start-card *,
+.purchase-receipt-card.stage-start-card.stage-four-start-card *,
+.stage-five-start-card *,
+.url-import__submit *,
+.dashboard-rail-import button *,
+.seller-chat__send *,
+.price-source-link * {
+  color: #fff !important;
+}
+.btn:hover,
+.chip-btn:hover,
+.stage-start-card:hover,
+.stage-start-card:focus-visible,
+.stage-two-card.stage-start-card:hover,
+.stage-three-card.stage-start-card:hover,
+.purchase-receipt-card.stage-start-card:hover,
+.stage-three-card.stage-four-start-card:hover,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:hover,
+.stage-five-start-card:hover,
+.url-import__submit:hover,
+.dashboard-rail-import button:hover,
+.seller-chat__send:hover,
+.price-source-link:hover,
+.stage-three-actions .chip-btn:hover,
+.stage-three-actions .price-source-link:hover,
+.used-price-guide-card .used-price-guide-btn:hover {
+  background: var(--dash-accent-hover) !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.stage-start-card:hover *,
+.stage-start-card:focus-visible *,
+.stage-two-card.stage-start-card:hover *,
+.stage-three-card.stage-start-card:hover *,
+.purchase-receipt-card.stage-start-card:hover *,
+.stage-three-card.stage-four-start-card:hover *,
+.purchase-receipt-card.stage-start-card.stage-four-start-card:hover *,
+.stage-five-start-card:hover * {
+  color: #fff !important;
+}
+.chip-btn--ghost,
+.stage-three-actions .chip-btn--ghost {
+  background: #eef2ff !important;
+  background-image: none !important;
+  color: #4f5867 !important;
+}
+.chip-btn--ghost:hover,
+.stage-three-actions .chip-btn--ghost:hover {
+  background: #dfe4ee !important;
+  color: #2f3642 !important;
+}
+.search-query-chip,
+body .app-shell .stage-zone .search-query-chip,
+body .app-shell .stage-three-zone .search-query-chip,
+.seller-chat__tone,
+.seller-chat__chip,
+.seller-chat__mode,
+.stage-three-status-pill {
+  background: var(--dash-accent-soft) !important;
+  color: var(--dash-accent-hover) !important;
+}
+.seller-chat__mode.is-active,
+.seller-chat__tone.is-active,
+.seller-chat__chip:hover {
+  background: var(--dash-accent) !important;
+  color: #fff !important;
+}
+.stage-three-head,
+.used-price-guide-card .mini-card-head,
+.stage-three-card .search-query-list,
+.comparison-caution {
+  background: var(--dash-surface-soft) !important;
+}
+.comparison-price-table th {
+  background: var(--dash-accent-soft) !important;
+  color: var(--dash-accent-hover) !important;
+}
+.dashboard-rail {
+  border: 0 !important;
+  background: var(--dash-accent) !important;
+  background-image: var(--dash-accent-gradient) !important;
+  box-shadow: 0 8px 18px rgba(217, 79, 0, 0.14) !important;
+}
+.dashboard-rail__logo,
+.dashboard-rail__btn {
+  color: rgba(255, 255, 255, 0.86) !important;
+}
+.dashboard-rail__btn {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.dashboard-rail__btn:hover,
+.dashboard-rail__btn:focus-visible,
+.dashboard-rail__btn.is-active {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #fff !important;
+}
+.dashboard-rail__btn .material-symbols-rounded,
+.dashboard-rail__btn span,
+.dashboard-rail__logo * {
+  color: inherit !important;
+}
+.seller-chat__phone,
+.seller-chat__thread {
+  background: color-mix(in srgb, #14b8a6 10%, #fff) !important;
+}
+.seller-chat__bubble--me {
+  background: var(--dash-accent) !important;
+  color: #fff !important;
+}
+
+/* Final fix: Step 3 top action buttons must be filled mint. */
+.stage-three-zone .stage-three-actions .chip-btn,
+.stage-three-zone .stage-three-actions .chip-btn--ghost,
+.stage-three-zone .stage-three-actions .price-source-link,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link {
+  border: 0 !important;
+  background: #14b8a6 !important;
+  background-image: none !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.stage-three-zone .stage-three-actions .chip-btn *,
+.stage-three-zone .stage-three-actions .chip-btn--ghost *,
+.stage-three-zone .stage-three-actions .price-source-link *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost *,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link * {
+  color: #fff !important;
+}
+.stage-three-zone .stage-three-actions .chip-btn:hover,
+.stage-three-zone .stage-three-actions .chip-btn--ghost:hover,
+.stage-three-zone .stage-three-actions .price-source-link:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .chip-btn--ghost:hover,
+.stage-three-card[data-stage-three-search-card] .stage-three-actions .price-source-link:hover {
+  background: #0f8f82 !important;
+  background-image: none !important;
+  color: #fff !important;
+}
+
+/* Absolute final glass layer: no colored step fills, label text only. */
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.56);
+  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  --glass-line: rgba(210, 218, 228, 0.78);
+  --glass-text: #20242c;
+  --glass-muted: #667085;
+  --glass-shadow: 0 10px 28px rgba(32, 36, 44, 0.07);
+}
+.stage-zone::before,
+.stage-one-zone::before,
+.stage-two-zone::before,
+.stage-three-zone::before,
+.stage-four-zone::before,
+.stage-five-zone::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(248, 250, 252, 0.38) 58%, rgba(255, 255, 255, 0.18) 100%) !important;
+  border: 1px solid var(--glass-line) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+.stage-zone-label,
+.stage-one-zone .stage-zone-label,
+.stage-two-zone .stage-zone-label,
+.stage-three-zone .stage-zone-label,
+.stage-four-zone .stage-zone-label,
+.stage-five-zone .stage-zone-label {
+  min-width: 0 !important;
+  width: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  text-align: left !important;
+  align-items: flex-start !important;
+}
+.stage-zone-label b,
+.stage-zone-label span,
+.stage-one-zone .stage-zone-label b,
+.stage-one-zone .stage-zone-label span,
+.stage-two-zone .stage-zone-label b,
+.stage-two-zone .stage-zone-label span,
+.stage-three-zone .stage-zone-label b,
+.stage-three-zone .stage-zone-label span,
+.stage-four-zone .stage-zone-label b,
+.stage-four-zone .stage-zone-label span,
+.stage-five-zone .stage-zone-label b,
+.stage-five-zone .stage-zone-label span {
+  color: var(--glass-text) !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.74), 0 8px 18px rgba(32, 36, 44, 0.1) !important;
+}
+.stage-zone-label b {
+  font-size: 0.82rem !important;
+  font-weight: 950 !important;
+}
+.stage-zone-label span {
+  margin-top: 0.08rem !important;
+  color: var(--glass-muted) !important;
+  font-size: 0.72rem !important;
+  font-weight: 850 !important;
+}
+.receipt-reprint-btn {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+  min-width: 2.35rem !important;
+  min-height: 2.35rem !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+}
+.receipt-reprint-btn .material-symbols-rounded {
+  color: #fff !important;
+  font-size: 1.25rem !important;
+  line-height: 1 !important;
+  transition: transform 160ms ease;
+}
+.receipt-reprint-btn:hover .material-symbols-rounded {
+  transform: rotate(90deg);
+}
+
+
+/* EOF fix: remove AI-looking accent stripe from guide notes. */
+.comparison-caution,
+body .app-shell .stage-zone .comparison-caution,
+.used-price-guide-card .comparison-caution {
+  border-left: 0 !important;
+  border-inline-start: 0 !important;
+  border: 1px solid rgba(210, 218, 228, 0.78) !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  box-shadow: none !important;
 }

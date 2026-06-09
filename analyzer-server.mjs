@@ -42,6 +42,7 @@ const PROMPTS = {
   purchaseReceipt: await loadPrompt('purchase-receipt.txt'),
   listingImageAnalysis: await loadPrompt('listing-image-analysis.txt'),
   directAiChat: await loadPrompt('direct-ai-chat.txt'),
+  sellerChatAssistant: await loadPrompt('seller-chat-assistant.txt'),
 };
 
 function renderPrompt(template, vars) {
@@ -1224,6 +1225,37 @@ async function runDirectAiChat(apiKey, model, prompt) {
   });
 }
 
+function buildSellerChatAssistantPrompt(payload) {
+  return renderPrompt(PROMPTS.sellerChatAssistant, {
+    mode: String(payload.mode || 'first'),
+    tone: String(payload.tone || 'polite'),
+    toneLabel: String(payload.toneLabel || ''),
+    toneNote: String(payload.toneNote || '').trim() || '(없음)',
+    userText: String(payload.message || payload.userText || '').trim() || '(없음)',
+    chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
+    listingJson: JSON.stringify(payload.listing || null),
+    summaryJson: JSON.stringify(payload.summary || null),
+    riskAnalysisJson: JSON.stringify(payload.riskAnalysis || null),
+    listingTextAnalysisJson: JSON.stringify(payload.listingTextAnalysis || null),
+    listingImageAnalysisJson: JSON.stringify(payload.listingImageAnalysis || null),
+    usedPriceGuideJson: JSON.stringify(payload.usedPriceGuide || null),
+    receiptJson: JSON.stringify(payload.receipt || null),
+    comparisonJson: JSON.stringify(payload.comparison || null),
+  });
+}
+
+function parseSellerChatAssistant(text) {
+  const parsed = parseJsonObject(text);
+  return {
+    primary: String(parsed.primary || parsed.message || parsed.answer || '').replace(/\s+/g, ' ').trim(),
+    alternatives: normalizeShortList(parsed.alternatives, 5),
+    followUps: normalizeShortList(parsed.followUps, 3),
+    quickReplies: normalizeShortList(parsed.quickReplies, 4),
+    summary: String(parsed.summary || '').replace(/\s+/g, ' ').trim(),
+    parseOk: Boolean(parsed.primary || parsed.message || parsed.answer),
+  };
+}
+
 /** API 키 유효성 + 선택 모델 사용 가능 여부 (REST models 목록) */
 async function verifyGeminiApiKey(apiKey, modelId) {
   const key = String(apiKey || '').trim();
@@ -1738,6 +1770,50 @@ const server = http.createServer(async (req, res) => {
         answer,
         model,
         pipeline: 'gemini_google_search_direct_chat',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/seller-chat-assistant') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const prompt = buildSellerChatAssistantPrompt(body);
+      const rawOut = await geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+        temperature: 0.35,
+        maxOutputTokens: 1200,
+        responseMimeType: 'application/json',
+        timeoutMs: GEMINI_FAST_TIMEOUT_MS,
+      });
+      const assistant = parseSellerChatAssistant(rawOut);
+      json(res, 200, {
+        assistant,
+        primary: assistant.primary,
+        alternatives: assistant.alternatives,
+        followUps: assistant.followUps,
+        quickReplies: assistant.quickReplies,
+        summary: assistant.summary,
+        rawText: rawOut,
+        model,
+        pipeline: 'gemini_seller_chat_assistant_json',
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });

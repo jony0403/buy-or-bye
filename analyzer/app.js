@@ -14,6 +14,11 @@ const $urlImportForm = document.getElementById('urlImportForm');
 const $urlImportInput = document.getElementById('urlImportInput');
 const $urlImportStatus = document.getElementById('urlImportStatus');
 const $btnUrlImport = document.getElementById('btnUrlImport');
+const $dashboardRail = document.querySelector('.dashboard-rail');
+const $railPanel = document.querySelector('[data-rail-panel]');
+const $railImportForm = document.querySelector('[data-rail-import-form]');
+const $railUrlInput = document.querySelector('[data-rail-url-input]');
+const $railStatus = document.querySelector('[data-rail-status]');
 const $lightbox = document.getElementById('lightbox');
 const $lightboxImg = document.getElementById('lightboxImg');
 const $lightboxOverlay = document.getElementById('lightboxOverlay');
@@ -39,6 +44,7 @@ const imageAnalysisIndexes = new Map();
 const imageAnalysisDirections = new Map();
 const stageTwoActiveKeys = new Set();
 const stageThreeActiveKeys = new Set();
+const stageFiveActiveKeys = new Set();
 const stageTwoCompletedKeys = new Set();
 const stageThreeIsolatedRefreshKeys = new Set();
 const productRiskAnalyses = new Map();
@@ -46,12 +52,24 @@ const listingTextAnalyses = new Map();
 const listingImageAnalyses = new Map();
 const comparisonFilters = new Map();
 const comparisonFilterTimers = new Set();
+const stageThreeComparisonSkippedKeys = new Set();
+const stageThreeComparisonRunIds = new Map();
 const usedPriceGuides = new Map();
 const purchaseReceipts = new Map();
+const purchaseReceiptPrintedKeys = new Set();
 const imageAnalysisPreviewedKeys = new Set();
 const searchQueryRegenerations = new Map();
 const stageThreeAutoQueryRetryCounts = new Map();
 const directAiChat = { open: false, status: 'idle', messages: [] };
+const sellerChatStates = new Map();
+const sellerChatToneOptions = [
+  { value: 'polite', label: '공손하게' },
+  { value: 'warm', label: '부드럽게' },
+  { value: 'friendly', label: '넵!! 밝게^^' },
+  { value: 'firm', label: '단호하게' },
+  { value: 'short', label: '짧게' },
+  { value: 'negotiate', label: '가격협상' },
+];
 let lightboxAutoPlayTimer = 0;
 let lightboxCloseTimer = 0;
 let photoSliderAutoTimer = 0;
@@ -59,6 +77,8 @@ let imageAnalysisAutoTimer = 0;
 let stageSlideIndex = 0;
 let stageSlideAnimationTimer = 0;
 let stageStartMotionTimer = 0;
+let aiResultMotionTimer = 0;
+let sellerChatToastTimer = 0;
 let lastStageThreeCompsRenderKey = '';
 const RECEIPT_PRINT_SCROLL_MS = 7800;
 const MIN_PRICE_REFERENCE_MATCHES = 5;
@@ -117,6 +137,7 @@ function persistAiCaches() {
         listingTextAnalyses: mapToPersistableObject(listingTextAnalyses),
         listingImageAnalyses: mapToPersistableObject(listingImageAnalyses),
         comparisonFilters: mapToPersistableObject(comparisonFilters),
+        stageThreeComparisonSkippedKeys: setToPersistableArray(stageThreeComparisonSkippedKeys),
         usedPriceGuides: mapToPersistableObject(usedPriceGuides),
         purchaseReceipts: mapToPersistableObject(purchaseReceipts),
       })
@@ -139,6 +160,7 @@ function loadAiCaches() {
       restorePersistedMap(listingTextAnalyses, parsed.listingTextAnalyses);
       restorePersistedMap(listingImageAnalyses, parsed.listingImageAnalyses);
       restorePersistedMap(comparisonFilters, parsed.comparisonFilters);
+      restorePersistedSet(stageThreeComparisonSkippedKeys, parsed.stageThreeComparisonSkippedKeys);
       restorePersistedMap(usedPriceGuides, parsed.usedPriceGuides);
       restorePersistedMap(purchaseReceipts, parsed.purchaseReceipts);
     } catch {
@@ -187,8 +209,20 @@ function setLayoutMode(mode, opts = {}) {
       /* localStorage may be unavailable */
     }
   }
+  updateRailLayoutToggle();
   updateStageSlide();
   requestAnimationFrame(() => bindScrollText($current));
+}
+
+function updateRailLayoutToggle() {
+  const btn = globalThis.document?.querySelector?.('[data-rail-action="layout"]');
+  if (!btn) return;
+  const isSlide = $appShell?.classList.contains('app-shell--slide');
+  const icon = btn.querySelector('.material-symbols-rounded');
+  const label = btn.querySelector('small');
+  if (icon) icon.textContent = isSlide ? 'view_carousel' : 'view_agenda';
+  if (label) label.textContent = isSlide ? '슬라이드' : '스크롤';
+  btn.setAttribute('aria-label', isSlide ? '현재 슬라이드식 보기, 누르면 스크롤식 전환' : '현재 스크롤식 보기, 누르면 슬라이드식 전환');
 }
 
 function stageSlideCount() {
@@ -232,12 +266,52 @@ function isStepThreeUnlocked(item) {
   return Boolean(key && stageThreeActiveKeys.has(key));
 }
 
+function emptyComparisonComps(item) {
+  return {
+    status: 'collected',
+    forItemKey: itemKey(item),
+    bunjang: { items: [] },
+    daangn: { items: [] },
+    joongna: { items: [] },
+  };
+}
+
+function effectiveStageThreeComps(item, nextComps = comps) {
+  if (nextComps && isCompsCollected(nextComps)) return nextComps;
+  const key = summaryKey(item);
+  return key && stageThreeComparisonSkippedKeys.has(key) ? emptyComparisonComps(item) : nextComps;
+}
+
 function isStepThreeDone(item) {
   if (!isStepTwoDone(item) || !isStepThreeUnlocked(item)) return false;
-  if (!comps || !isCompsCollected(comps)) return false;
-  const key = comparisonFilterKey(item, comps);
+  const settledComps = effectiveStageThreeComps(item);
+  if (!settledComps || !isCompsCollected(settledComps)) return false;
+  const key = comparisonFilterKey(item, settledComps);
   if (!key) return false;
-  return comparisonFilters.get(key)?.status === 'done' && usedPriceGuides.get(key)?.status === 'done';
+  const comparisonStatus = comparisonFilters.get(key)?.status;
+  const guideStatus = usedPriceGuides.get(key)?.status;
+  const comparisonSettled = comparisonStatus === 'done' || comparisonStatus === 'error';
+  const guideSettled = guideStatus === 'done' || guideStatus === 'error';
+  return Boolean(comparisonSettled && guideSettled);
+}
+
+function isStepFourDone(item) {
+  const key = item && comps ? purchaseReceiptKey(item, comps) : '';
+  return Boolean(key && purchaseReceipts.get(key)?.status === 'done');
+}
+
+function isPurchaseReceiptPrinted(item, nextComps = comps) {
+  const key = item && nextComps ? purchaseReceiptKey(item, nextComps) : '';
+  return Boolean(key && purchaseReceipts.get(key)?.status === 'done' && purchaseReceiptPrintedKeys.has(key));
+}
+
+function clearPurchaseReceiptPrintedForListing(key) {
+  if (!key) return;
+  for (const cacheKey of [...purchaseReceiptPrintedKeys]) {
+    if (listingKeyFromStageCacheKey(cacheKey) === key || cacheKey.startsWith(`${key}::`)) {
+      purchaseReceiptPrintedKeys.delete(cacheKey);
+    }
+  }
 }
 
 function maybeMarkStageTwoComplete(item) {
@@ -257,8 +331,12 @@ function syncStagePanels(item) {
   if (!isStepTwoDone(item)) {
     $current.querySelector('[data-stage-three-panel]')?.remove();
     $current.querySelector('[data-stage-four-panel]')?.remove();
+    $current.querySelector('[data-stage-five-panel]')?.remove();
   } else if (!isStepThreeDone(item)) {
     $current.querySelector('[data-stage-four-panel]')?.remove();
+    $current.querySelector('[data-stage-five-panel]')?.remove();
+  } else if (!isStepFourDone(item)) {
+    $current.querySelector('[data-stage-five-panel]')?.remove();
   }
   updateStageSlide();
 }
@@ -269,6 +347,7 @@ function canOpenStage(index) {
   if (index === 1) return isStepOneDone(item);
   if (index === 2) return isStepTwoDone(item);
   if (index === 3) return isStepThreeDone(item);
+  if (index === 4) return isPurchaseReceiptPrinted(item);
   return false;
 }
 
@@ -286,7 +365,9 @@ function updateStageSlide() {
   const label = controls.querySelector('[data-stage-slide-label]');
   if (prev) prev.disabled = stageSlideIndex <= 0;
   if (next) next.disabled = stageSlideIndex >= count - 1 || !canOpenStage(stageSlideIndex + 1);
-  if (label) label.textContent = `Step ${stageSlideIndex + 1}/${count}`;
+  if (prev) prev.textContent = '<< 이전 단계';
+  if (next) next.textContent = stageSlideIndex === 3 ? '다음 단계(선택) >>' : '다음 단계 >>';
+  if (label) label.textContent = stageSlideIndex === 4 ? `선택 단계/${count}` : `Step ${stageSlideIndex + 1}/${count}`;
 }
 
 function moveStageSlide(dir) {
@@ -316,12 +397,22 @@ function playStageStartMotion() {
   }, 900);
 }
 
+function playAiResultMotion(duration = 560) {
+  if (!$appShell) return;
+  if (aiResultMotionTimer) window.clearTimeout(aiResultMotionTimer);
+  $appShell.classList.add('is-ai-result-updating');
+  aiResultMotionTimer = window.setTimeout(() => {
+    $appShell.classList.remove('is-ai-result-updating');
+    aiResultMotionTimer = 0;
+  }, duration);
+}
+
 function renderStageSlideControls() {
   return `
     <nav class="stage-slide-controls" data-stage-slide-controls aria-label="단계 이동">
-      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-prev>이전 단계</button>
+      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-prev>&lt;&lt; 이전 단계</button>
       <span class="stage-slide-label" data-stage-slide-label>Step 1/1</span>
-      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-next>다음 단계</button>
+      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-next>다음 단계 &gt;&gt;</button>
     </nav>
   `;
 }
@@ -675,13 +766,139 @@ function renderStageTwoLoadingCards() {
     .join('');
 }
 
+function stageTwoIssueIcon(kind, item) {
+  const text = `${kind || ''} ${item?.title || ''} ${item?.detail || item?.desc || ''}`.toLowerCase();
+  const rules = [
+    [/배송 중 파손|택배 파손|운송.*파손|포장.*파손|파손.*배송|완충.*부족/, 'package_2'],
+    [/결합부|결합 부위|체결|나사산|유격|헐거움|조립|마감|공차|틈새/, 'construction'],
+    [/상태 주관|상태.*주관|상태 판단|판매자.*주관|표현.*주관|컨디션/, 'fact_check'],
+    [/도색|이염|변색|물빠짐|색이.*묻|염색|코팅|칠 벗|페인트/, 'format_color_fill'],
+    [/공정|제조 편차|품질 편차|마감 편차|qc|품질관리|검수/, 'precision_manufacturing'],
+    [/파손|깨짐|금감|크랙|깨져|금이|균열|부러짐|찢어짐|찌그러짐/, 'broken_image'],
+    [/찍힘|눌림|찌그러|덴트|찍힌|충격 흔적|낙하 흔적/, 'crisis_alert'],
+    [/배송|택배|반값택배|편의점택배|퀵|거래장소|직거래/, 'local_shipping'],
+    [/나의 찾기|find my|아이클라우드|icloud|계정.*잠금|활성화 잠금|액티베이션|락 걸|계정락/, 'lock'],
+    [/계정|로그인|로그아웃|소유자|명의|본인 인증|인증 해제|초기화 불가/, 'account_circle'],
+    [/도난|분실|습득|주운|블랙리스트|imei.*차단|통신사 차단/, 'gpp_bad'],
+    [/정품|가품|짝퉁|레플리카|호환품|카피|시리얼|serial|일련번호/, 'verified_user'],
+    [/보증|워런티|warranty|as\b|a\/s|리퍼|수리 이력|서비스센터/, 'workspace_premium'],
+    [/영수증|구매내역|거래내역|증빙|구매 증명|인보이스/, 'receipt_long'],
+    [/구성품|구성|박스|풀박|부속|부속품|누락|빠짐|미포함/, 'inventory_2'],
+    [/케이블|충전선|라이트닝|usb|c타입|type-c|젠더|어댑터/, 'cable'],
+    [/충전기|어댑터|전원 어댑터|고속충전기|맥세이프|magsafe/, 'power'],
+    [/배터리.*효율|효율|성능 최대치|battery health|배터리 성능/, 'battery_5_bar'],
+    [/배터리|battery|방전|광탈|발열.*배터리|배터리 팽창|스웰링/, 'battery_alert'],
+    [/충전.*불량|충전 안|충전 느림|충전 단자|단자 접촉|포트 불량/, 'battery_charging_full'],
+    [/전원.*불량|전원 안|부팅 안|꺼짐|재부팅|무한부팅|벽돌|먹통/, 'power_settings_new'],
+    [/메인보드|보드|기판|로직보드|납땜|칩셋|cpu|gpu/, 'developer_board'],
+    [/발열|과열|뜨거|열감|thermal|쿨링|팬소음|팬 소음/, 'device_thermostat'],
+    [/침수|물먹|물에|방수|수분|습기|녹|부식|침수라벨/, 'water_drop'],
+    [/액정|화면|디스플레이|display|스크린|패널|번인|잔상/, 'monitor'],
+    [/스크래치|기스|흠집|까짐|도장|외관|생활기스|마모흔/, 'texture'],
+    [/터치|터치불량|고스트터치|터치 씹|펜 터치|터치스크린/, 'touch_app'],
+    [/밝기|밝음|어두움|백라이트|빛샘|멍|화이트스팟|불량화소/, 'brightness_medium'],
+    [/색감|색상|누렇게|녹조|핑크|색 번짐|트루톤|true tone/, 'palette'],
+    [/힌지|접힘|폴드|플립|경첩|접는|접힘 자국/, 'view_week'],
+    [/카메라|렌즈|사진|초점|흔들림|손떨림|ois|플래시/, 'photo_camera'],
+    [/전면카메라|셀카|페이스타임|facetime|셀피/, 'photo_camera_front'],
+    [/후면카메라|메인카메라|망원|초광각|카툭튀/, 'photo_camera_back'],
+    [/스피커|소리|음질|찢어짐|잡음|좌우 밸런스|스테레오/, 'speaker'],
+    [/마이크|녹음|통화음|상대방.*안 들|음성 입력/, 'mic'],
+    [/이어폰|헤드폰|헤드셋|이어팁|노캔|노이즈캔슬링|anc/, 'headphones'],
+    [/블루투스|bluetooth|페어링|연결 끊|연결 불량|무선 연결/, 'bluetooth_disabled'],
+    [/와이파이|wifi|wi-fi|무선랜|인터넷 연결|공유기/, 'wifi_off'],
+    [/셀룰러|lte|5g|유심|sim|통신|안테나|수신/, 'signal_cellular_alt'],
+    [/gps|위치|지도|네비|내비|위치 추적/, 'location_off'],
+    [/nfc|교통카드|삼성페이|애플페이|결제|페이/, 'contactless'],
+    [/버튼|전원버튼|볼륨버튼|홈버튼|스위치|버튼감/, 'radio_button_checked'],
+    [/진동|햅틱|haptic|진동모터|탭틱|taptic/, 'vibration'],
+    [/센서|감지|착용|근접센서|조도센서|자이로|가속도/, 'sensors'],
+    [/지문|터치id|touch id|페이스id|face id|얼굴인식|생체인식/, 'fingerprint'],
+    [/키보드|키감|키캡|키 씹|입력|자판|스위치/, 'keyboard'],
+    [/트랙패드|터치패드|패드 클릭|커서|마우스패드/, 'touchpad_mouse'],
+    [/마우스|휠|클릭|더블클릭|dpi|휠튐/, 'mouse'],
+    [/펜슬|애플펜슬|s펜|스타일러스|펜촉|필압/, 'stylus_note'],
+    [/저장공간|용량|스토리지|ssd|hdd|하드|메모리 부족/, 'storage'],
+    [/램|ram|메모리|memory|16gb|32gb|8gb/, 'memory'],
+    [/그래픽|그래픽카드|vga|gpu|화면 깨짐|드라이버/, 'memory_alt'],
+    [/os|운영체제|업데이트|펌웨어|ios|android|윈도우|macos|버전/, 'system_update_alt'],
+    [/앱|어플|프로그램|소프트웨어|오류|버그|튕김|크래시/, 'bug_report'],
+    [/초기화|공장초기화|리셋|재설정|포맷|복원/, 'restart_alt'],
+    [/데이터|백업|복구|삭제|개인정보|사진 남|계정 정보/, 'backup'],
+    [/바이러스|악성코드|보안|해킹|탈옥|루팅|rooting|jailbreak/, 'security'],
+    [/냄새|담배|향수|곰팡이|악취|연기/, 'air'],
+    [/먼지|오염|때|찌든|청소|이물질|오염도/, 'cleaning_services'],
+    [/생활방수|방진|방수등급|ip\d|방수 기능/, 'water_damage'],
+    [/무게|크기|사이즈|휴대성|두께|무겁/, 'straighten'],
+    [/호환|호환성|지원 안|미지원|규격|세대 차이/, 'extension_off'],
+    [/모델명|세대|연식|출시일|구형|신형|버전 확인/, 'tag'],
+    [/제조년|생산일|사용기간|사용감|연식|오래/, 'event'],
+    [/수명|내구성|마모|노후|열화|소모품/, 'hourglass_bottom'],
+    [/타이어|바퀴|휠|구동|모터|브레이크/, 'settings_input_component'],
+    [/자동차|차량|엔진|미션|주행거리|사고이력/, 'directions_car'],
+    [/자전거|전기자전거|브레이크|변속기|체인/, 'directions_bike'],
+    [/킥보드|스쿠터|전동킥보드|전동/, 'electric_scooter'],
+    [/게임|콘솔|패드|조이콘|스틱쏠림|쏠림/, 'sports_esports'],
+    [/드리프트|스틱|조이스틱|아날로그|버튼 씹힘/, 'joystick'],
+    [/프린터|잉크|토너|출력|스캔|복합기/, 'print'],
+    [/모니터|주사율|hz|해상도|dp|hdmi/, 'desktop_windows'],
+    [/tv|티비|텔레비전|리모컨|셋톱|화질/, 'live_tv'],
+    [/냉장고|냉동|냉장|컴프레서|성에/, 'kitchen'],
+    [/세탁기|건조기|탈수|배수|세제|드럼/, 'local_laundry_service'],
+    [/청소기|흡입|필터|브러시|다이슨|먼지통/, 'vacuum'],
+    [/에어컨|실외기|냉방|난방|히터|필터/, 'mode_fan'],
+    [/가구|의자|책상|침대|소파|흔들림|찍힘/, 'chair'],
+    [/의류|옷|사이즈|오염|보풀|늘어남/, 'checkroom'],
+    [/신발|운동화|밑창|마모|사이즈|착화감/, 'footprint'],
+    [/시계|워치|스트랩|밴드|시계줄|방수/, 'watch'],
+    [/카드|결제|할부|계좌|입금|송금|환불/, 'payments'],
+    [/사기|먹튀|입금유도|선입금|안전결제|피싱|가짜 안전결제/, 'report'],
+    [/포장|완충|박스 포장|뽁뽁이|완충재/, 'package_2'],
+    [/가격|시세|네고|협상|비싸|저렴|할인|가격대/, 'sell'],
+    [/급처|급매|빨리|오늘만|예약금|찜|예약/, 'schedule'],
+    [/판매자|상점|후기|평점|리뷰|매너|거래내역/, 'storefront'],
+    [/사진|실사|실물|캡처|도용|이미지|인증샷|상세사진/, 'image_search'],
+    [/본문|설명|정보 부족|상세 설명|기재|언급 없음/, 'article'],
+    [/질문|확인|문의|물어|요청|추가 확인/, 'help'],
+    [/위험|주의|리스크|문제|이슈|경고|의심/, 'error_outline'],
+    [/고질|불량|결함|하자|공통 문제|종특|취약/, 'handyman'],
+    [/상태 좋|양호|깨끗|정상|문제 없음|안전/, 'check_circle'],
+    [/비교|대조|동일 모델|유사 매물|시세 비교/, 'compare_arrows'],
+    [/검색|웹검색|커뮤니티|후기 검색|리서치/, 'manage_search'],
+    [/설정|세팅|옵션|환경설정|초기 설정/, 'settings'],
+    [/알림|소리 알림|진동 알림|푸시/, 'notifications'],
+    [/잠금|비밀번호|암호|패스워드|pin|패턴/, 'password'],
+    [/열쇠|키|리모컨키|스마트키|키 없음/, 'key'],
+    [/케이스|커버|필름|보호필름|강화유리/, 'cases'],
+    [/렌탈|약정|할부금|미납|소유권|대여/, 'contract'],
+    [/교환|반품|환불|취소|거래 취소/, 'assignment_return'],
+    [/충격|낙하|떨어뜨|충돌|찍힘|파손 이력/, 'crisis_alert'],
+    [/소음|잡소리|소리남|삐걱|딸깍|웅웅/, 'hearing'],
+    [/냉각|쿨러|팬|방열|써멀|서멀/, 'ac_unit'],
+    [/조명|led|램프|불빛|백색|깜빡/, 'lightbulb'],
+    [/리모컨|컨트롤러|조작|버튼 리모컨/, 'settings_remote'],
+    [/배터리 교체|교체 이력|부품 교체|사설 수리/, 'build'],
+    [/커넥터|단자|핀|접점|헐거움/, 'power_input'],
+    [/프레임|테두리|모서리|바디|하우징/, 'crop_square'],
+    [/냉납|단선|접촉불량|간헐적|끊김/, 'electrical_services'],
+    [/업자|전문판매|되팔이|리셀러|대량판매/, 'badge'],
+  ];
+  const matched = rules.find(([pattern]) => pattern.test(text));
+  if (matched) return matched[1];
+  return kind === '고질병' ? 'handyman' : 'info';
+}
+
 function renderStageTwoRiskCard(kind, item, delay = 0) {
   const level = String(item?.level || 'caution').trim();
+  const icon = stageTwoIssueIcon(kind, item);
   return `
     <article class="mini-card stage-two-risk-card risk-${escapeAttr(level)}" style="--stage-delay:${delay}ms">
-      <p class="stage-two-card-label">${escapeHtml(kind)}</p>
-      <h3>${escapeHtml(item?.title || '확인 필요')}</h3>
-      <p>${escapeHtml(item?.detail || item?.desc || '구매 전 추가 확인이 필요합니다.')}</p>
+      <div class="stage-two-risk-card__body">
+        <p class="stage-two-card-label">${escapeHtml(kind)}</p>
+        <h3>${escapeHtml(item?.title || '확인 필요')}</h3>
+        <p>${escapeHtml(item?.detail || item?.desc || '구매 전 추가 확인이 필요합니다.')}</p>
+      </div>
+      <span class="material-symbols-rounded stage-two-risk-card__icon" aria-hidden="true">${escapeHtml(icon)}</span>
     </article>
   `;
 }
@@ -825,7 +1042,29 @@ function renderDirectAiPanel() {
       </form>
     </article>
   `;
+  requestAnimationFrame(positionDirectAiPanel);
   bindDirectAiChat();
+}
+
+function positionDirectAiPanel() {
+  if (!$directAiPanel || $directAiPanel.hidden) return;
+  const trigger = document.querySelector('[data-rail-action="direct-ai"]');
+  if (!trigger) return;
+  const rect = trigger.getBoundingClientRect();
+  const panelRect = $directAiPanel.getBoundingClientRect();
+  const gap = 14;
+  const isBottomRail = window.matchMedia('(max-width: 1080px)').matches;
+  if (isBottomRail) {
+    const left = Math.max(12, Math.min(window.innerWidth - panelRect.width - 12, rect.left + rect.width / 2 - panelRect.width / 2));
+    const top = Math.max(12, rect.top - panelRect.height - gap);
+    $directAiPanel.style.left = `${left}px`;
+    $directAiPanel.style.top = `${top}px`;
+    return;
+  }
+  const left = Math.min(window.innerWidth - panelRect.width - 14, rect.right + gap);
+  const top = Math.max(14, Math.min(window.innerHeight - panelRect.height - 14, rect.top - 8));
+  $directAiPanel.style.left = `${left}px`;
+  $directAiPanel.style.top = `${top}px`;
 }
 
 function stripChatMarkdown(text) {
@@ -835,6 +1074,512 @@ function stripChatMarkdown(text) {
     .replace(/`/g, '')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*[-*]\s+/gm, '');
+}
+
+function sellerChatKey(item) {
+  return summaryKey(item);
+}
+
+function defaultSellerChatState() {
+  return {
+    mode: 'first',
+    tone: 'polite',
+    toneNote: '',
+    input: '',
+    sellerReply: '',
+    status: 'idle',
+    messages: [],
+    lastSuggestion: null,
+    error: '',
+  };
+}
+
+function getSellerChatState(item) {
+  const key = sellerChatKey(item);
+  if (!key) return null;
+  if (!sellerChatStates.has(key)) sellerChatStates.set(key, defaultSellerChatState());
+  return sellerChatStates.get(key);
+}
+
+function updateSellerChatState(item, patch = {}) {
+  const state = getSellerChatState(item);
+  if (!state) return null;
+  Object.assign(state, patch);
+  return state;
+}
+
+function sellerChatToneLabel(value) {
+  return sellerChatToneOptions.find((opt) => opt.value === value)?.label || '공손하게';
+}
+
+function sellerChatContext(item, comps) {
+  const key = summaryKey(item);
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const summary = key ? getProductSummaryState(item)?.summary || null : null;
+  const riskAnalysis = key ? productRiskAnalyses.get(key)?.analysis || null : null;
+  const listingTextAnalysis = key ? listingTextAnalyses.get(key)?.analysis || null : null;
+  const listingImageAnalysis = key ? listingImageAnalyses.get(key)?.analysis || null : null;
+  const receiptKey = key && stageComps ? purchaseReceiptKey(item, stageComps) : '';
+  const usedGuideKey = key && stageComps ? usedPriceGuideKey(item, stageComps) : '';
+  const receipt = receiptKey ? purchaseReceipts.get(receiptKey)?.receipt || null : null;
+  const usedPriceGuide = usedGuideKey ? usedPriceGuides.get(usedGuideKey)?.guide || null : null;
+  const matched = key && stageComps ? (filteredComparisonItems(item, stageComps) || []) : [];
+  const stats = matched.length ? compStats(matched) : null;
+  return {
+    item: {
+      platform: item.platform || '',
+      platformLabel: item.platformLabel || '',
+      title: item.title || '',
+      priceLabel: item.priceLabel || '',
+      shippingFeeLabel: item.shippingFeeLabel || '',
+      body: item.body || '',
+      seller: item.seller || null,
+      pageUrl: item.pageUrl || '',
+    },
+    summary,
+    riskAnalysis,
+    listingTextAnalysis,
+    listingImageAnalysis,
+    receipt,
+    usedPriceGuide,
+    comparison: {
+      matchedCount: matched.length,
+      stats: stats
+        ? {
+            count: stats.n,
+            min: stats.min,
+            max: stats.max,
+            median: stats.median,
+            minLabel: formatWon(stats.min),
+            maxLabel: formatWon(stats.max),
+            medianLabel: formatWon(stats.median),
+          }
+        : null,
+      matchedListings: matched.slice(0, 8).map((x) => ({
+        platform: x.platformLabel || x.platform || '',
+        title: x.title || '',
+        priceLabel: x.priceLabel || '',
+        saleStatus: x.saleStatus || '',
+      })),
+    },
+  };
+}
+
+function sellerChatQuickChips(mode, response = null) {
+  const responseChips = Array.isArray(response?.quickReplies)
+    ? response.quickReplies.filter(Boolean).slice(0, 4)
+    : [];
+  if (responseChips.length) return responseChips;
+  return mode === 'reply'
+    ? ['구성품 한 번만 더 확인할게요', '하자 부분 사진 부탁드려요', '가격 조금 조정 가능할까요?', '직거래도 가능할까요?']
+    : ['인사하고 상태부터 확인', '구성품 확인', '하자 여부 질문', '가격 조정 가능 여부'];
+}
+
+function sellerChatSuggestionTexts(response) {
+  const texts = [
+    response?.primary,
+    ...(Array.isArray(response?.alternatives) ? response.alternatives : []),
+    ...(Array.isArray(response?.followUps) ? response.followUps : []),
+  ]
+    .map((text) => String(text || '').trim())
+    .filter(Boolean);
+  return [...new Set(texts)].slice(0, 6);
+}
+
+function sellerChatNeedsNegotiation(context) {
+  const receipt = context?.receipt || {};
+  const guide = context?.usedPriceGuide || {};
+  const text = [
+    receipt.verdict,
+    receipt.headline,
+    receipt.summary,
+    receipt.priceReason,
+    receipt.negotiationPriceLabel,
+    receipt.maxBuyPriceLabel,
+    guide.recommendedAction,
+    guide.currentAssessment,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return receipt.verdict === 'negotiate' || /네고|가격\s*조정|협상|비싸|비싼|높은|상한|초과/.test(text);
+}
+
+function sellerChatNegotiationSentence(context) {
+  const receipt = context?.receipt || {};
+  const target = String(receipt.negotiationPriceLabel || receipt.maxBuyPriceLabel || '').trim();
+  const pricePart = target && !/어려움|보류|없음/.test(target) ? `${target} 정도로 ` : '';
+  return `상태랑 구성품 확인되면 바로 거래하고 싶은데, 혹시 가격은 ${pricePart}조정 가능할까요?`;
+}
+
+function sellerChatHasNegotiation(text) {
+  return /네고|가격\s*조정|조정\s*가능|협상|할인|깎|낮춰/.test(String(text || ''));
+}
+
+function enforceSellerChatNegotiation(response, context) {
+  if (!sellerChatNeedsNegotiation(context)) return response;
+  const negotiation = sellerChatNegotiationSentence(context);
+  const primary = String(response.primary || '').trim();
+  const alternatives = Array.isArray(response.alternatives) ? response.alternatives.filter(Boolean) : [];
+  const followUps = Array.isArray(response.followUps) ? response.followUps.filter(Boolean) : [];
+  const allTexts = [primary, ...alternatives, ...followUps];
+  if (allTexts.some(sellerChatHasNegotiation)) return response;
+  return {
+    ...response,
+    primary: primary ? `${primary} ${negotiation}` : negotiation,
+    alternatives: [negotiation, ...alternatives].slice(0, 5),
+    quickReplies: ['가격 조정 가능 여부', ...(Array.isArray(response.quickReplies) ? response.quickReplies : [])].slice(0, 4),
+  };
+}
+
+function sellerChatHistoryPayload(messages = []) {
+  return (Array.isArray(messages) ? messages : [])
+    .map((msg) => ({
+      role: msg?.role === 'seller' ? 'seller' : msg?.role === 'me' ? 'me' : 'assistant',
+      text: String(msg?.text || '').trim(),
+    }))
+    .filter((msg) => msg.text);
+}
+
+function renderSellerChatMessage(msg, index = -1) {
+  const role = msg?.role || 'assistant';
+  const side = role === 'seller' ? 'left' : 'right';
+  const label = role === 'seller' ? '판매자' : role === 'me' ? '나' : 'AI';
+  const rowClass = `seller-chat__row seller-chat__row--${side}${msg?.isNew ? ' is-new' : ''}`;
+  const bubbleClass =
+    role === 'seller'
+      ? 'seller-chat__bubble seller-chat__bubble--seller'
+      : role === 'me'
+        ? 'seller-chat__bubble seller-chat__bubble--me'
+        : 'seller-chat__bubble seller-chat__bubble--assistant';
+  const altHtml = Array.isArray(msg?.alternatives) && msg.alternatives.length
+    ? `<div class="seller-chat__alts">${msg.alternatives
+        .slice(0, 3)
+        .map((alt) => `<button type="button" class="seller-chat__chip" data-seller-chat-copy="${escapeAttr(alt)}">${escapeHtml(alt)}</button>`)
+        .join('')}</div>`
+    : '';
+  const followUpsHtml = Array.isArray(msg?.followUps) && msg.followUps.length
+    ? `<div class="seller-chat__followups">${msg.followUps.slice(0, 3).map((q) => `<span class="seller-chat__followup">${escapeHtml(q)}</span>`).join('')}</div>`
+    : '';
+  const copyButton =
+    (role === 'assistant' || role === 'me') && msg?.text
+      ? `<button type="button" class="seller-chat__copy seller-chat__copy--icon" data-seller-chat-copy="${escapeAttr(msg.text)}" aria-label="메시지 복사" title="복사"><span class="material-symbols-rounded" aria-hidden="true">content_copy</span></button>`
+      : '';
+  const deleteButton =
+    index >= 0 && (role === 'me' || role === 'seller')
+      ? `<button type="button" class="seller-chat__delete" data-seller-chat-delete="${index}" aria-label="메시지 삭제">×</button>`
+      : '';
+  return `
+    <div class="${rowClass}">
+      <div class="${bubbleClass}">
+        ${deleteButton}
+        <span class="seller-chat__label">${label}</span>
+        <p>${escapeHtml(msg?.text || '')}</p>
+        ${copyButton}
+        ${altHtml}
+        ${followUpsHtml}
+      </div>
+    </div>
+  `;
+}
+
+function renderSellerChatReplyForm(state) {
+  return `
+    <form class="seller-chat__empty-reply" data-seller-chat-reply-form>
+      <span class="seller-chat__form-label seller-chat__form-label--reply">판매자 답변 입력</span>
+      <textarea
+        class="seller-chat__composer seller-chat__composer--reply"
+        rows="2"
+        placeholder="판매자 답변 붙여넣기: 예) 네 구성품은 박스랑 충전기 있고 하자는 없습니다."
+        data-seller-chat-reply
+        ${state.status === 'loading' ? 'disabled' : ''}
+      >${escapeHtml(state.sellerReply || '')}</textarea>
+      <button type="submit" class="seller-chat__send seller-chat__send--reply"${state.status === 'loading' ? ' disabled' : ''}>답장 만들기</button>
+    </form>
+  `;
+}
+
+function renderSellerChatThread(state) {
+  const messages = Array.isArray(state?.messages) ? state.messages : [];
+  const replyForm = renderSellerChatReplyForm(state);
+  if (!messages.length) {
+    return `
+      <div class="seller-chat__empty">
+        <div class="seller-chat__bubble seller-chat__bubble--assistant">
+          <span class="seller-chat__label">AI</span>
+          <p>거래를 이어갈 때만 아래에서 첫 메시지를 만들거나, 판매자 답변을 붙여넣어 답장 후보를 받아보세요.</p>
+        </div>
+        ${replyForm}
+      </div>
+    `;
+  }
+  return `${messages.map((msg, index) => renderSellerChatMessage(msg, index)).join('')}${replyForm}`;
+}
+
+function renderSellerChatSuggestions(state) {
+  if (state?.status === 'loading') {
+    return `
+      <div class="seller-chat__suggestions is-loading">
+        <div class="seller-chat__suggestions-head">
+          <strong>문구 생성 중...</strong>
+          <span>가격·리스크 근거를 반영하고 있습니다.</span>
+        </div>
+        <div class="seller-chat__suggestion-card seller-chat__suggestion-card--skeleton">
+          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--short"></span>
+          <span class="seller-chat__skeleton-line"></span>
+          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--mid"></span>
+        </div>
+        <div class="seller-chat__suggestion-card seller-chat__suggestion-card--skeleton">
+          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--short"></span>
+          <span class="seller-chat__skeleton-line"></span>
+          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--mid"></span>
+        </div>
+      </div>
+    `;
+  }
+  const suggestions = sellerChatSuggestionTexts(state?.lastSuggestion);
+  if (!suggestions.length) return '';
+  return `
+    <div class="seller-chat__suggestions">
+      <div class="seller-chat__suggestions-head">
+        <strong>선택 가능한 메시지 후보</strong>
+        <span>거래를 이어갈 때만 골라 보내세요.</span>
+      </div>
+      ${suggestions
+        .map(
+          (text, index) => `
+            <div class="seller-chat__suggestion-card" data-seller-chat-send-suggestion="${escapeAttr(text)}" role="button" tabindex="0" aria-label="제안 ${index + 1} 보낸 메시지로 추가">
+              <span class="seller-chat__suggestion-label">제안 ${index + 1}</span>
+              <strong>${escapeHtml(text)}</strong>
+              <span class="seller-chat__suggestion-actions">
+                <small>클릭하면 바로 보낸 메시지로 추가</small>
+                <button type="button" class="seller-chat__copy seller-chat__copy--icon" data-seller-chat-copy="${escapeAttr(text)}" aria-label="추천 문구 복사" title="복사"><span class="material-symbols-rounded" aria-hidden="true">content_copy</span></button>
+              </span>
+            </div>
+          `
+        )
+        .join('')}
+    </div>
+  `;
+}
+
+function renderSellerChatChips(state) {
+  const quickChips = sellerChatQuickChips(state?.mode || 'first', state?.lastSuggestion || null);
+  return quickChips
+    .map((chip) => `<button type="button" class="seller-chat__chip" data-seller-chat-chip="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`)
+    .join('');
+}
+
+function sellerChatSellerName(item) {
+  const seller = item?.seller || {};
+  return seller.nickname || seller.shopName || seller.name || '판매자';
+}
+
+function renderSellerChatMeta(item) {
+  const sellerText = sellerLine(item?.seller, item?.platform);
+  const platform = item?.platformLabel || item?.platform || '플랫폼';
+  return `
+    <div class="seller-chat__context">
+      <div class="seller-chat__seller">
+        <span class="seller-chat__avatar">${escapeHtml(String(sellerChatSellerName(item)).slice(0, 1) || '판')}</span>
+        <div>
+          <strong>${escapeHtml(sellerChatSellerName(item))}</strong>
+          <p>${escapeHtml([platform, sellerText].filter(Boolean).join(' · '))}</p>
+        </div>
+      </div>
+      ${item?.pageUrl ? `<a class="seller-chat__listing-link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>` : ''}
+    </div>
+  `;
+}
+
+function appendSellerChatMessageToThread(item, msg, index) {
+  const state = getSellerChatState(item);
+  const panel = $current?.querySelector('[data-stage-five-panel]');
+  const thread = panel?.querySelector('[data-seller-chat-thread]');
+  if (!state || !thread) return false;
+  const replyForm = thread.querySelector('[data-seller-chat-reply-form]');
+  const rowHtml = renderSellerChatMessage({ ...msg, isNew: true }, index);
+  if (thread.querySelector('.seller-chat__empty')) {
+    thread.innerHTML = `${rowHtml}${renderSellerChatReplyForm(state)}`;
+  } else if (replyForm) {
+    replyForm.insertAdjacentHTML('beforebegin', rowHtml);
+  } else {
+    thread.insertAdjacentHTML('beforeend', `${rowHtml}${renderSellerChatReplyForm(state)}`);
+  }
+  thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+  return true;
+}
+
+function refreshSellerChatDynamic(item, opts = {}) {
+  const state = getSellerChatState(item);
+  const panel = $current?.querySelector('[data-stage-five-panel]');
+  if (!state || !panel) return false;
+  const thread = panel.querySelector('[data-seller-chat-thread]');
+  const suggestions = panel.querySelector('[data-seller-chat-suggestions]');
+  const chips = panel.querySelector('[data-seller-chat-chips]');
+  const error = panel.querySelector('[data-seller-chat-error]');
+  const modeTitle = panel.querySelector('[data-seller-chat-mode-title]');
+  const input = panel.querySelector('[data-seller-chat-input]');
+  const reply = panel.querySelector('[data-seller-chat-reply]');
+  if (thread && !opts.skipThread) thread.innerHTML = renderSellerChatThread(state);
+  if (suggestions) suggestions.innerHTML = renderSellerChatSuggestions(state);
+  if (chips) chips.innerHTML = renderSellerChatChips(state);
+  if (error) error.innerHTML = state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : '';
+  if (modeTitle) modeTitle.textContent = `거래 메시지 도우미 · ${sellerChatToneLabel(state.tone)}`;
+  if (input) {
+    input.value = state.input || '';
+    input.disabled = state.status === 'loading';
+  }
+  if (reply) {
+    panel.querySelectorAll('[data-seller-chat-reply]').forEach((replyInput) => {
+      replyInput.value = state.sellerReply || '';
+      replyInput.disabled = state.status === 'loading';
+    });
+  }
+  panel.querySelectorAll('[data-seller-chat-mode]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-seller-chat-mode') === state.mode);
+  });
+  panel.querySelectorAll('[data-seller-chat-tone]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-seller-chat-tone') === state.tone);
+  });
+  panel.querySelectorAll('.seller-chat__send').forEach((btn) => {
+    btn.disabled = state.status === 'loading';
+  });
+  return true;
+}
+
+function renderSellerChatPanel(item, comps) {
+  if (!item || !isStepFourDone(item)) return '';
+  const state = getSellerChatState(item);
+  if (!state) return '';
+  const key = sellerChatKey(item);
+  if (!stageFiveActiveKeys.has(key)) {
+    return `
+      <section class="stage-five-panel stage-zone stage-five-zone is-active" data-stage-panel data-stage-five-panel>
+        <aside class="stage-zone-label">
+          <b>Step 5</b>
+          <span>거래 메시지</span>
+        </aside>
+        <div class="stage-zone-grid stage-five-zone-grid">
+          <button type="button" class="stage-five-start-card stage-start-card" data-stage-five-start="${escapeAttr(key)}">
+            <div class="stage-two-ready">
+              <div>
+                <p class="stage-two-card-label">판매자 대화 준비</p>
+                <h3>분석 결과를 바탕으로 거래 메시지를 만들어보세요.</h3>
+                <p>가격 판단, 리스크, 확인할 점을 자연스럽게 반영해 첫 연락과 답장 문구를 추천합니다.</p>
+                <span class="stage-start-card__cta">거래 메시지 만들기</span>
+              </div>
+            </div>
+          </button>
+        </div>
+      </section>
+    `;
+  }
+  const ctx = sellerChatContext(item, comps);
+  const summaryName = ctx.summary?.productName || item.title || '판매자 대화 보조';
+  const toneLabel = sellerChatToneLabel(state.tone);
+  const placeholder = '보낼 메시지에 반영할 조건을 적어주세요. 예: 구성품과 하자 먼저 확인하고 싶어요.';
+  const actionLabel = '첫 메시지 만들기';
+  const note = state.toneNote ? `<p class="seller-chat__note">커스텀 말투: ${escapeHtml(state.toneNote)}</p>` : '';
+  return `
+    <section class="stage-five-panel stage-zone stage-five-zone is-active" data-stage-panel data-stage-five-panel>
+      <aside class="stage-zone-label">
+        <b>Step 5</b>
+        <span>거래 메시지</span>
+      </aside>
+      <div class="stage-zone-grid stage-five-zone-grid">
+        <article class="mini-card stage-five-card">
+          <div class="seller-chat__phone">
+            <header class="seller-chat__phone-head">
+              <button type="button" class="seller-chat__back" aria-label="뒤로">‹</button>
+              <div class="seller-chat__title">
+                <strong>${escapeHtml(summaryName)}</strong>
+                <span data-seller-chat-mode-title>거래 메시지 도우미 · ${escapeHtml(toneLabel)}</span>
+              </div>
+              <button type="button" class="seller-chat__reset-icon" data-seller-chat-reset aria-label="대화 초기화">↺</button>
+            </header>
+            ${renderSellerChatMeta(item)}
+            <div class="seller-chat__toolbar">
+              <div class="seller-chat__tone-row">
+                ${sellerChatToneOptions
+                  .map(
+                    (tone) => `
+                      <button type="button" class="seller-chat__tone${state.tone === tone.value ? ' is-active' : ''}" data-seller-chat-tone="${escapeAttr(tone.value)}">
+                        ${escapeHtml(tone.label)}
+                      </button>
+                    `
+                  )
+                  .join('')}
+              </div>
+              <input class="seller-chat__note-input" type="text" value="${escapeAttr(state.toneNote || '')}" placeholder="말투 추가 요청: 예) 너무 딱딱하지 않게" data-seller-chat-tone-note />
+              ${note}
+            </div>
+            <div class="seller-chat__thread" data-seller-chat-thread>${renderSellerChatThread(state)}</div>
+            <div data-seller-chat-suggestions>${renderSellerChatSuggestions(state)}</div>
+            <div class="seller-chat__chips" data-seller-chat-chips>
+              ${renderSellerChatChips(state)}
+            </div>
+            <form class="seller-chat__form" data-seller-chat-form>
+              <span class="seller-chat__form-label">AI에게 요청할 조건</span>
+              <textarea
+                class="seller-chat__composer"
+                rows="2"
+                placeholder="${escapeAttr(placeholder)}"
+                data-seller-chat-input
+                ${state.status === 'loading' ? 'disabled' : ''}
+              >${escapeHtml(state.input || '')}</textarea>
+              <button type="submit" class="seller-chat__send"${state.status === 'loading' ? ' disabled' : ''}>${escapeHtml(actionLabel)}${state.status === 'loading' ? ' 중...' : ''}</button>
+            </form>
+            <div data-seller-chat-error>${state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : ''}</div>
+          </div>
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function showSellerChatToast(message = '복사됐습니다') {
+  let toast = document.querySelector('[data-seller-chat-toast]');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'seller-chat-toast';
+    toast.setAttribute('data-seller-chat-toast', '');
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('is-visible');
+  if (sellerChatToastTimer) window.clearTimeout(sellerChatToastTimer);
+  sellerChatToastTimer = window.setTimeout(() => {
+    toast.classList.remove('is-visible');
+    sellerChatToastTimer = 0;
+  }, 1500);
+}
+
+async function copySellerChatText(text) {
+  const value = String(text || '').trim();
+  if (!value) return;
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(value);
+    copied = true;
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      copied = true;
+    } catch {
+      /* ignore */
+    }
+    ta.remove();
+  }
+  if (copied) showSellerChatToast('복사됐습니다');
 }
 
 function renderStageTwoGroup(title, items, label = 'AI 분석 완료', delay = 0) {
@@ -938,6 +1683,7 @@ function renderStageThreeSection(item, comps) {
   if (!isStepTwoDone(item)) {
     return '';
   }
+  const stageComps = effectiveStageThreeComps(item, comps);
   const key = summaryKey(item);
   const hasCachedStageThree = key
     ? [...comparisonFilters.keys(), ...usedPriceGuides.keys(), ...purchaseReceipts.keys()].some(
@@ -978,8 +1724,8 @@ function renderStageThreeSection(item, comps) {
         <span>가격 참고</span>
       </aside>
       <div class="stage-zone-grid stage-three-zone-grid">
-        ${renderStageThreeSearchCard(item, comps)}
-        ${renderUsedPriceGuideBlock(item, comps)}
+        ${renderStageThreeSearchCard(item, stageComps)}
+        ${renderUsedPriceGuideBlock(item, stageComps)}
       </div>
     </section>
   `;
@@ -1001,10 +1747,10 @@ function renderStageThreeSearchCard(item, comps) {
         <div>
           <p class="stage-two-card-label">자동 매물 검색</p>
           <h3>${escapeHtml(summary.productName || primaryQuery || '관련 매물 검색')}</h3>
-          <p>AI가 정리한 키워드로 번개·당근·중고나라 관련 매물을 자동 수집해 가격 참고자료로 정리합니다.</p>
         </div>
         <div class="stage-three-actions">
           <button type="button" class="chip-btn" data-stage-three-refresh="${escapeAttr(key)}">다시 검색·정리</button>
+          <button type="button" class="chip-btn chip-btn--ghost" data-stage-three-skip-comps="${escapeAttr(key)}">비교 매물 스킵</button>
           ${danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
         </div>
       </div>
@@ -1314,9 +2060,9 @@ function renderPurchaseReceiptBlock(item, comps) {
   if (!item || !comps || !isCompsCollected(comps)) return '';
   const filterKey = comparisonFilterKey(item, comps);
   const filterState = filterKey ? comparisonFilters.get(filterKey) : null;
-  if (filterState?.status !== 'done') return '';
+  if (filterState?.status !== 'done' && filterState?.status !== 'error') return '';
   const guideState = filterKey ? usedPriceGuides.get(filterKey) : null;
-  if (guideState?.status !== 'done') return '';
+  if (guideState?.status !== 'done' && guideState?.status !== 'error') return '';
   const key = purchaseReceiptKey(item, comps);
   const state = key ? purchaseReceipts.get(key) : null;
   if (state?.status === 'loading') {
@@ -1389,7 +2135,9 @@ function renderPurchaseReceiptBlock(item, comps) {
               <footer class="receipt-paper-foot">THANK YOU / CHECK BEFORE BUY</footer>
             </div>
           </div>
-          <button type="button" class="chip-btn purchase-receipt-btn receipt-reprint-btn" data-purchase-receipt-regenerate="${escapeAttr(key)}">다시 출력</button>
+          <button type="button" class="chip-btn purchase-receipt-btn receipt-reprint-btn" data-purchase-receipt-regenerate="${escapeAttr(key)}" aria-label="영수증 다시 출력">
+            <span class="material-symbols-rounded" aria-hidden="true">sync</span>
+          </button>
         </div>
       </article>
     `;
@@ -1410,6 +2158,7 @@ function renderPurchaseReceiptBlock(item, comps) {
 
 function renderStageFourSection(item, comps) {
   if (!item || !isStepThreeDone(item)) return '';
+  const stageComps = effectiveStageThreeComps(item, comps);
   return `
     <section class="stage-four-panel stage-zone stage-four-zone is-active" data-stage-panel data-stage-four-panel>
       <aside class="stage-zone-label">
@@ -1417,10 +2166,15 @@ function renderStageFourSection(item, comps) {
         <span>최종 결론</span>
       </aside>
       <div class="stage-zone-grid stage-four-zone-grid">
-        ${renderPurchaseReceiptBlock(item, comps)}
+        ${renderPurchaseReceiptBlock(item, stageComps)}
       </div>
     </section>
   `;
+}
+
+function renderStageFiveSection(item, comps) {
+  if (!item || !isPurchaseReceiptPrinted(item, comps)) return '';
+  return renderSellerChatPanel(item, comps);
 }
 
 function renderCurrentListingCompareCard(item) {
@@ -1441,12 +2195,15 @@ function renderCurrentListingCompareCard(item) {
 }
 
 function renderCompsBlock(item, comps) {
+  const key = summaryKey(item);
+  if (key && stageThreeComparisonSkippedKeys.has(key)) {
+    return `<p class="stage-three-status-pill">비교 매물 스킵됨</p>`;
+  }
   if (!comps || !isCompsCollected(comps)) {
     return renderCompsLoading('번개·당근·중고나라 검색 결과를 수집 중입니다...');
   }
   const all = comparisonItems(comps);
   if (!all.length) {
-    const key = summaryKey(item);
     if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
       return renderCompsLoading('AI가 검색어를 다시 조정 중입니다...');
     }
@@ -1489,11 +2246,9 @@ function renderCompsBlock(item, comps) {
 }
 
 function renderUsedPriceGuideBlock(item, comps) {
-  if (!item || !comps || !isCompsCollected(comps)) return '';
-  const filterKey = comparisonFilterKey(item, comps);
-  const filterState = filterKey ? comparisonFilters.get(filterKey) : null;
-  if (filterState?.status !== 'done') return '';
-  const key = usedPriceGuideKey(item, comps);
+  const stageComps = effectiveStageThreeComps(item, comps);
+  if (!item || !stageComps || !isCompsCollected(stageComps)) return '';
+  const key = usedPriceGuideKey(item, stageComps);
   const state = key ? usedPriceGuides.get(key) : null;
   if (!state || state.status === 'loading') {
     return `
@@ -1537,7 +2292,6 @@ function renderUsedPriceGuideBlock(item, comps) {
         <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">다시 만들기</button>
       </div>
       <h4>${escapeHtml(guide.headline || '상태별 중고 가격 참고표')}</h4>
-      <p class="mini-muted">${escapeHtml(guide.summary || '번개·중고나라 등 중고 거래 데이터를 참고한 AI 가격 가이드입니다.')}</p>
       <div class="comparison-price-table-wrap">
         <table class="comparison-price-table">
           <thead><tr><th>상태</th><th>가격 참고</th><th>코멘트</th></tr></thead>
@@ -1667,6 +2421,7 @@ function renderImageAnalysisSlider(item) {
 }
 
 function renderItem(item, comps) {
+  $appShell?.classList.toggle('is-empty-state', !item);
   if (!item) {
     window.clearInterval(photoSliderAutoTimer);
     window.clearInterval(imageAnalysisAutoTimer);
@@ -1676,7 +2431,8 @@ function renderItem(item, comps) {
       <article class="mini-card mini-card--empty">
         <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="72" height="72" />
         <h2>매물 대기</h2>
-        <p class="empty">매물 페이지 우측 하단에 뜨는 이 확장 아이콘을 눌러 분석 웹으로 보내세요.</p>
+        <p class="empty">분석할 중고 매물을 아직 받지 못했습니다. 왼쪽 URL 버튼을 눌러 중고나라·번개장터·당근 링크를 붙여넣거나, 매물 페이지 우측 하단의 확장 아이콘을 눌러 이 분석 웹으로 전송하세요.</p>
+        <p class="empty empty-sub">매물이 들어오면 제품 식별, 하자·고질병 체크, 가격 참고자료, 최종 구매 판단, 판매자에게 보낼 문구 추천까지 순서대로 정리됩니다.</p>
       </article>
     `;
     return;
@@ -1725,6 +2481,7 @@ function renderItem(item, comps) {
     ${renderStageTwoSection(item)}
     ${renderStageThreeSection(item, comps)}
     ${renderStageFourSection(item, comps)}
+    ${renderStageFiveSection(item, comps)}
     ${renderStageSlideControls()}
   `;
   bindImageZoom($current);
@@ -1736,16 +2493,23 @@ function renderItem(item, comps) {
   bindUsedPriceGuide($current, item);
   bindPurchaseReceipt($current, item);
   updatePurchaseReceiptLayout($current);
-  window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
+  window.requestAnimationFrame(() => {
+    updatePurchaseReceiptLayout($current);
+    const receiptKey = item && comps ? purchaseReceiptKey(item, comps) : '';
+    if (receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done' && !purchaseReceiptPrintedKeys.has(receiptKey)) {
+      followPurchaseReceiptPrint($current);
+    }
+  });
   bindImageAnalysisSlider($current, item);
   bindProductSummaryRetry($current, item);
   bindProductImageSearch($current, item);
+  bindSellerChatFlow($current, item);
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   syncStagePanels(item);
   ensureCachedStageTwoFollowups(item);
   if (isStepThreeUnlocked(item)) {
     scheduleComparisonFilter(item);
-    if (comparisonFilters.get(comparisonFilterKey(item, comps))?.status === 'done') void ensureUsedPriceGuide(item);
+    void ensureUsedPriceGuide(item);
   }
 }
 
@@ -2077,6 +2841,8 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   const queryList = splitSearchQueries(queries);
   if (!key || !queryList.length) return;
   const isolated = opts.isolated === true;
+  resetStageThreeComparisonWork(item, { clearGuide: !isolated, clearReceipt: !isolated, clearSearchQuery: true });
+  stageThreeComparisonSkippedKeys.delete(key);
   if (!opts.preserveAutoRetryCount) stageThreeAutoQueryRetryCounts.delete(key);
   relatedRequestedKeys.add(key);
   if (isolated) stageThreeIsolatedRefreshKeys.add(key);
@@ -2090,6 +2856,7 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
       if (!isolated) {
         usedPriceGuides.delete(filterKey);
         purchaseReceipts.delete(filterKey);
+        purchaseReceiptPrintedKeys.delete(filterKey);
       }
     }
   }
@@ -2108,6 +2875,41 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
       btn.disabled = false;
     }, 2500);
   }
+}
+
+function resetStageThreeComparisonWork(item, opts = {}) {
+  const key = summaryKey(item);
+  if (!key) return;
+  stageThreeComparisonRunIds.set(key, (stageThreeComparisonRunIds.get(key) || 0) + 1);
+  if (opts.clearSearchQuery !== false) searchQueryRegenerations.delete(key);
+  for (const filterKey of [...comparisonFilters.keys()]) {
+    if (!filterKey.startsWith(`${key}::`)) continue;
+    comparisonFilters.delete(filterKey);
+    if (opts.clearGuide) usedPriceGuides.delete(filterKey);
+    if (opts.clearReceipt !== false) {
+      purchaseReceipts.delete(filterKey);
+      purchaseReceiptPrintedKeys.delete(filterKey);
+    }
+  }
+  for (const filterKey of [...comparisonFilterTimers]) {
+    if (filterKey.startsWith(`${key}::`)) comparisonFilterTimers.delete(filterKey);
+  }
+}
+
+function skipStageThreeComparison(item) {
+  const key = summaryKey(item);
+  if (!key) return;
+  resetStageThreeComparisonWork(item, { clearGuide: true, clearReceipt: true, clearSearchQuery: true });
+  stageThreeAutoQueryRetryCounts.set(key, MAX_STAGE_THREE_AUTO_QUERY_RETRIES);
+  stageThreeComparisonSkippedKeys.add(key);
+  relatedRequestedKeys.add(key);
+  stageThreeActiveKeys.add(key);
+  comps = emptyComparisonComps(item);
+  const filterKey = comparisonFilterKey(item, comps);
+  if (filterKey) comparisonFilters.set(filterKey, { status: 'done', matches: [], skipped: true });
+  persistAiCaches();
+  refreshStageThreeSection(item);
+  void ensureUsedPriceGuide(item);
 }
 
 function bindStageThreeFlow(root, item) {
@@ -2133,6 +2935,11 @@ function bindStageThreeFlow(root, item) {
   root?.querySelectorAll('[data-stage-three-refresh]').forEach((btn) => {
     btn.addEventListener('click', () => {
       openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn, { isolated: true });
+    });
+  });
+  root?.querySelectorAll('[data-stage-three-skip-comps]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      skipStageThreeComparison(item);
     });
   });
 }
@@ -2196,7 +3003,7 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
 }
 
 function purchaseReceiptComparisonPayload(item, comps) {
-  const matched = filteredComparisonItems(item, comps) || [];
+  const matched = filteredComparisonItems(item, comps) || comparisonFilterCandidates(item, comps, 12) || [];
   const stats = compStats(matched);
   const pricedSampleCount = stats?.n || 0;
   const isPriceReliable = pricedSampleCount >= MIN_PRICE_REFERENCE_MATCHES;
@@ -2233,7 +3040,8 @@ function purchaseReceiptComparisonPayload(item, comps) {
 
 function usedPriceGuidePayload(item, comps) {
   const matched = filteredComparisonItems(item, comps) || [];
-  const stats = compStats(matched);
+  const candidates = matched.length ? matched : comparisonItems(comps) || [];
+  const stats = compStats(candidates);
   return {
     current: {
       platform: item.platformLabel || item.platform || '',
@@ -2245,7 +3053,7 @@ function usedPriceGuidePayload(item, comps) {
     },
     summary: getProductSummaryState(item)?.summary || null,
     comparison: {
-      matchedCount: matched.length,
+      matchedCount: candidates.length,
       pricedSampleCount: stats?.n || 0,
       stats: stats
         ? {
@@ -2258,7 +3066,7 @@ function usedPriceGuidePayload(item, comps) {
             medianLabel: formatWon(stats.median),
           }
         : null,
-      matchedListings: matched.slice(0, 12).map((x) => ({
+      matchedListings: candidates.slice(0, 12).map((x) => ({
         platform: x.platformLabel || x.platform || '',
         title: x.title || '',
         price: x.price || null,
@@ -2277,6 +3085,7 @@ function bindUsedPriceGuide(root, item) {
       if (key) {
         usedPriceGuides.delete(key);
         purchaseReceipts.delete(key);
+        purchaseReceiptPrintedKeys.delete(key);
       }
       void ensureUsedPriceGuide(item);
     });
@@ -2303,7 +3112,8 @@ function updatePurchaseReceiptLayout(root = $current, opts = {}) {
   const zone = stage?.closest?.('[data-stage-four-panel]');
   if (!stage || !reveal || !paper || !zone) return 0;
   const printHeight = Math.ceil(paper.scrollHeight + 12);
-  const zoneTarget = printHeight + 348;
+  const labelHeight = Math.ceil(zone.querySelector('.stage-zone-label')?.getBoundingClientRect().height || 0);
+  const zoneTarget = printHeight + labelHeight + 260;
   reveal.style.setProperty('--receipt-print-height', `${printHeight}px`);
   if (!reveal.classList.contains('is-printing')) {
     reveal.style.height = 'auto';
@@ -2328,6 +3138,8 @@ function followPurchaseReceiptPrint(root = $current) {
   const reveal = stage?.querySelector('.receipt-paper-reveal');
   const paper = stage?.querySelector('.purchase-receipt-paper');
   if (!stage || !reveal || !paper || stage.dataset.receiptScrollStarted === '1') return;
+  const item = currentRenderedItem();
+  const receiptKey = item && comps ? purchaseReceiptKey(item, comps) : '';
   stage.dataset.receiptScrollStarted = '1';
   const printHeight = updatePurchaseReceiptLayout(root, { animate: true }) || Math.ceil(paper.scrollHeight + 12);
   reveal.style.height = '';
@@ -2337,6 +3149,8 @@ function followPurchaseReceiptPrint(root = $current) {
   if (prefersReducedMotion) {
     reveal.style.height = 'auto';
     reveal.style.minHeight = `${printHeight}px`;
+    if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
+    if (item) refreshStageFiveSection(item);
     reveal.scrollIntoView({ block: 'end', behavior: 'auto' });
     return;
   }
@@ -2348,7 +3162,9 @@ function followPurchaseReceiptPrint(root = $current) {
       reveal.style.height = 'auto';
       reveal.style.minHeight = `${printHeight}px`;
       reveal.classList.remove('is-printing');
+      if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
       updatePurchaseReceiptLayout(root);
+      if (item) refreshStageFiveSection(item);
     },
     { once: true }
   );
@@ -2433,6 +3249,191 @@ function bindDirectAiChat() {
   });
 }
 
+async function submitSellerChat(item, opts = {}) {
+  const key = sellerChatKey(item);
+  const state = key ? sellerChatStates.get(key) : null;
+  if (!state) return;
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchSellerChatAssistant !== 'function') {
+    state.status = 'error';
+    state.error = 'AI 설정이 필요합니다.';
+    refreshSellerChatSection(item);
+    return;
+  }
+
+  const asSellerReply = opts.asSellerReply === true;
+  const message = String((asSellerReply ? state.sellerReply : state.input) || '').trim();
+  const payloadMessage = message || '';
+  const context = sellerChatContext(item, comps);
+  let appendedSellerReply = false;
+
+  if (asSellerReply && payloadMessage) {
+    const sellerMessage = { role: 'seller', text: payloadMessage };
+    state.messages.push(sellerMessage);
+    appendedSellerReply = appendSellerChatMessageToThread(item, sellerMessage, state.messages.length - 1);
+  }
+  state.status = 'loading';
+  state.error = '';
+  if (asSellerReply) state.sellerReply = '';
+  else state.input = '';
+  state.lastSuggestion = null;
+  if (!refreshSellerChatDynamic(item, { skipThread: appendedSellerReply || !asSellerReply })) refreshSellerChatSection(item);
+
+  try {
+    const chatHistory = sellerChatHistoryPayload(state.messages);
+    const data = await globalThis.UlsaAi.fetchSellerChatAssistant({
+      apiKey,
+      mode: state.mode,
+      tone: state.tone,
+      toneLabel: sellerChatToneLabel(state.tone),
+      toneNote: state.toneNote,
+      message: payloadMessage,
+      chatHistory,
+      listing: context.item,
+      summary: context.summary,
+      riskAnalysis: context.riskAnalysis,
+      listingTextAnalysis: context.listingTextAnalysis,
+      listingImageAnalysis: context.listingImageAnalysis,
+      usedPriceGuide: context.usedPriceGuide,
+      receipt: context.receipt,
+      comparison: context.comparison,
+    });
+    const primary = stripChatMarkdown(data.primary || data.message || data.answer || '').trim();
+    const alternatives = Array.isArray(data.alternatives)
+      ? data.alternatives.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 5)
+      : [];
+    const followUps = Array.isArray(data.followUps)
+      ? data.followUps.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 3)
+      : [];
+    const quickReplies = Array.isArray(data.quickReplies)
+      ? data.quickReplies.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 4)
+      : [];
+    state.lastSuggestion = enforceSellerChatNegotiation({
+      primary,
+      alternatives,
+      followUps,
+      quickReplies,
+      summary: stripChatMarkdown(data.summary || '').trim(),
+    }, context);
+    state.status = 'done';
+  } catch (err) {
+    state.status = 'error';
+    state.error = err instanceof Error ? err.message : String(err);
+  }
+  if (!refreshSellerChatDynamic(item, { skipThread: true })) refreshSellerChatSection(item);
+}
+
+function bindSellerChatFlow(root, item) {
+  const key = sellerChatKey(item);
+  const state = key ? sellerChatStates.get(key) : null;
+  if (!root || !state || !isStepFourDone(item)) return;
+  const panel = root.querySelector('[data-stage-five-panel]');
+  if (!panel || panel.dataset.sellerChatBound === '1') return;
+  panel.dataset.sellerChatBound = '1';
+
+  panel.addEventListener('click', (e) => {
+    const target = e.target.closest('button, a, [data-seller-chat-send-suggestion]');
+    if (!target || !panel.contains(target)) return;
+    const currentState = getSellerChatState(item);
+    if (!currentState) return;
+
+    if (target.matches('[data-stage-five-start]')) {
+      const startKey = target.getAttribute('data-stage-five-start') || key;
+      if (!startKey) return;
+      stageFiveActiveKeys.add(startKey);
+      playStageStartMotion();
+      refreshSellerChatSection(item);
+      return;
+    }
+    if (target.matches('[data-seller-chat-mode]')) {
+      currentState.mode = target.getAttribute('data-seller-chat-mode') === 'reply' ? 'reply' : 'first';
+      currentState.error = '';
+      refreshSellerChatDynamic(item);
+      return;
+    }
+    if (target.matches('[data-seller-chat-tone]')) {
+      currentState.tone = String(target.getAttribute('data-seller-chat-tone') || 'polite');
+      currentState.error = '';
+      refreshSellerChatDynamic(item);
+      return;
+    }
+    if (target.matches('[data-seller-chat-chip]')) {
+      currentState.input = String(target.getAttribute('data-seller-chat-chip') || '');
+      void submitSellerChat(item);
+      return;
+    }
+    if (target.matches('[data-seller-chat-copy]')) {
+      void copySellerChatText(target.getAttribute('data-seller-chat-copy') || '');
+      return;
+    }
+    if (target.matches('[data-seller-chat-send-suggestion]')) {
+      const text = String(target.getAttribute('data-seller-chat-send-suggestion') || '').trim();
+      if (!text) return;
+      const nextMessage = { role: 'me', text };
+      currentState.messages.push(nextMessage);
+      currentState.lastSuggestion = null;
+      currentState.input = '';
+      currentState.status = 'idle';
+      currentState.error = '';
+      appendSellerChatMessageToThread(item, nextMessage, currentState.messages.length - 1);
+      refreshSellerChatDynamic(item, { skipThread: true });
+      return;
+    }
+    if (target.matches('[data-seller-chat-delete]')) {
+      const index = Number(target.getAttribute('data-seller-chat-delete'));
+      if (!Number.isInteger(index) || index < 0 || index >= currentState.messages.length) return;
+      currentState.messages.splice(index, 1);
+      currentState.status = 'idle';
+      currentState.error = '';
+      refreshSellerChatDynamic(item);
+      return;
+    }
+    if (target.matches('[data-seller-chat-reset]')) {
+      currentState.mode = 'first';
+      currentState.messages = [];
+      currentState.lastSuggestion = null;
+      currentState.input = '';
+      currentState.sellerReply = '';
+      currentState.status = 'idle';
+      currentState.error = '';
+      refreshSellerChatDynamic(item);
+    }
+  });
+
+  panel.addEventListener('keydown', (e) => {
+    const target = e.target.closest('[data-seller-chat-send-suggestion]');
+    if (!target || !panel.contains(target)) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    target.click();
+  });
+
+  panel.addEventListener('input', (e) => {
+    const currentState = getSellerChatState(item);
+    if (!currentState) return;
+    if (e.target.matches('[data-seller-chat-tone-note]')) currentState.toneNote = String(e.target.value || '');
+    if (e.target.matches('[data-seller-chat-input]')) currentState.input = String(e.target.value || '');
+    if (e.target.matches('[data-seller-chat-reply]')) currentState.sellerReply = String(e.target.value || '');
+  });
+
+  panel.addEventListener('submit', (e) => {
+    const currentState = getSellerChatState(item);
+    if (!currentState) return;
+    if (e.target.matches('[data-seller-chat-form]')) {
+      e.preventDefault();
+      currentState.input = String(e.target.querySelector('[data-seller-chat-input]')?.value || '');
+      void submitSellerChat(item);
+      return;
+    }
+    if (e.target.matches('[data-seller-chat-reply-form]')) {
+      e.preventDefault();
+      currentState.mode = 'reply';
+      currentState.sellerReply = String(e.target.querySelector('[data-seller-chat-reply]')?.value || '');
+      void submitSellerChat(item, { asSellerReply: true });
+    }
+  });
+}
+
 $btnDirectAi?.addEventListener('click', () => {
   directAiChat.open = !directAiChat.open;
   renderDirectAiPanel();
@@ -2441,6 +3442,81 @@ $btnLayoutMode?.addEventListener('click', () => {
   const nextMode = $appShell?.classList.contains('app-shell--slide') ? 'scroll' : 'slide';
   setLayoutMode(nextMode);
 });
+
+function setRailActive(action) {
+  $dashboardRail?.querySelectorAll('[data-rail-action]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-rail-action') === action);
+  });
+}
+
+function closeRailPanel() {
+  if (!$railPanel) return;
+  $railPanel.hidden = true;
+  $railPanel.classList.remove('is-open');
+  setRailActive('');
+}
+
+function openRailPanel(action = 'import') {
+  if (!$railPanel) return;
+  setRailActive(action);
+  $railPanel.hidden = false;
+  window.requestAnimationFrame(() => $railPanel.classList.add('is-open'));
+  $railUrlInput?.focus();
+}
+
+function bindDashboardRail() {
+  if (!$dashboardRail || $dashboardRail.dataset.bound === '1') return;
+  $dashboardRail.dataset.bound = '1';
+  updateRailLayoutToggle();
+  $dashboardRail.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-rail-action], [data-rail-close]');
+    if (!target || !$dashboardRail.contains(target)) return;
+    if (target.matches('[data-rail-close]')) {
+      closeRailPanel();
+      return;
+    }
+    const action = target.getAttribute('data-rail-action') || '';
+    if (action === 'import') {
+      openRailPanel(action);
+      return;
+    }
+    closeRailPanel();
+    if (action === 'layout') $btnLayoutMode?.click();
+    if (action === 'history') $btnHistory?.click();
+    if (action === 'direct-ai') $btnDirectAi?.click();
+    if (action === 'settings') document.getElementById('btnAiSettings')?.click();
+    if (action === 'reanalyze') $btnRefresh?.click();
+    if (action === 'new') startNewAnalysis();
+  });
+
+  $railImportForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const value = String($railUrlInput?.value || '').trim();
+    if (!value) {
+      if ($railStatus) $railStatus.textContent = '먼저 매물 링크를 붙여넣어 주세요.';
+      return;
+    }
+    if ($urlImportInput) $urlImportInput.value = value;
+    if ($railStatus) $railStatus.textContent = '기존 분석 흐름으로 전달 중...';
+    $btnUrlImport?.click();
+  });
+
+  if ($urlImportStatus && $railStatus) {
+    const mirrorStatus = () => {
+      const text = String($urlImportStatus.textContent || '').trim();
+      if (text) $railStatus.textContent = text;
+    };
+    new MutationObserver(mirrorStatus).observe($urlImportStatus, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
+}
+
+bindDashboardRail();
+
+window.addEventListener('resize', positionDirectAiPanel);
 
 function refreshPhotoSlider(item) {
   const current = $current.querySelector('[data-photo-slider]');
@@ -2564,19 +3640,25 @@ function clearProductSummaryCaches(key) {
   imageAnalysisPreviewedKeys.delete(key);
   searchQueryRegenerations.delete(key);
   stageThreeAutoQueryRetryCounts.delete(key);
+  stageThreeComparisonSkippedKeys.delete(key);
+  stageThreeComparisonRunIds.delete(key);
   productRiskAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
   stageTwoActiveKeys.delete(key);
   stageThreeActiveKeys.delete(key);
+  stageFiveActiveKeys.delete(key);
   stageThreeIsolatedRefreshKeys.delete(key);
+  sellerChatStates.delete(key);
   for (const filterKey of [...comparisonFilters.keys()]) {
     if (filterKey.startsWith(`${key}::`)) {
       comparisonFilters.delete(filterKey);
       usedPriceGuides.delete(filterKey);
       purchaseReceipts.delete(filterKey);
+      purchaseReceiptPrintedKeys.delete(filterKey);
     }
   }
+  clearPurchaseReceiptPrintedForListing(key);
   for (const filterKey of [...comparisonFilterTimers]) {
     if (filterKey.startsWith(`${key}::`)) comparisonFilterTimers.delete(filterKey);
   }
@@ -2597,14 +3679,18 @@ function clearCurrentAnalysisState() {
   imageAnalysisDirections.delete(key);
   stageTwoActiveKeys.delete(key);
   stageThreeActiveKeys.delete(key);
+  stageFiveActiveKeys.delete(key);
   stageTwoCompletedKeys.delete(key);
   stageThreeIsolatedRefreshKeys.delete(key);
+  sellerChatStates.delete(key);
   productRiskAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
   imageAnalysisPreviewedKeys.delete(key);
   searchQueryRegenerations.delete(key);
   stageThreeAutoQueryRetryCounts.delete(key);
+  stageThreeComparisonSkippedKeys.delete(key);
+  stageThreeComparisonRunIds.delete(key);
   for (const cacheKey of [...comparisonFilters.keys()]) {
     if (listingKeyFromStageCacheKey(cacheKey) === key) comparisonFilters.delete(cacheKey);
   }
@@ -2612,8 +3698,12 @@ function clearCurrentAnalysisState() {
     if (listingKeyFromStageCacheKey(cacheKey) === key) usedPriceGuides.delete(cacheKey);
   }
   for (const cacheKey of [...purchaseReceipts.keys()]) {
-    if (listingKeyFromStageCacheKey(cacheKey) === key) purchaseReceipts.delete(cacheKey);
+    if (listingKeyFromStageCacheKey(cacheKey) === key) {
+      purchaseReceipts.delete(cacheKey);
+      purchaseReceiptPrintedKeys.delete(cacheKey);
+    }
   }
+  clearPurchaseReceiptPrintedForListing(key);
   for (const timerKey of [...comparisonFilterTimers]) {
     if (listingKeyFromStageCacheKey(timerKey) === key) comparisonFilterTimers.delete(timerKey);
   }
@@ -2622,6 +3712,26 @@ function clearCurrentAnalysisState() {
   stageSlideIndex = 0;
   persistAiCaches();
   window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
+}
+
+function startNewAnalysis() {
+  closeRailPanel();
+  latest = null;
+  selectedKey = null;
+  comps = null;
+  stageSlideIndex = 0;
+  directAiChat.open = false;
+  directAiChat.status = 'idle';
+  directAiChat.messages = [];
+  if ($urlImportInput) $urlImportInput.value = '';
+  if ($railUrlInput) $railUrlInput.value = '';
+  if ($urlImportStatus) $urlImportStatus.textContent = '';
+  if ($railStatus) $railStatus.textContent = '새 매물 링크를 붙여넣거나 확장 프로그램에서 전송해 주세요.';
+  setHistoryOpen(false);
+  renderDirectAiPanel();
+  renderItem(null);
+  updateStageSlide();
+  openRailPanel('import');
 }
 
 function bindProductSummaryRetry(root, item) {
@@ -2651,16 +3761,13 @@ async function ensureComparisonFilter(item) {
   const filterKey = comparisonFilterKey(item, comps);
   if (!filterKey) return;
   const currentKey = summaryKey(item);
+  const runId = currentKey ? stageThreeComparisonRunIds.get(currentKey) || 0 : 0;
   const isolated = currentKey ? stageThreeIsolatedRefreshKeys.has(currentKey) : false;
   const existing = comparisonFilters.get(filterKey);
   if (existing?.status === 'loading' || existing?.status === 'done') return;
   const candidates = comparisonFilterCandidates(item, comps);
   if (!candidates.length) {
     if (maybeAutoRegenerateStageThreeSearchQueries(item)) return;
-    if (!isolated) {
-      usedPriceGuides.delete(filterKey);
-      purchaseReceipts.delete(filterKey);
-    }
     advanceStageThreeAfterComparisonFilter(item, filterKey, [], isolated);
     return;
   }
@@ -2673,10 +3780,6 @@ async function ensureComparisonFilter(item) {
     return;
   }
 
-  if (!isolated) {
-    usedPriceGuides.delete(filterKey);
-    purchaseReceipts.delete(filterKey);
-  }
   comparisonFilters.set(filterKey, { status: 'loading' });
   if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
   else refreshStageThreeSection(item);
@@ -2690,6 +3793,7 @@ async function ensureComparisonFilter(item) {
       candidates,
       apiKey,
     });
+    if (currentKey && runId !== (stageThreeComparisonRunIds.get(currentKey) || 0)) return;
     const matches = Array.isArray(data.analysis?.matches) ? data.analysis.matches : [];
     if (!matches.length && maybeAutoRegenerateStageThreeSearchQueries(item)) {
       comparisonFilters.set(filterKey, { status: 'done', matches: [] });
@@ -2704,6 +3808,7 @@ async function ensureComparisonFilter(item) {
     advanceStageThreeAfterComparisonFilter(item, filterKey, matches, isolated);
     return;
   } catch (e) {
+    if (currentKey && runId !== (stageThreeComparisonRunIds.get(currentKey) || 0)) return;
     comparisonFilters.set(filterKey, {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
@@ -2717,11 +3822,10 @@ async function ensureComparisonFilter(item) {
 }
 
 async function ensureUsedPriceGuide(item) {
-  if (!item || !isStepThreeUnlocked(item) || !comps || !isCompsCollected(comps)) return;
-  const key = usedPriceGuideKey(item, comps);
+  const stageComps = effectiveStageThreeComps(item);
+  if (!item || !isStepThreeUnlocked(item) || !stageComps || !isCompsCollected(stageComps)) return;
+  const key = usedPriceGuideKey(item, stageComps);
   if (!key) return;
-  const filterState = comparisonFilters.get(key);
-  if (filterState?.status !== 'done') return;
   const existing = usedPriceGuides.get(key);
   if (existing?.status === 'loading' || existing?.status === 'done') return;
   const apiKey = getAiApiKey();
@@ -2733,11 +3837,12 @@ async function ensureUsedPriceGuide(item) {
   }
 
   purchaseReceipts.delete(key);
+  purchaseReceiptPrintedKeys.delete(key);
   usedPriceGuides.set(key, { status: 'loading' });
   refreshStageThreeSection(item);
   try {
     const data = await globalThis.UlsaAi.fetchUsedPriceGuide({
-      ...usedPriceGuidePayload(item, comps),
+      ...usedPriceGuidePayload(item, stageComps),
       apiKey,
     });
     usedPriceGuides.set(key, { status: 'done', guide: data.guide || {} });
@@ -2757,13 +3862,15 @@ async function ensureUsedPriceGuide(item) {
 }
 
 async function ensurePurchaseReceipt(item, opts = {}) {
-  if (!item || !comps || !isCompsCollected(comps)) return;
-  const key = purchaseReceiptKey(item, comps);
+  const stageComps = effectiveStageThreeComps(item);
+  if (!item || !stageComps || !isCompsCollected(stageComps)) return;
+  const key = purchaseReceiptKey(item, stageComps);
   if (!key) return;
   const existing = purchaseReceipts.get(key);
   if (existing?.status === 'loading') return;
   if (opts.regenerate) {
     purchaseReceipts.delete(key);
+    purchaseReceiptPrintedKeys.delete(key);
     persistAiCaches();
   } else if (existing?.status === 'done') {
     refreshStageFourSection(item);
@@ -2780,9 +3887,10 @@ async function ensurePurchaseReceipt(item, opts = {}) {
   }
   const summary = getProductSummaryState(item)?.summary || null;
   const guideState = usedPriceGuides.get(key);
-  if (guideState?.status !== 'done') {
+  if (guideState?.status !== 'done' && guideState?.status !== 'error') {
     await ensureUsedPriceGuide(item);
-    if (usedPriceGuides.get(key)?.status !== 'done') return;
+    const nextGuideStatus = usedPriceGuides.get(key)?.status;
+    if (nextGuideStatus !== 'done' && nextGuideStatus !== 'error') return;
   }
   purchaseReceipts.set(key, { status: 'loading' });
   refreshStageFourSection(item);
@@ -2803,8 +3911,8 @@ async function ensurePurchaseReceipt(item, opts = {}) {
       riskAnalysis: productRiskAnalyses.get(summaryKey(item))?.analysis || null,
       listingTextAnalysis: listingTextAnalyses.get(summaryKey(item))?.analysis || null,
       listingImageAnalysis: listingImageAnalyses.get(summaryKey(item))?.analysis || null,
-      usedPriceGuide: usedPriceGuides.get(key)?.guide || null,
-      comparison: purchaseReceiptComparisonPayload(item, comps),
+      usedPriceGuide: usedPriceGuides.get(key)?.status === 'done' ? usedPriceGuides.get(key)?.guide || null : null,
+      comparison: purchaseReceiptComparisonPayload(item, stageComps),
       apiKey,
     });
     purchaseReceipts.set(key, { status: 'done', receipt: data.receipt || {} });
@@ -2911,7 +4019,7 @@ function refreshStageThreeSection(item) {
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   if (isStepThreeUnlocked(item)) {
     scheduleComparisonFilter(item);
-    if (comparisonFilters.get(comparisonFilterKey(item, comps))?.status === 'done') void ensureUsedPriceGuide(item);
+    void ensureUsedPriceGuide(item);
     if (isStepThreeDone(item)) refreshStageFourSection(item);
   } else {
     syncStagePanels(item);
@@ -2923,6 +4031,7 @@ function refreshStageFourSection(item) {
   const existing = $current.querySelector('[data-stage-four-panel]');
   if (!html) {
     existing?.remove();
+    refreshStageFiveSection(item);
     updateStageSlide();
     return;
   }
@@ -2941,6 +4050,31 @@ function refreshStageFourSection(item) {
     updatePurchaseReceiptLayout($current);
     window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
   }
+  refreshStageFiveSection(item);
+}
+
+function refreshStageFiveSection(item) {
+  const html = renderStageFiveSection(item, comps);
+  const existing = $current.querySelector('[data-stage-five-panel]');
+  if (!html) {
+    existing?.remove();
+    updateStageSlide();
+    return;
+  }
+  if (existing) {
+    existing.outerHTML = html;
+  } else {
+    const stageFour = $current.querySelector('[data-stage-four-panel]');
+    const stageThree = $current.querySelector('[data-stage-three-panel]');
+    if (stageFour) stageFour.insertAdjacentHTML('afterend', html);
+    else if (stageThree) stageThree.insertAdjacentHTML('afterend', html);
+  }
+  bindSellerChatFlow($current, item);
+  updateStageSlide();
+}
+
+function refreshSellerChatSection(item) {
+  refreshStageFiveSection(item);
 }
 
 function refreshStageThreeSearchCard(item) {
@@ -3084,10 +4218,13 @@ $btnHistoryClear?.addEventListener('click', () => {
   comparisonFilters.clear();
   usedPriceGuides.clear();
   purchaseReceipts.clear();
+  purchaseReceiptPrintedKeys.clear();
   comparisonFilterTimers.clear();
   imageAnalysisPreviewedKeys.clear();
   searchQueryRegenerations.clear();
   stageThreeAutoQueryRetryCounts.clear();
+  stageThreeComparisonSkippedKeys.clear();
+  stageThreeComparisonRunIds.clear();
   renderItem(null);
   renderHistoryList();
   setHistoryOpen(false);
@@ -3148,7 +4285,9 @@ function renderHistoryList() {
       imageAnalysisDirections.delete(key);
       stageTwoActiveKeys.delete(key);
       stageThreeActiveKeys.delete(key);
+      stageFiveActiveKeys.delete(key);
       stageThreeIsolatedRefreshKeys.delete(key);
+      sellerChatStates.delete(key);
       productRiskAnalyses.delete(key);
       listingTextAnalyses.delete(key);
       listingImageAnalyses.delete(key);
@@ -3156,8 +4295,12 @@ function renderHistoryList() {
       searchQueryRegenerations.delete(key);
       stageThreeAutoQueryRetryCounts.delete(key);
       for (const filterKey of [...purchaseReceipts.keys()]) {
-        if (filterKey.startsWith(`${key}::`)) purchaseReceipts.delete(filterKey);
+        if (filterKey.startsWith(`${key}::`)) {
+          purchaseReceipts.delete(filterKey);
+          purchaseReceiptPrintedKeys.delete(filterKey);
+        }
       }
+      clearPurchaseReceiptPrintedForListing(key);
       if (selectedKey === key) {
         latest = history[0] || null;
         selectedKey = latest ? itemKey(latest) : null;
@@ -3260,7 +4403,10 @@ async function ensureProductRisk(item) {
     persistAiCaches();
   }
 
-  if (selectedKey === key) refreshProductSummaryBlock(item);
+  if (selectedKey === key) {
+    playAiResultMotion();
+    refreshProductSummaryBlock(item);
+  }
   if (productRiskAnalyses.get(key)?.status === 'done') {
     void ensureListingTextAnalysis(item);
     void ensureListingImageAnalysis(item);
@@ -3309,7 +4455,10 @@ async function ensureListingTextAnalysis(item) {
     }
     listingTextAnalyses.set(key, { status: 'done', analysis, source: 'ai' });
     persistAiCaches();
-    if (selectedKey === key) refreshListingTextAnalysisCard(item);
+    if (selectedKey === key) {
+      playAiResultMotion();
+      refreshListingTextAnalysisCard(item);
+    }
   } catch (e) {
     listingTextAnalyses.delete(key);
     persistAiCaches();
@@ -3364,6 +4513,7 @@ async function ensureListingImageAnalysis(item) {
     listingImageAnalyses.set(key, { status: 'done', analysis: data.analysis || {}, overlayVersion: 11 });
     persistAiCaches();
     if (selectedKey === key) {
+      playAiResultMotion();
       refreshListingImageAnalysisCard(item);
       previewListingImageAnalysis(item);
     }
@@ -3392,6 +4542,9 @@ function applyPayload(payload) {
     selectedItemKey && relatedRequestedKeys.has(selectedItemKey)
       ? activeCompsForItem(selectedItem, rawComps)
       : null;
+  if (!comps && selectedItemKey && stageThreeComparisonSkippedKeys.has(selectedItemKey)) {
+    comps = emptyComparisonComps(selectedItem);
+  }
 
   if (selectedItem) {
     selectedKey = selectedItemKey;
