@@ -1,4 +1,4 @@
-# Used Listing Analyzer Design System
+# Buy or Bye Design System
 
 > 이 문서는 분석 웹 UI의 디자인 기준이다. 앞으로 `analyzer/style.css`, `analyzer/index.html`, `analyzer/app.js`에서 UI를 수정할 때는 이 문서를 먼저 기준으로 삼는다.
 

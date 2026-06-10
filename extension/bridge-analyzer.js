@@ -132,6 +132,7 @@
           error: runtimeError || res?.error || '',
           url,
           platform: res?.platform || '',
+          listing: res?.listing || null,
         });
         if (res?.ok) pushToPage();
       });

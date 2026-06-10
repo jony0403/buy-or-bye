@@ -15,6 +15,37 @@
     return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220) || fallback;
   }
 
+  async function postJson(path, p, body, extraHeaders = {}) {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    };
+    if (p.apiKey) headers['X-Gemini-Key'] = p.apiKey;
+    if (model) headers['X-Gemini-Model'] = model;
+    const fetchOpts = {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    };
+    if (p.signal) fetchOpts.signal = p.signal;
+    return fetch(`http://${location.hostname}:${port}${path}`, fetchOpts);
+  }
+
+  async function parseJsonResponse(res, text, fallbackMessage) {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+    }
+    if (!res.ok) {
+      throw new Error(cleanApiError(data.error || data.message, fallbackMessage || `HTTP ${res.status}`));
+    }
+    return data;
+  }
+
   /**
    * @param {{ title: string, body?: string, imageUrls?: string[], maxQueries?: number, apiKey: string, model?: string }} p
    * @returns {Promise<{ query: string }>}
@@ -74,35 +105,20 @@
    * @returns {Promise<{ summary: { productName: string, newPrice: string, newPriceSourceUrl?: string, description: string, makerOrSeller: string, searchQuery: string, searchQueries?: string[], productImageUrl: string } }>}
    */
   UlsaAi.fetchProductSummary = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/product-summary`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Gemini-Key': p.apiKey,
-        'X-Gemini-Model': model,
-      },
-      body: JSON.stringify({
+    const res = await postJson(
+      '/api/product-summary',
+      p,
+      {
         title: p.title || '',
         body: p.body || '',
         imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : [],
-      }),
-    });
+      }
+    );
     const text = await res.text();
     if (res.status === 404) {
       throw new Error('최종 판단 영수증 API를 찾지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도하세요.');
     }
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
-    }
-    if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
-    }
-    return data;
+    return parseJsonResponse(res, text);
   };
 
   /**
@@ -139,37 +155,42 @@
 
   /**
    * @param {{ title: string, body?: string, imageUrls?: string[], productName?: string, summary?: object, apiKey: string, model?: string }} p
-   * @returns {Promise<{ analysis: { relatedIssues: Array<{ title: string, detail: string, level?: string }>, chronicDefects: Array<{ title: string, detail: string, level?: string }>, verdict?: string } }>}
+   * @returns {Promise<{ analysis: { relatedIssues: Array<{ title: string, detail: string, level?: string, sources?: Array<{ label?: string, url: string, type?: string }> }>, chronicDefects: Array<{ title: string, detail: string, level?: string, sources?: Array<{ label?: string, url: string, type?: string }> }>, verdict?: string } }>}
    */
   UlsaAi.fetchProductRisk = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/product-risk`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Gemini-Key': p.apiKey,
-        'X-Gemini-Model': model,
-      },
-      body: JSON.stringify({
+    const res = await postJson(
+      '/api/product-risk',
+      p,
+      {
         title: p.title || '',
         body: p.body || '',
         imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : [],
         productName: p.productName || '',
         summary: p.summary || null,
-      }),
-    });
+      }
+    );
     const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
-    }
-    if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
-    }
-    return data;
+    return parseJsonResponse(res, text);
+  };
+
+  /**
+   * @param {{ title: string, body?: string, productName?: string, summary?: object, analysis?: object, apiKey: string, model?: string }} p
+   * @returns {Promise<{ youtubeVideos: Array<object>, youtubeSearch?: object }>}
+   */
+  UlsaAi.fetchProductRiskYoutube = async (p) => {
+    const res = await postJson(
+      '/api/product-risk-youtube',
+      p,
+      {
+        title: p.title || '',
+        body: p.body || '',
+        productName: p.productName || '',
+        summary: p.summary || null,
+        analysis: p.analysis || null,
+      }
+    );
+    const text = await res.text();
+    return parseJsonResponse(res, text);
   };
 
   /**
@@ -177,16 +198,10 @@
    * @returns {Promise<{ analysis: { sellerVerdict: string, bodyVerdict: string, questions: string[], redFlags: string[], overall: string } }>}
    */
   UlsaAi.fetchListingTextAnalysis = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/listing-text-analysis`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Gemini-Key': p.apiKey,
-        'X-Gemini-Model': model,
-      },
-      body: JSON.stringify({
+    const res = await postJson(
+      '/api/listing-text-analysis',
+      p,
+      {
         title: p.title || '',
         body: p.body || '',
         seller: p.seller || null,
@@ -195,19 +210,10 @@
         productName: p.productName || '',
         summary: p.summary || null,
         riskAnalysis: p.riskAnalysis || null,
-      }),
-    });
+      }
+    );
     const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
-    }
-    if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
-    }
-    return data;
+    return parseJsonResponse(res, text);
   };
 
   /**
@@ -215,33 +221,18 @@
    * @returns {Promise<{ analysis: { images: Array<{ index: number, label?: string, comment: string, level?: string, imageWidth?: number, imageHeight?: number }>, overall: string } }>}
    */
   UlsaAi.fetchListingImageAnalysis = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/listing-image-analysis`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Gemini-Key': p.apiKey,
-        'X-Gemini-Model': model,
-      },
-      body: JSON.stringify({
+    const res = await postJson(
+      '/api/listing-image-analysis',
+      p,
+      {
         title: p.title || '',
         body: p.body || '',
         imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : [],
         productName: p.productName || '',
-      }),
-    });
+      }
+    );
     const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
-    }
-    if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
-    }
-    return data;
+    return parseJsonResponse(res, text);
   };
 
   /**

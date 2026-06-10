@@ -5,7 +5,7 @@
 
 - **작성일:** 2026-05-19  
 - **확장 버전:** `extension/manifest.json` → `2.6.5`
-- **워크스페이스:** `used-listing-analyzer`
+- **워크스페이스:** `buy-or-bye`
 
 **맥북 ↔ 윈도우:** 이쪽(윈도우 등)에서도 프로젝트 맥락은 이해한 상태로 맞춰 두었으니, 앞으로 맥북·윈도우를 오가며 할 때 `@PROJECT.md`와 저장소를 기준으로 서로 잘 맞춰가자.  
 **Git 동기화:** 두 PC 모두 이 저장소를 Cursor로 연 뒤 채팅에 **`깃동기화`**(또는 **`sync-repo`**)라고 입력하면 에이전트가 `pull`·(필요 시 `commit`/`push`)를 수행한다. 규칙 파일은 `.cursor/rules/git-sync-keyword.mdc`(저장소에 포함) — **다른 PC에서는 반드시 `git pull`로 최신을 받은 다음** 쓰면 된다. 자세한 절은 **§12.5**. 동기화 후 **`PROJECT.md`에 반영된 추가·수정이 있으면 에이전트가 한국어로 요약해 말해 준다** (diff 기준). 이번 동기화 구간에 **추가·변경된 `.cursor/rules` 파일은 전부 읽고** 새 키워드·동작을 **이해한 상태로** 이어 간다.  
@@ -383,7 +383,7 @@ node analyzer-server.mjs
 ### 12.1 복사할 것
 
 ```
-used-listing-analyzer/
+buy-or-bye/
   extension/          ← 필수
   analyzer/
   analyzer-server.mjs
@@ -400,7 +400,7 @@ used-listing-analyzer/
 ### 12.2 Windows 첫 실행
 
 ```powershell
-cd Desktop\used-listing-analyzer
+cd Desktop\buy-or-bye
 npm install
 node analyzer-server.mjs
 ```
@@ -429,7 +429,7 @@ git commit -m "중고 매물 스크랩 v2.3"
 | 항목 | 내용 |
 |------|------|
 | 트리거 | 채팅에 **`깃동기화`** 또는 **`sync-repo`** 입력 |
-| 전제 | 이 워크스페이스가 **`https://github.com/jony0403/used-listing-analyzer`** 를 연 상태이고, 프로젝트 안에 **`.cursor/rules/git-sync-keyword.mdc`** 가 있어야 함 |
+| 전제 | 이 워크스페이스가 **`https://github.com/jony0403/buy-or-bye`** 를 연 상태이고, 프로젝트 안에 **`.cursor/rules/git-sync-keyword.mdc`** 가 있어야 함 |
 | 맥/다른 PC에서 처음 | 터미널에서 `git clone …` 또는 기존 폴더면 **`git pull origin main`** 으로 최신 받기 → 그 다음부터 Cursor에서 **`깃동기화`** 가능 |
 | 동작(요약) | 에이전트가 `fetch` / `pull origin main` 으로 **원격 변경을 먼저 반영**한 뒤, 이 PC에 로컬 변경이 있으면 `commit`·`push` 를 처리함 |
 | 인수인계 요약 | 이번 동기화 구간에서 **`PROJECT.md`가 바뀌면**(pull·로컬 커밋 포함) `git diff <시작_HEAD> HEAD -- PROJECT.md` 기준으로 **에이전트가 한국어로 변경점을 정리**해 줌(규칙 참고) |
