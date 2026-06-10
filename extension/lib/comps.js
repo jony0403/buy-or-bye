@@ -60,7 +60,6 @@
         const next = {
           forItemKey: forItemKey || prev.forItemKey || null,
           status: prev.status || 'collecting',
-          startedAt: prev.startedAt || Date.now(),
           expected: prev.expected || null,
         };
         for (const id of PLATFORM_IDS) next[id] = prev[id] || null;
@@ -110,8 +109,6 @@
           {
             marketScrapeComps: {
               forItemKey: listingKey,
-              status: 'collecting',
-              startedAt: Date.now(),
               ...Object.fromEntries(PLATFORM_IDS.map((id) => [id, null])),
             },
           },

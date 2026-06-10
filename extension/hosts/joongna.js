@@ -97,31 +97,13 @@
     return out;
   }
 
-  function imageUrlScore(url) {
-    const value = String(url || '').toLowerCase();
-    let score = 0;
-    if (/img2\.joongna\.com\/media\/original\//.test(value)) score += 80;
-    if (/\/media\/original\//.test(value)) score += 50;
-    if (/originurl|original/.test(value)) score += 12;
-    if (/thumbnail|thumb|watermark|profile|avatar|banner|logo|store/.test(value)) score -= 35;
-    return score;
-  }
-
-  function sortListingImageUrls(urls) {
-    return uniqueMediaUrls(urls)
-      .map((url, index) => ({ url, index, score: imageUrlScore(url) }))
-      .filter((item) => item.score > -30)
-      .sort((a, b) => b.score - a.score || a.index - b.index)
-      .map((item) => item.url);
-  }
-
   function extractAllOriginalImageUrls(text) {
     const urls = [];
     const re = /https?:[\\/]+img2\.joongna\.com\/media\/original\/[^"'\\\s<>)]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"'\\\s<>)]+)?/gi;
     for (const match of String(text || '').matchAll(re)) {
       urls.push(match[0]);
     }
-    return sortListingImageUrls(urls);
+    return uniqueMediaUrls(urls);
   }
 
   function imageFromImg(img) {
@@ -141,73 +123,34 @@
     const urls = [];
     for (const img of root.querySelectorAll?.('img') || []) {
       if (MS.isInsideNoiseSection?.(img)) continue;
-      const bits = `${img.alt || ''} ${typeof img.className === 'string' ? img.className : ''} ${img.closest?.('[class*="profile" i], [class*="seller" i], [class*="store" i]')?.className || ''}`;
-      if (/프로필|판매자|상점|avatar|profile|seller|store|logo|banner/i.test(bits)) continue;
-      const rect = img.getBoundingClientRect?.();
-      const renderedWidth = rect?.width || img.width || 0;
-      const renderedHeight = rect?.height || img.height || 0;
-      const naturalWidth = img.naturalWidth || 0;
-      const naturalHeight = img.naturalHeight || 0;
-      if ((renderedWidth && renderedWidth < 80) || (renderedHeight && renderedHeight < 80)) continue;
-      if ((naturalWidth && naturalWidth < 120) || (naturalHeight && naturalHeight < 120)) continue;
       const url = imageFromImg(img);
       if (url) urls.push(url);
     }
-    if (urls.length < 2) {
-      for (const link of document.querySelectorAll('link[rel="preload"][as="image"]')) {
-        const url = usableImageUrl(link.getAttribute('href') || '');
-        if (isListingImageUrl(url) && /\/media\/original\//i.test(url)) urls.push(url);
-      }
+    for (const link of document.querySelectorAll('link[rel="preload"][as="image"]')) {
+      const url = usableImageUrl(link.getAttribute('href') || '');
+      if (isListingImageUrl(url)) urls.push(url);
     }
     const og = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
-    if (urls.length < 2 && isListingImageUrl(og)) urls.push(usableImageUrl(og));
-    return sortListingImageUrls(urls).slice(0, 16);
+    if (isListingImageUrl(og)) urls.push(usableImageUrl(og));
+    return [...new Set(urls)].slice(0, 16);
   }
 
-  function scopedFlightText(text, productSeq, productTitle) {
-    const raw = String(text || '');
-    if (!raw) return '';
-    const title = String(productTitle || '').trim();
-    const seq = productSeq != null ? String(productSeq) : '';
-    const productSeqRe = /\\?"productSeq\\?"\s*:\s*(-?\d+)/g;
-    const matches = [...raw.matchAll(productSeqRe)];
-    let index = -1;
-    if (seq && matches.length) {
-      const exact = matches.find((match) => match[1] === seq);
-      index = exact?.index ?? -1;
-    }
-    if (index < 0 && title) {
-      index = raw.indexOf(title);
-    }
-    if (index < 0) return raw;
-    let end = raw.length;
-    for (const match of matches) {
-      if ((match.index ?? 0) > index + 20) {
-        end = match.index ?? raw.length;
-        break;
-      }
-    }
-    return raw.slice(Math.max(0, index - 6_000), Math.min(raw.length, end + 6_000));
-  }
-
-  function extractMediaUrlsFromFlightText(text, productSeq, productTitle) {
-    const scoped = scopedFlightText(text, productSeq, productTitle);
+  function extractMediaUrlsFromFlightText(text) {
     const urls = [];
-    const originalUrls = extractAllOriginalImageUrls(scoped);
+    const originalUrls = extractAllOriginalImageUrls(text);
     const originRe = /\\?"originUrl\\?"\s*:\s*\\?"(https?:[\\/\w%?&=.:_-]+?)\\?"/g;
-    for (const match of scoped.matchAll(originRe)) urls.push(match[1]);
-    const primary = sortListingImageUrls([...urls, ...originalUrls]);
-    if (primary.length) return primary.slice(0, 16);
+    for (const match of text.matchAll(originRe)) urls.push(match[1]);
+    if (urls.length || originalUrls.length) return uniqueMediaUrls([...urls, ...originalUrls]).slice(0, 16);
 
     const urlRe = /\\?"(?:mediaUrl|thumbnailUrl|waterMarkUrl)\\?"\s*:\s*\\?"(https?:[\\/\w%?&=.:_-]+?)\\?"/g;
-    for (const match of scoped.matchAll(urlRe)) {
+    for (const match of text.matchAll(urlRe)) {
       urls.push(match[1]);
     }
     const preloadRe = /:HL\[\\"(https?:[\\/\w%?&=.:_-]+?)\\",\\"image\\"\]/g;
-    for (const match of scoped.matchAll(preloadRe)) {
+    for (const match of text.matchAll(preloadRe)) {
       urls.push(match[1]);
     }
-    return sortListingImageUrls([...urls, ...originalUrls]).slice(0, 16);
+    return uniqueMediaUrls([...urls, ...originalUrls]).slice(0, 16);
   }
 
   function productFromNextFlight() {
@@ -247,7 +190,7 @@
       labels: [...text.matchAll(/\\?"labels\\?"\s*:\s*\[([\s\S]*?)\]/g)]
         .flatMap((match) => [...match[1].matchAll(/\\?"([^"\\]+)\\?"/g)].map((m) => textFromJsonString(m[1])))
         .filter(Boolean),
-      mediaUrls: extractMediaUrlsFromFlightText(text || document.documentElement.innerHTML, productSeq, productTitle),
+      mediaUrls: extractMediaUrlsFromFlightText(text || document.documentElement.innerHTML),
     };
   }
 
@@ -318,7 +261,7 @@
       document.querySelector('[class*="store" i] [class*="name" i]')?.textContent?.trim() ||
       document.querySelector('[class*="seller" i]')?.textContent?.trim() ||
       '';
-    const imageUrls = product.mediaUrls?.length ? product.mediaUrls : harvestImagesFromDom();
+    const imageUrls = product.mediaUrls?.length ? product.mediaUrls : uniqueMediaUrls(harvestImagesFromDom());
     const sellerMetrics = parseSellerMetrics(text);
 
     if (!title && !body && !imageUrls.length) return null;

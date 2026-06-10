@@ -5,7 +5,7 @@ alwaysApply: true
 
 # 깃 동기화 키워드 (GitHub `origin`)
 
-사용자가 아래 **트리거**를 말하면, 워크스페이스 루트 `buy-or-bye`에서 Git 동기화를 **직접 실행**한다. 설명만 하지 말고 터미널로 명령을 돌린다.
+사용자가 아래 **트리거**를 말하면, 워크스페이스 루트 `used-listing-analyzer`에서 Git 동기화를 **직접 실행**한다. 설명만 하지 말고 터미널로 명령을 돌린다.
 
 ## 트리거 문구 (하나만 말해도 됨)
 
@@ -38,7 +38,7 @@ alwaysApply: true
 
 ## 원격 저장소
 
-- 기본: `https://github.com/jony0403/buy-or-bye` (`origin`, 브랜치 `main`)
+- 기본: `https://github.com/jony0403/used-listing-analyzer` (`origin`, 브랜치 `main`)
 
 ## 하지 말 것
 

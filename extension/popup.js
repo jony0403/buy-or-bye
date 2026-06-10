@@ -12,6 +12,8 @@ const SCRIPT_FILES = [
   'content.js',
 ];
 
+const SEARCH_PLATFORMS = ['bunjang', 'daangn', 'joongna'];
+
 const $detailPanel = document.getElementById('detailPanel');
 const $searchPanel = document.getElementById('searchPanel');
 const $platform = document.getElementById('platform');
@@ -421,11 +423,19 @@ async function openSearchTabs(tab) {
     return;
   }
 
-  const opened = await chrome.runtime.sendMessage({ type: 'OPEN_SEARCH_TABS', query });
-  if (!opened?.ok) {
-    setStatus(`검색 탭 실행 실패 — ${opened?.error || '알 수 없는 오류'}`, 'err');
-    return;
-  }
+  const bunjangUrl = `https://m.bunjang.co.kr/search/products?q=${encodeURIComponent(query)}&order=score`;
+  const daangnUrl = `https://www.daangn.com/kr/buy-sell/?search=${encodeURIComponent(query)}`;
+  const joongnaUrl = `https://web.joongna.com/search/${encodeURIComponent(query)}`;
+
+  const bunTab = await chrome.tabs.create({ url: bunjangUrl, active: false });
+  const dangTab = await chrome.tabs.create({ url: daangnUrl, active: false });
+  const joongTab = await chrome.tabs.create({ url: joongnaUrl, active: false });
+  const closeIds = [bunTab?.id, dangTab?.id, joongTab?.id].filter((x) => typeof x === 'number');
+
+  await chrome.storage.local.set({
+    marketScrapeAutoCollect: { ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, true])), at: Date.now() },
+    ...(closeIds.length ? { marketScrapeCloseTabs: closeIds } : {}),
+  });
 
   setStatus(`검색어 「${query}」로 탭 3개를 열었어요. 잠시 후 자동 수집됩니다…`);
   startCompsPoll();
