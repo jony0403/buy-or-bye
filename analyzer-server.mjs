@@ -35,6 +35,7 @@ const PROMPTS = {
   productSummary: await loadPrompt('product-summary.txt'),
   productRisk: await loadPrompt('product-risk.txt'),
   productRiskJson: await loadPrompt('product-risk-json.txt'),
+  productRiskYoutubeComment: await loadPrompt('product-risk-youtube-comment.txt'),
   productInfoLookup: await loadPrompt('product-info-lookup.txt'),
   listingTextAnalysis: await loadPrompt('listing-text-analysis.txt'),
   comparisonFilter: await loadPrompt('comparison-filter.txt'),
@@ -158,6 +159,31 @@ function buildProductRiskJsonPrompt({ productName, researchText }) {
   return renderPrompt(PROMPTS.productRiskJson, {
     productName: name || '(불명)',
     researchText: String(researchText || '').trim() || '(조사 메모 없음)',
+  });
+}
+
+function buildProductRiskYoutubeCommentPrompt(payload, videos) {
+  const issues = [
+    ...(Array.isArray(payload.analysis?.chronicDefects) ? payload.analysis.chronicDefects : []),
+    ...(Array.isArray(payload.analysis?.relatedIssues) ? payload.analysis.relatedIssues : []),
+  ]
+    .map((item) => `${item?.title || ''}: ${item?.detail || ''}`.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  return renderPrompt(PROMPTS.productRiskYoutubeComment, {
+    productName:
+      String(payload.productName || payload.summary?.productName || '').replace(/\s+/g, ' ').trim() || '(불명)',
+    description: String(payload.summary?.description || '').replace(/\s+/g, ' ').trim() || '(없음)',
+    issues: issues.length ? issues.join('\n') : '(없음)',
+    videosJson: JSON.stringify(
+      videos.map((video) => ({
+        videoId: video.videoId,
+        title: video.title,
+        url: video.url,
+      })),
+      null,
+      2
+    ),
   });
 }
 
@@ -708,12 +734,274 @@ function parseProductRisk(text, productName = '') {
 
   const relatedIssues = normalizeRiskItems(parsed.relatedIssues);
   const chronicDefects = normalizeRiskItems(parsed.chronicDefects);
+  const marketFactors = normalizeRiskItems(parsed.marketFactors).slice(0, 1);
+  const purchaseChecklist = normalizeRiskItems(parsed.purchaseChecklist).slice(0, 2);
   return {
     relatedIssues,
     chronicDefects,
+    marketFactors,
+    purchaseChecklist,
     verdict: String(parsed.verdict || '').replace(/\s+/g, ' ').trim(),
-    parseOk: Boolean(relatedIssues.length || chronicDefects.length || parsed.verdict),
+    parseOk: Boolean(
+      relatedIssues.length ||
+        chronicDefects.length ||
+        marketFactors.length ||
+        purchaseChecklist.length ||
+        parsed.verdict
+    ),
   };
+}
+
+function parseYoutubeVideoId(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    if (host.includes('youtu.be')) return u.pathname.split('/').filter(Boolean)[0] || '';
+    if (host.includes('youtube.com') && u.pathname === '/watch') return u.searchParams.get('v') || '';
+    const parts = u.pathname.split('/').filter(Boolean);
+    if ((parts[0] === 'shorts' || parts[0] === 'embed') && parts[1]) return parts[1];
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+function isYoutubeUrl(url) {
+  const id = parseYoutubeVideoId(url);
+  return /^[a-zA-Z0-9_-]{11}$/.test(id);
+}
+
+function normalizeProductRiskYoutubeVideos(items) {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : [])
+    .map((video) => {
+      const url = String(video?.url || '').trim();
+      if (!/^https?:\/\//i.test(url) || !isYoutubeUrl(url)) return null;
+      const id = parseYoutubeVideoId(url);
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+      return {
+        url: `https://www.youtube.com/watch?v=${id}`,
+        title: String(video?.title || '관련 YouTube 영상').replace(/\s+/g, ' ').trim().slice(0, 90),
+        thumbnailUrl: String(video?.thumbnailUrl || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`).trim(),
+        summary: String(video?.summary || video?.buyerNote || video?.usedBuyerNote || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 180),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function youtubeSearchTerms(payload) {
+  const productName = String(payload.productName || payload.summary?.productName || payload.title || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const issueTerms = [
+    ...(Array.isArray(payload.analysis?.chronicDefects) ? payload.analysis.chronicDefects : []),
+    ...(Array.isArray(payload.analysis?.relatedIssues) ? payload.analysis.relatedIssues : []),
+  ]
+    .map((item) => String(item?.title || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const suffixes = [
+    ...issueTerms.slice(0, 2),
+    '고질병',
+    '결함',
+    '리뷰',
+    '언박싱',
+  ];
+  const queries = [];
+  for (const suffix of suffixes) {
+    const q = [productName, suffix].filter(Boolean).join(' ').trim();
+    if (q) queries.push(q);
+  }
+  if (productName) queries.push(productName);
+  const seen = new Set();
+  return queries
+    .map((q) => `${q} youtube`.replace(/\s+/g, ' ').trim())
+    .filter((q) => {
+      const key = q.toLowerCase();
+      if (!q || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 7);
+}
+
+function parseYoutubeInitialVideoIds(html) {
+  const ids = [];
+  const seen = new Set();
+  const text = String(html || '');
+  for (const match of text.matchAll(/"videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"/g)) {
+    const id = match[1];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= 12) break;
+  }
+  return ids;
+}
+
+async function fetchYoutubeOEmbedVideo(videoId) {
+  const id = parseYoutubeVideoId(`https://www.youtube.com/watch?v=${videoId}`);
+  if (!id) return null;
+  const url = `https://www.youtube.com/watch?v=${id}`;
+  try {
+    const params = new URLSearchParams({ url, format: 'json' });
+    const res = await fetch(`https://www.youtube.com/oembed?${params.toString()}`, {
+      signal: AbortSignal.timeout(6_000),
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36',
+      },
+    });
+    if (res.status !== 200) return null;
+    const data = await res.json();
+    const title = String(data?.title || '').replace(/\s+/g, ' ').trim();
+    return {
+      videoId: id,
+      url,
+      title: title || '관련 YouTube 영상',
+      thumbnailUrl: String(data?.thumbnail_url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`).trim(),
+      summary: '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchYoutubeSearchVideos(query, seenIds) {
+  const params = new URLSearchParams({ search_query: query });
+  const res = await fetch(`https://www.youtube.com/results?${params.toString()}`, {
+    redirect: 'follow',
+    signal: AbortSignal.timeout(12_000),
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.6',
+    },
+  });
+  if (!res.ok) throw new Error(`YouTube 검색 HTTP ${res.status}`);
+  const html = await res.text();
+  const ids = parseYoutubeInitialVideoIds(html);
+  const videos = [];
+  for (const id of ids) {
+    if (seenIds.has(id)) continue;
+    const video = await fetchYoutubeOEmbedVideo(id);
+    if (!video) continue;
+    seenIds.add(id);
+    videos.push(video);
+    if (videos.length >= 3) break;
+  }
+  return videos;
+}
+
+async function searchYoutubeVideosFromPage(payload) {
+  const seenIds = new Set();
+  const videos = [];
+  const queries = youtubeSearchTerms(payload);
+  const attempted = [];
+  for (const query of queries) {
+    attempted.push(query);
+    try {
+      const found = await fetchYoutubeSearchVideos(query, seenIds);
+      videos.push(...found);
+    } catch (e) {
+      console.warn('[product-risk-youtube] YouTube 검색 실패:', query, e instanceof Error ? e.message : e);
+    }
+    if (videos.length >= 3) break;
+  }
+  return {
+    videos: videos.slice(0, 3),
+    search: {
+      query: attempted[0] || '',
+      queries: attempted,
+      note: videos.length ? 'YouTube 검색 페이지에서 영상 ID를 확보하고 oEmbed로 재생 가능 여부를 확인했습니다.' : '',
+    },
+  };
+}
+
+async function isPlayableYoutubeUrl(url) {
+  try {
+    const params = new URLSearchParams({
+      url: String(url || '').trim(),
+      format: 'json',
+    });
+    const res = await fetch(`https://www.youtube.com/oembed?${params.toString()}`, {
+      signal: AbortSignal.timeout(6_000),
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36',
+      },
+    });
+    return res.status === 200;
+  } catch {
+    return false;
+  }
+}
+
+async function filterPlayableYoutubeVideos(videos) {
+  const valid = [];
+  for (const video of videos) {
+    if (!(await isPlayableYoutubeUrl(video.url))) continue;
+    valid.push(video);
+    if (valid.length >= 3) break;
+  }
+  return valid;
+}
+
+function parseProductRiskYoutube(text) {
+  const parsed = parseJsonObject(text);
+  const youtubeVideos = normalizeProductRiskYoutubeVideos(parsed.youtubeVideos);
+  const youtubeSearch =
+    parsed.youtubeSearch && typeof parsed.youtubeSearch === 'object'
+      ? {
+          query: String(parsed.youtubeSearch.query || '').replace(/\s+/g, ' ').trim(),
+          note: String(parsed.youtubeSearch.note || parsed.youtubeSearch.notes || '')
+            .replace(/\s+/g, ' ')
+            .trim(),
+        }
+      : null;
+  return { youtubeVideos, youtubeSearch };
+}
+
+function parseYoutubeCommentMap(text) {
+  const parsed = parseJsonObject(text);
+  const rows = Array.isArray(parsed.comments) ? parsed.comments : Array.isArray(parsed.youtubeVideos) ? parsed.youtubeVideos : [];
+  const out = new Map();
+  for (const row of rows) {
+    const videoId = String(row?.videoId || row?.id || '').trim();
+    const summary = String(row?.summary || row?.comment || row?.buyerNote || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180);
+    if (/^[a-zA-Z0-9_-]{11}$/.test(videoId) && summary) out.set(videoId, summary);
+  }
+  return out;
+}
+
+async function addYoutubeBuyerComments(apiKey, model, payload, videos) {
+  if (!videos.length) return videos;
+  try {
+    const prompt = buildProductRiskYoutubeCommentPrompt(payload, videos);
+    const rawText = await geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+      useGoogleSearch: true,
+      responseMimeType: 'application/json',
+      temperature: 0.25,
+      maxOutputTokens: 900,
+      timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+    });
+    const comments = parseYoutubeCommentMap(rawText);
+    return videos.map((video) => ({
+      ...video,
+      summary: comments.get(video.videoId) || video.summary || '',
+    }));
+  } catch (e) {
+    console.warn('[product-risk-youtube] 코멘트 생성 실패:', e instanceof Error ? e.message : e);
+    return videos;
+  }
 }
 
 function parseJsonObject(text) {
@@ -796,6 +1084,43 @@ function normalizeImageLabel(raw, level = 'neutral') {
   return '사진 근거';
 }
 
+function normalizeImageDefects(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((defect) => {
+      if (!defect || typeof defect !== 'object') return null;
+      const bbox = defect.bbox || defect.bboxPercent || defect.box || defect.rect || defect.area || null;
+      const gridCell = String(
+        defect.gridCell ||
+          defect.gridRange ||
+          defect.range ||
+          defect.cell ||
+          (defect.startCell && defect.endCell ? `${defect.startCell}-${defect.endCell}` : '')
+      )
+        .replace(/\s+/g, '')
+        .trim();
+      const description = String(defect.description || defect.detail || defect.label || '하자 의심')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80);
+      if (!bbox && !gridCell) return null;
+      const severity = normalizeImageLevel(defect.severity || defect.level || 'caution');
+      return {
+        gridCell,
+        bbox,
+        description,
+        approximateSize: String(defect.approximateSize || defect.size || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 40),
+        severity: severity === 'neutral' || severity === 'safe' ? 'caution' : severity,
+        gridCols: Number(defect.gridCols) || 32,
+        gridRows: Number(defect.gridRows) || 32,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
 function parseListingImageAnalysis(text, imageUrls = [], sourceMeta = []) {
   const parsed = parseJsonObject(text);
   const source = Array.isArray(parsed.images) ? parsed.images : [];
@@ -816,6 +1141,7 @@ function parseListingImageAnalysis(text, imageUrls = [], sourceMeta = []) {
         label: normalizeImageLabel(item?.label || item?.role || item?.tag, level),
         comment,
         level,
+        defects: normalizeImageDefects(item?.defects),
       };
     })
     .filter(Boolean)
@@ -980,6 +1306,21 @@ async function runProductRiskAnalysis(apiKey, model, payload) {
     timeoutMs: GEMINI_FAST_TIMEOUT_MS,
   });
   return { researchText, jsonText };
+}
+
+async function runProductRiskYoutube(apiKey, model, payload) {
+  const searched = await searchYoutubeVideosFromPage(payload);
+  const youtubeVideos = await addYoutubeBuyerComments(apiKey, model, payload, searched.videos);
+  return {
+    youtubeVideos,
+    youtubeSearch: {
+      ...searched.search,
+      source: 'youtube_search_page_oembed',
+      fetchedCount: searched.videos.length,
+      commentedCount: youtubeVideos.filter((video) => video.summary).length,
+    },
+    rawText: JSON.stringify({ youtubeVideos, youtubeSearch: searched.search }),
+  };
 }
 
 async function runListingTextAnalysis(apiKey, model, payload) {
@@ -1488,6 +1829,46 @@ const server = http.createServer(async (req, res) => {
         researchText: rawOut.researchText,
         model,
         pipeline: 'gemini_google_search_product_risk_research_then_json',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/product-risk-youtube') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
+      const result = await runProductRiskYoutube(apiKey, model, {
+        productName,
+        summary: body.summary || null,
+        analysis: body.analysis || null,
+        title: body.title || '',
+        body: body.body || '',
+      });
+      json(res, 200, {
+        youtubeVideos: result.youtubeVideos,
+        youtubeSearch: result.youtubeSearch,
+        rawText: result.rawText,
+        model,
+        pipeline: 'gemini_google_search_product_risk_youtube',
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });

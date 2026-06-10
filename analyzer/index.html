@@ -14,7 +14,7 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-    <link rel="stylesheet" href="style.css?v=20260609-glass-no-accent-stripe" />
+    <link rel="stylesheet" href="style.css?v=20260611-youtube-comment-gap" />
   </head>
   <body>
     <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
@@ -62,10 +62,6 @@
           <button type="button" class="dashboard-rail__btn" data-rail-action="history" aria-label="최근 매물">
             <span class="material-symbols-rounded" aria-hidden="true">history</span>
             <small>최근</small>
-          </button>
-          <button type="button" class="dashboard-rail__btn" data-rail-action="direct-ai" aria-label="AI 대화">
-            <span class="material-symbols-rounded" aria-hidden="true">smart_toy</span>
-            <small>대화</small>
           </button>
           <button type="button" class="dashboard-rail__btn" data-rail-action="settings" aria-label="AI 설정">
             <span class="material-symbols-rounded" aria-hidden="true">settings</span>
@@ -119,12 +115,15 @@
         <div class="top-actions">
           <button type="button" id="btnLayoutMode" class="btn btn-secondary btn-small mode-toggle" aria-pressed="true">스크롤식</button>
           <button type="button" id="btnHistory" class="btn btn-secondary btn-small">최근 매물</button>
-          <button type="button" id="btnDirectAi" class="btn btn-secondary btn-small">AI 대화</button>
           <button type="button" id="btnAiSettings" class="btn btn-secondary btn-small">AI 설정</button>
           <button type="button" id="btnRefresh" class="btn">새로 분석</button>
         </div>
       </header>
 
+      <button type="button" id="btnDirectAi" class="direct-chat-fab" aria-label="AI 대화" aria-expanded="false">
+        <span class="material-symbols-rounded" aria-hidden="true">smart_toy</span>
+        <small>AI 대화</small>
+      </button>
       <section id="directAiPanel" class="direct-chat-popover" hidden aria-hidden="true"></section>
 
     <main class="analysis-board" id="analysisBoard">
@@ -161,6 +160,7 @@
         </div>
         <div class="lightbox-image-wrap">
           <img id="lightboxImg" alt="" />
+          <div id="lightboxOverlay" class="lightbox-overlay" aria-hidden="true"></div>
         </div>
         <p id="lightboxCaption" class="lightbox-caption" hidden></p>
       </div>
@@ -173,6 +173,6 @@
     <script src="ai/config.js?v=20260521-1618"></script>
     <script src="ai/client.js?v=20260522-0013-search-query-retry"></script>
     <script src="ai/gate.js?v=20260521-1618"></script>
-    <script src="app.js?v=20260602-url-import"></script>
+    <script src="app.js?v=20260611-youtube-comment-gap"></script>
   </body>
 </html>

@@ -146,6 +146,17 @@ async function injectSearchScripts(tabId) {
   }
 }
 
+async function injectAnalyzerBridge(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      files: ['bridge-analyzer.js'],
+    });
+  } catch {
+    /* bridge may already be present or the analyzer tab may still be loading */
+  }
+}
+
 async function importListingUrl(rawUrl) {
   const target = classifyListingUrl(rawUrl);
   const tab = await chrome.tabs.create({ url: target.url, active: false });
@@ -193,6 +204,7 @@ async function pushAnalyzerTabs() {
   for (const tab of tabs) {
     if (tab.id == null) continue;
     try {
+      await injectAnalyzerBridge(tab.id);
       await chrome.tabs.sendMessage(tab.id, { type: 'PUSH_ANALYZER' });
     } catch {
       /* analyzer tab not ready */
@@ -217,6 +229,7 @@ async function openAnalyzerTab() {
     for (const delay of [250, 700, 1200, 2000]) {
       await new Promise((r) => setTimeout(r, delay));
       try {
+        await injectAnalyzerBridge(tabId);
         await chrome.tabs.sendMessage(tabId, { type: 'PUSH_ANALYZER' });
       } catch {
         /* analyzer bridge may still be loading */

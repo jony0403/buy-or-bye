@@ -1026,13 +1026,18 @@ h1 {
 }
 .stage-two-youtube-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
-  gap: 0.72rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.86rem;
+  align-items: stretch;
 }
 .stage-two-youtube-item {
   display: grid;
-  gap: 0.46rem;
+  grid-template-rows: auto auto auto auto;
+  align-content: start;
+  gap: 0.42rem;
   min-width: 0;
+  height: 100%;
+  padding: 0.16rem;
   color: inherit;
   text-decoration: none;
 }
@@ -1040,16 +1045,27 @@ h1 {
   position: relative;
   display: block;
   width: 100%;
-  min-height: 12rem;
   aspect-ratio: 16 / 9;
-  border: 0;
+  overflow: hidden;
   border-radius: 14px;
   background: #111827;
   box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.06);
 }
+.stage-two-youtube-embed > [data-youtube-player] {
+  width: 100%;
+  height: 100%;
+}
+.stage-two-youtube-embed iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 14px;
+}
 .stage-two-youtube-title {
   display: -webkit-box;
   overflow: hidden;
+  min-height: 2.08rem;
   color: #17191f;
   font-size: 0.78rem;
   font-weight: 850;
@@ -1059,8 +1075,10 @@ h1 {
 }
 .stage-two-youtube-insight {
   display: grid;
+  align-content: start;
   gap: 0.28rem;
   padding: 0.56rem 0.62rem;
+  min-height: 4.1rem;
   border: 1px solid rgba(229, 232, 237, 0.9);
   border-radius: 13px;
   background: rgba(248, 250, 252, 0.82);
@@ -1080,6 +1098,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 0.18rem;
+  align-self: end;
   width: fit-content;
   color: #dc2626;
   font-size: 0.68rem;
@@ -1088,6 +1107,11 @@ h1 {
 }
 .stage-two-youtube-open .material-symbols-rounded {
   font-size: 0.86rem;
+}
+@media (max-width: 860px) {
+  .stage-two-youtube-list {
+    grid-template-columns: 1fr;
+  }
 }
 .stage-two-risk-sources {
   display: flex;
@@ -10993,13 +11017,6 @@ body .app-shell .seller-chat__copy-svg {
   background: transparent !important;
 }
 
-/* Final source-removal polish: video titles sit tight, Step 4 CTA aligns with other start cards. */
-body .app-shell .stage-two-youtube-item {
-  gap: 0.26rem !important;
-}
-body .app-shell .stage-two-youtube-title {
-  margin-top: -0.04rem !important;
-}
 body .app-shell.app-shell--slide[data-stage-slide-index="3"] .analysis-board:has(.stage-four-start-card) {
   align-content: center !important;
   padding-top: clamp(1rem, 4svh, 3rem) !important;

@@ -1,4 +1,4 @@
-﻿const $current = document.getElementById('current');
+const $current = document.getElementById('current');
 const $appShell = document.getElementById('appShell');
 const $history = document.getElementById('history');
 const $btnRefresh = document.getElementById('btnRefresh');
@@ -1552,6 +1552,122 @@ function youtubeVideoMeta(url) {
   return null;
 }
 
+const youtubePlayerRegistry = new Map();
+let youtubeApiReadyPromise = null;
+
+function ensureYoutubeIframeApi() {
+  if (window.YT?.Player) return Promise.resolve();
+  if (youtubeApiReadyPromise) return youtubeApiReadyPromise;
+  youtubeApiReadyPromise = new Promise((resolve) => {
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      prev?.();
+      resolve();
+    };
+    const script = document.createElement('script');
+    script.src = 'https://www.youtube.com/iframe_api';
+    script.async = true;
+    document.head.appendChild(script);
+  });
+  return youtubeApiReadyPromise;
+}
+
+function youtubePlayerElementId(videoId, index) {
+  return `yt-player-${String(videoId || 'video').replace(/[^a-zA-Z0-9_-]/g, '')}-${index}`;
+}
+
+function clearAllYoutubePlayers() {
+  for (const [id, player] of youtubePlayerRegistry) {
+    if (player?.destroy) {
+      try {
+        player.destroy();
+      } catch {
+        /* player may already be detached */
+      }
+    }
+    youtubePlayerRegistry.delete(id);
+  }
+}
+
+function destroyStageTwoYoutubePlayers(root) {
+  const scope = root || document;
+  scope.querySelectorAll('[data-youtube-player]').forEach((host, index) => {
+    const id = host.id || youtubePlayerElementId(host.getAttribute('data-video-id'), index);
+    const player = youtubePlayerRegistry.get(id);
+    if (player?.destroy) {
+      try {
+        player.destroy();
+      } catch {
+        /* player may already be detached */
+      }
+    }
+    youtubePlayerRegistry.delete(id);
+    host.innerHTML = '';
+  });
+}
+
+function syncStageTwoYoutubePlayers(root = $current) {
+  if (!root) return;
+  const card = root.querySelector('[data-stage-two-youtube]');
+  if (!card?.querySelector('[data-youtube-player][data-video-id]')) return;
+  void mountStageTwoYoutubePlayers(card);
+}
+
+async function mountStageTwoYoutubePlayers(root) {
+  const scope = root || document;
+  const hosts = [...scope.querySelectorAll('[data-youtube-player][data-video-id]')];
+  if (!hosts.length) return;
+  for (const [id, player] of youtubePlayerRegistry) {
+    const host = document.getElementById(id);
+    if (!host || !scope.contains(host)) {
+      if (player?.destroy) {
+        try {
+          player.destroy();
+        } catch {
+          /* ignore stale player */
+        }
+      }
+      youtubePlayerRegistry.delete(id);
+    }
+  }
+  await ensureYoutubeIframeApi();
+  hosts.forEach((host, index) => {
+    if (!host.id) host.id = youtubePlayerElementId(host.getAttribute('data-video-id'), index);
+    const existing = youtubePlayerRegistry.get(host.id);
+    if (existing?.destroy) {
+      try {
+        existing.destroy();
+      } catch {
+        /* ignore stale player */
+      }
+      youtubePlayerRegistry.delete(host.id);
+    }
+    const videoId = String(host.getAttribute('data-video-id') || '').trim();
+    const title = String(host.getAttribute('data-video-title') || 'YouTube 영상').trim();
+    if (!videoId) return;
+    const player = new YT.Player(host.id, {
+      videoId,
+      host: 'https://www.youtube-nocookie.com',
+      playerVars: {
+        rel: 0,
+        playsinline: 1,
+        enablejsapi: 1,
+        origin: location.origin || 'http://127.0.0.1:3920',
+        widget_referrer: location.href,
+      },
+      events: {
+        onReady: (event) => {
+          const iframe = event.target.getIframe?.();
+          if (!iframe) return;
+          iframe.setAttribute('title', title);
+          iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+        },
+      },
+    });
+    youtubePlayerRegistry.set(host.id, player);
+  });
+}
+
 function renderStageTwoRiskSources(kind, item, productName = '') {
   return '';
 }
@@ -1612,18 +1728,25 @@ function renderStageTwoYoutubeCard(analysis) {
   if (!videos.length) return '';
   const items = videos
     .map(
-      (video) => `
+      (video, index) => `
         <div class="stage-two-youtube-item">
-          <iframe
-            class="stage-two-youtube-embed"
-            src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(video.id)}"
-            title="${escapeAttr(video.title)}"
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowfullscreen
-          ></iframe>
+          <div class="stage-two-youtube-embed">
+            <div
+              data-youtube-player
+              data-video-id="${escapeAttr(video.id)}"
+              data-video-title="${escapeAttr(video.title)}"
+              id="${escapeAttr(youtubePlayerElementId(video.id, index))}"
+              aria-label="${escapeAttr(video.title)}"
+            ></div>
+          </div>
           <span class="stage-two-youtube-title">${escapeHtml(video.title)}</span>
-          ${video.summary ? `<div class="stage-two-youtube-insight"><p>${escapeHtml(video.summary)}</p></div>` : ''}
+          ${
+            video.summary
+              ? `<div class="stage-two-youtube-insight">
+                  <p>${escapeHtml(video.summary)}</p>
+                </div>`
+              : ''
+          }
           <a class="stage-two-youtube-open" href="${escapeAttr(video.url)}" target="_blank" rel="noopener noreferrer">
             YouTube에서 열기
             <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
@@ -4017,6 +4140,7 @@ function renderItem(item, comps) {
     `;
     return;
   }
+  clearAllYoutubePlayers();
   const plat = ['daangn', 'joongna'].includes(item.platform) ? item.platform : 'bunjang';
   const seller = sellerLine(item.seller, item.platform);
   const shipping = shippingLine(item);
@@ -4069,6 +4193,7 @@ function renderItem(item, comps) {
   bindScrollText($current);
   bindStageSlideControls($current);
   bindStageTwoFlow($current, item);
+  syncStageTwoYoutubePlayers($current);
   bindStageThreeFlow($current, item);
   bindUsedPriceGuide($current, item);
   bindPurchaseReceipt($current, item);
@@ -4839,6 +4964,13 @@ function bindDirectAiChat() {
     if (!prompt) return;
     const apiKey = getAiApiKey();
     if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') {
+      directAiChat.messages.push({
+        role: 'ai',
+        text: 'AI 설정이 필요합니다. AI 설정에서 Gemini API 키를 저장한 뒤 다시 시도하세요.',
+      });
+      directAiChat.status = 'error';
+      saveDirectAiChatState();
+      renderDirectAiPanel();
       return;
     }
 
@@ -5127,7 +5259,6 @@ function bindDashboardRail() {
     if (action === 'layout') $btnLayoutMode?.click();
     if (action === 'import') openRailPanel('import');
     if (action === 'history') $btnHistory?.click();
-    if (action === 'direct-ai') $btnDirectAi?.click();
     if (action === 'settings') document.getElementById('btnAiSettings')?.click();
     if (action === 'reanalyze') $btnRefresh?.click();
     if (action === 'new') startNewAnalysis();
@@ -5708,6 +5839,7 @@ function ensureStageTwoPanelElement(item) {
   bindStageTwoFlow($current, item);
   bindImageAnalysisSlider($current, item);
   bindImageZoom($current);
+  syncStageTwoYoutubePlayers($current);
   updateStageSlide();
   return panel;
 }
@@ -5729,12 +5861,18 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
     existing?.remove();
     return;
   }
+  if (selector === '[data-stage-two-youtube]' && existing) {
+    destroyStageTwoYoutubePlayers(existing);
+  }
   if (existing) {
     existing.outerHTML = html;
   } else {
     const before = beforeSelector ? grid.querySelector(beforeSelector) : null;
     if (before) before.insertAdjacentHTML('beforebegin', html);
     else grid.insertAdjacentHTML('beforeend', html);
+  }
+  if (selector === '[data-stage-two-youtube]' && html) {
+    syncStageTwoYoutubePlayers(panel);
   }
   updateStageSlide();
 }
@@ -5936,10 +6074,12 @@ function refreshProductSummaryBlock(item, opts = {}) {
   }
   const stageTwo = $current.querySelector('[data-stage-two-panel]');
   if (stageTwo) {
+    destroyStageTwoYoutubePlayers(stageTwo);
     stageTwo.outerHTML = renderStageTwoSection(item);
     bindStageTwoFlow($current, item);
     bindImageAnalysisSlider($current, item);
     bindImageZoom($current);
+    syncStageTwoYoutubePlayers($current);
     updateStageSlide();
   } else {
     const stageOne = $current.querySelector('[data-stage-one-zone]');
@@ -5950,6 +6090,7 @@ function refreshProductSummaryBlock(item, opts = {}) {
     bindStageTwoFlow($current, item);
     bindImageAnalysisSlider($current, item);
     bindImageZoom($current);
+    syncStageTwoYoutubePlayers($current);
     updateStageSlide();
   }
   maybeMarkStageTwoComplete(item);

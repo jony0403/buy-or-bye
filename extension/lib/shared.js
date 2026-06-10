@@ -700,21 +700,6 @@
       updateFloatingVisibility();
     }, 1200);
 
-    if (Root.getAdapter()?.isDetailPage?.()) {
-      void (async () => {
-        const r = await refresh({ openOnSuccess: false, save: true });
-        if (r?.ok) {
-          // Auto-send to analyzer when a supported detail page is opened
-          console.log('[MarketScrape] Auto-triggering SEND_TO_ANALYZER for detail page');
-          // For regular page browse, we can use the normal flow.
-          // But here let's use instant:true to close the tab IF it was opened by the extension.
-          // We check if it's the active tab. If it's NOT active, it's likely an import background tab.
-          const isImportTab = document.visibilityState === 'hidden';
-          void sendListingAndOpenAnalyzer({ instant: isImportTab });
-        }
-      })();
-    }
-
     void Root.tryAutoCollectSearch?.();
   };
 
