@@ -28,7 +28,7 @@
 반드시 JSON만 출력하세요:
 {
   "images": [
-    { "index": 1, "width": 1200, "height": 900, "label": "홍보 이미지", "comment": "쇼핑몰/홍보용 캡처로 보여 이 사진만으로는 실제 박스·본체·구성품 상태를 확인할 수 없습니다.", "level": "safe|caution|risk|neutral" }
+    { "index": 1, "width": 1200, "height": 900, "label": "전면 상태", "comment": "본체 전면이 실제 사진으로 보여 큰 흠집은 뚜렷하지 않지만 모서리 상태는 추가 확인이 필요합니다.", "level": "caution" }
   ],
   "overall": "사진 전체 기준 요약 1문장"
 }
