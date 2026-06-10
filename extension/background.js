@@ -1,5 +1,16 @@
 /** 유사 매물 검색 탭(bunjang/daangn/joongna) 수집 완료 후 자동 닫기 */
 const SEARCH_PLATFORMS = ['bunjang', 'daangn', 'joongna'];
+const SCRIPT_FILES = [
+  'lib/shared.js',
+  'lib/search-urls.js',
+  'lib/images.js',
+  'lib/storage.js',
+  'lib/comps.js',
+  'hosts/bunjang.js',
+  'hosts/daangn.js',
+  'hosts/joongna.js',
+  'content.js',
+];
 const LISTING_HOST_PATTERNS = [
   { id: 'bunjang', hostRe: /(^|\.)bunjang\.co\.kr$/i },
   { id: 'daangn', hostRe: /(^|\.)daangn\.com$/i },
@@ -107,31 +118,72 @@ function sendMessageToTab(tabId, message, timeoutMs = 22_000) {
   });
 }
 
-  async function importListingUrl(rawUrl) {
+async function collectListingFromTabFast(tabId, platform, timeoutMs = 12_000) {
+  const startedAt = Date.now();
+  let injected = false;
+  let lastError = '';
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!injected || Date.now() - startedAt > 900) {
+      await injectSearchScripts(tabId);
+      injected = true;
+    }
+    const res = await sendMessageToTab(tabId, { type: 'REFRESH_AND_SAVE' }, 900);
+    if (res?.ok) return res;
+    lastError = res?.error || lastError;
+    await new Promise((r) => setTimeout(r, platform === 'joongna' ? 250 : 350));
+  }
+  return { ok: false, error: lastError || '매물 정보를 읽지 못했습니다.' };
+}
+
+async function injectSearchScripts(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: false },
+      files: SCRIPT_FILES,
+    });
+  } catch {
+    /* content_scripts may already be present or the tab may still be loading */
+  }
+}
+
+async function importListingUrl(rawUrl) {
   const target = classifyListingUrl(rawUrl);
-  // Ensure 'active: false' so it opens without taking focus
   const tab = await chrome.tabs.create({ url: target.url, active: false });
   if (tab.id == null) throw new Error('매물 탭을 열지 못했습니다.');
+  let listingTabClosed = false;
   try {
-    await waitForTabComplete(tab.id);
-    // Give context scripts a moment to initialize
-    await new Promise((r) => setTimeout(r, 800));
-    // Use SEND_TO_ANALYZER with instant:true to skip toast/countdown in the background tab
-    const res = await sendMessageToTab(tab.id, { type: 'SEND_TO_ANALYZER', instant: true });
+    let res = await collectListingFromTabFast(tab.id, target.platform, target.platform === 'joongna' ? 12_000 : 10_000);
+    if (!res?.ok) {
+      await waitForTabComplete(tab.id, 8_000).catch(() => {});
+      await injectSearchScripts(tab.id);
+      res = await sendMessageToTab(tab.id, { type: 'REFRESH_AND_SAVE' }, 5_000);
+    }
     if (!res?.ok) throw new Error(res?.error || '매물 정보를 읽지 못했습니다.');
-    
-    // Return result including listing for immediate UI refresh in analyzer
-    return { 
-      ok: true, 
+
+    const result = {
+      ok: true,
       platform: res.platform || target.platform,
-      listing: res.listing || null 
+      listing: res.listing || null,
     };
-  } finally {
+
     try {
-      // Close tab immediately after sending request to send to analyzer
       await chrome.tabs.remove(tab.id);
+      listingTabClosed = true;
     } catch {
       /* already closed */
+    }
+
+    await openAnalyzerTab();
+    await pushAnalyzerTabs();
+
+    return result;
+  } finally {
+    if (!listingTabClosed) {
+      try {
+        await chrome.tabs.remove(tab.id);
+      } catch {
+        /* already closed */
+      }
     }
   }
 }
@@ -144,6 +196,31 @@ async function pushAnalyzerTabs() {
       await chrome.tabs.sendMessage(tab.id, { type: 'PUSH_ANALYZER' });
     } catch {
       /* analyzer tab not ready */
+    }
+  }
+}
+
+async function openAnalyzerTab() {
+  const url = 'http://127.0.0.1:3920/';
+  const tabs = await chrome.tabs.query({ url: ['http://127.0.0.1:3920/*', 'http://localhost:3920/*'] });
+  const existing = tabs.find((t) => t.id != null);
+  let tabId = null;
+  if (existing?.id != null) {
+    tabId = existing.id;
+    await chrome.tabs.update(existing.id, { active: true });
+    if (existing.windowId != null) await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    const created = await chrome.tabs.create({ url, active: true });
+    tabId = created.id ?? null;
+  }
+  if (tabId != null) {
+    for (const delay of [250, 700, 1200, 2000]) {
+      await new Promise((r) => setTimeout(r, delay));
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: 'PUSH_ANALYZER' });
+      } catch {
+        /* analyzer bridge may still be loading */
+      }
     }
   }
 }
@@ -218,6 +295,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           marketScrapeComps: {
             forItemKey,
             status: 'collecting',
+            startedAt: Date.now(),
             ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, null])),
           },
         });
@@ -232,15 +310,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       if (msg.type === 'OPEN_ANALYZER_TAB') {
-        const url = 'http://127.0.0.1:3920/';
-        const tabs = await chrome.tabs.query({ url: ['http://127.0.0.1:3920/*', 'http://localhost:3920/*'] });
-        const existing = tabs.find((t) => t.id != null);
-        if (existing?.id != null) {
-          await chrome.tabs.update(existing.id, { active: true, url });
-          if (existing.windowId != null) await chrome.windows.update(existing.windowId, { focused: true });
-        } else {
-          await chrome.tabs.create({ url, active: true });
-        }
+        await openAnalyzerTab();
         sendResponse({ ok: true });
         return;
       }

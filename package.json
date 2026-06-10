@@ -1,9 +1,11 @@
 {
-  "name": "bunjang-local-images",
+  "name": "buy-or-bye",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
+    "start": "node analyzer-server.mjs",
+    "start:analyzer": "node analyzer-server.mjs",
+    "start:images": "node server.mjs",
     "install-browser": "npx playwright install chromium"
   },
   "dependencies": {

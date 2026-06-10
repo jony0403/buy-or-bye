@@ -1,4 +1,4 @@
-const $current = document.getElementById('current');
+﻿const $current = document.getElementById('current');
 const $appShell = document.getElementById('appShell');
 const $history = document.getElementById('history');
 const $btnRefresh = document.getElementById('btnRefresh');
@@ -18,6 +18,7 @@ const $dashboardRail = document.querySelector('.dashboard-rail');
 const $railPanel = document.querySelector('[data-rail-panel]');
 const $railImportForm = document.querySelector('[data-rail-import-form]');
 const $railUrlInput = document.querySelector('[data-rail-url-input]');
+const $railImportSubmit = document.querySelector('[data-rail-import-submit]');
 const $railStatus = document.querySelector('[data-rail-status]');
 const $lightbox = document.getElementById('lightbox');
 const $lightboxImg = document.getElementById('lightboxImg');
@@ -48,6 +49,7 @@ const stageFiveActiveKeys = new Set();
 const stageTwoCompletedKeys = new Set();
 const stageThreeIsolatedRefreshKeys = new Set();
 const productRiskAnalyses = new Map();
+const productRiskYoutubeAnalyses = new Map();
 const listingTextAnalyses = new Map();
 const listingImageAnalyses = new Map();
 const comparisonFilters = new Map();
@@ -60,7 +62,12 @@ const purchaseReceiptPrintedKeys = new Set();
 const imageAnalysisPreviewedKeys = new Set();
 const searchQueryRegenerations = new Map();
 const stageThreeAutoQueryRetryCounts = new Map();
-const directAiChat = { open: false, status: 'idle', messages: [] };
+const stageThreeCollectionFinalizingKeys = new Map();
+const stageThreeSearchProgresses = new Map();
+const stageThreeCollectionTimeoutTimers = new Map();
+const usedPriceGuideProgresses = new Map();
+const directAiChat = { open: false, status: 'idle', messages: [], keywordStatus: 'idle', keywordItems: [], keywordSignature: '' };
+const directAiChatStates = new Map();
 const sellerChatStates = new Map();
 const sellerChatToneOptions = [
   { value: 'polite', label: '공손하게' },
@@ -74,15 +81,20 @@ let lightboxAutoPlayTimer = 0;
 let lightboxCloseTimer = 0;
 let photoSliderAutoTimer = 0;
 let imageAnalysisAutoTimer = 0;
+let aiLoadingProgressTimer = 0;
 let stageSlideIndex = 0;
 let stageSlideAnimationTimer = 0;
 let stageStartMotionTimer = 0;
 let aiResultMotionTimer = 0;
 let sellerChatToastTimer = 0;
 let lastStageThreeCompsRenderKey = '';
-const RECEIPT_PRINT_SCROLL_MS = 7800;
+let activeAiRunId = 0;
+const activeAiAbortControllers = new Set();
+let pendingImportUrl = '';
+const RECEIPT_PRINT_SCROLL_MS = 6600;
 const MIN_PRICE_REFERENCE_MATCHES = 5;
-const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 2;
+const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 0;
+const STAGE_THREE_COLLECTION_TIMEOUT_MS = 24_000;
 const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v15';
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
@@ -110,6 +122,46 @@ function restorePersistedMap(map, raw) {
   }
 }
 
+function directAiChatStateToPersistable(state) {
+  if (!state || typeof state !== 'object') return null;
+  const messages = Array.isArray(state.messages)
+    ? state.messages
+        .map((msg) => ({
+          role: msg?.role === 'user' ? 'user' : 'ai',
+          text: String(msg?.text || '').slice(0, 6000),
+        }))
+        .filter((msg) => msg.text)
+        .slice(-40)
+    : [];
+  const keywordItems = Array.isArray(state.keywordItems)
+    ? state.keywordItems.map((x) => String(x || '').trim()).filter(Boolean).slice(-12)
+    : [];
+  if (!messages.length && !keywordItems.length && !state.keywordSignature) return null;
+  return {
+    status: state.status === 'loading' ? 'idle' : state.status || 'idle',
+    messages,
+    keywordStatus: state.keywordStatus === 'loading' ? 'idle' : state.keywordStatus || 'idle',
+    keywordItems,
+    keywordSignature: String(state.keywordSignature || ''),
+  };
+}
+
+function directAiChatStatesToPersistableObject() {
+  return Object.fromEntries(
+    [...directAiChatStates.entries()]
+      .map(([key, state]) => [key, directAiChatStateToPersistable(state)])
+      .filter(([, state]) => state)
+  );
+}
+
+function restoreDirectAiChatStates(raw) {
+  if (!raw || typeof raw !== 'object') return;
+  for (const [key, state] of Object.entries(raw)) {
+    const cleaned = directAiChatStateToPersistable(state);
+    if (key && cleaned) directAiChatStates.set(key, cleaned);
+  }
+}
+
 function setToPersistableArray(set) {
   return [...set].filter(Boolean);
 }
@@ -125,6 +177,81 @@ function listingKeyFromStageCacheKey(key) {
   return String(key || '').split('::')[0] || '';
 }
 
+function isStageThreeCacheSettled(status) {
+  return status === 'done' || status === 'error';
+}
+
+function hasSettledStageThreeCache(listingKey) {
+  if (!listingKey) return false;
+  const comparisonKey = findListingStageCacheKey(comparisonFilters, listingKey);
+  const guideKey = findListingStageCacheKey(usedPriceGuides, listingKey);
+  return Boolean(
+    comparisonKey &&
+      guideKey &&
+      isStageThreeCacheSettled(comparisonFilters.get(comparisonKey)?.status) &&
+      isStageThreeCacheSettled(usedPriceGuides.get(guideKey)?.status)
+  );
+}
+
+function restoredStageThreeComps(item, rawComps) {
+  const key = summaryKey(item);
+  if (!key) return null;
+  const active = activeCompsForItem(item, rawComps);
+  if (active) return active;
+  if (stageThreeComparisonSkippedKeys.has(key)) return emptyComparisonComps(item);
+  if (hasSettledStageThreeCache(key)) {
+    stageThreeSearchProgresses.delete(key);
+    clearStageThreeCollectionTimeout(key);
+    return emptyComparisonComps(item);
+  }
+  if (relatedRequestedKeys.has(key) || stageThreeActiveKeys.has(key)) {
+    if (rawComps?.status === 'collecting' && rawComps.forItemKey === itemKey(item)) return rawComps;
+    return null;
+  }
+  return null;
+}
+
+function findListingStageCacheKey(map, listingKey, preferKey = '') {
+  if (!listingKey) return '';
+  if (preferKey && isStageThreeCacheSettled(map.get(preferKey)?.status)) return preferKey;
+  let fallback = '';
+  for (const cacheKey of map.keys()) {
+    if (listingKeyFromStageCacheKey(cacheKey) !== listingKey) continue;
+    const status = map.get(cacheKey)?.status;
+    if (!isStageThreeCacheSettled(status)) continue;
+    if (status === 'done') return cacheKey;
+    fallback = fallback || cacheKey;
+  }
+  return fallback;
+}
+
+function ensureListingStageCacheAlias(map, listingKey, targetKey) {
+  if (!listingKey || !targetKey || isStageThreeCacheSettled(map.get(targetKey)?.status)) return false;
+  const sourceKey = findListingStageCacheKey(map, listingKey);
+  if (!sourceKey || sourceKey === targetKey) return false;
+  const source = map.get(sourceKey);
+  if (!isStageThreeCacheSettled(source?.status)) return false;
+  map.set(targetKey, { ...source });
+  persistAiCaches();
+  return true;
+}
+
+function resolvedComparisonFilterState(item, comps) {
+  const filterKey = comparisonFilterKey(item, comps);
+  const listingKey = summaryKey(item);
+  const settledKey = findListingStageCacheKey(comparisonFilters, listingKey, filterKey);
+  if (settledKey) return { filterKey: settledKey, state: comparisonFilters.get(settledKey) };
+  return { filterKey, state: filterKey ? comparisonFilters.get(filterKey) : null };
+}
+
+function resolvedUsedPriceGuideState(item, comps) {
+  const key = usedPriceGuideKey(item, comps);
+  const listingKey = summaryKey(item);
+  const settledKey = findListingStageCacheKey(usedPriceGuides, listingKey, key);
+  if (settledKey) return { key: settledKey, state: usedPriceGuides.get(settledKey) };
+  return { key, state: key ? usedPriceGuides.get(key) : null };
+}
+
 function persistAiCaches() {
   try {
     localStorage.setItem(
@@ -134,12 +261,14 @@ function persistAiCaches() {
         stageThreeActiveKeys: setToPersistableArray(stageThreeActiveKeys),
         productSummaries: mapToPersistableObject(productSummaries),
         productRiskAnalyses: mapToPersistableObject(productRiskAnalyses),
+        productRiskYoutubeAnalyses: mapToPersistableObject(productRiskYoutubeAnalyses),
         listingTextAnalyses: mapToPersistableObject(listingTextAnalyses),
         listingImageAnalyses: mapToPersistableObject(listingImageAnalyses),
         comparisonFilters: mapToPersistableObject(comparisonFilters),
         stageThreeComparisonSkippedKeys: setToPersistableArray(stageThreeComparisonSkippedKeys),
         usedPriceGuides: mapToPersistableObject(usedPriceGuides),
         purchaseReceipts: mapToPersistableObject(purchaseReceipts),
+        directAiChatStates: directAiChatStatesToPersistableObject(),
       })
     );
   } catch {
@@ -157,12 +286,14 @@ function loadAiCaches() {
       restorePersistedSet(stageThreeActiveKeys, parsed.stageThreeActiveKeys);
       restorePersistedMap(productSummaries, parsed.productSummaries);
       restorePersistedMap(productRiskAnalyses, parsed.productRiskAnalyses);
+      restorePersistedMap(productRiskYoutubeAnalyses, parsed.productRiskYoutubeAnalyses);
       restorePersistedMap(listingTextAnalyses, parsed.listingTextAnalyses);
       restorePersistedMap(listingImageAnalyses, parsed.listingImageAnalyses);
       restorePersistedMap(comparisonFilters, parsed.comparisonFilters);
       restorePersistedSet(stageThreeComparisonSkippedKeys, parsed.stageThreeComparisonSkippedKeys);
       restorePersistedMap(usedPriceGuides, parsed.usedPriceGuides);
       restorePersistedMap(purchaseReceipts, parsed.purchaseReceipts);
+      restoreDirectAiChatStates(parsed.directAiChatStates);
     } catch {
       /* ignore stale cache */
     }
@@ -233,6 +364,422 @@ function currentRenderedItem() {
   return (selectedKey && history.find((item) => itemKey(item) === selectedKey)) || latest || null;
 }
 
+const AI_LOADING_DURATIONS = {
+  productSummary: 9000,
+  productRisk: 18000,
+  productRiskYoutube: 30000,
+  listingText: 7000,
+  listingImage: 7000,
+  searchQuery: 8000,
+  comparisonFilter: 11000,
+  usedPriceGuide: 9000,
+  purchaseReceipt: 8500,
+  sellerChat: 7000,
+};
+const AI_LOADING_FINISH_RAMP_MS = 520;
+const AI_LOADING_FINISH_MS = 850;
+
+function aiLoadingPercent(state, kind) {
+  if (!state || state.status !== 'loading') return null;
+  if (Number.isFinite(Number(state.forcePercent))) {
+    const forcePercent = Math.max(0, Math.min(100, Number(state.forcePercent)));
+    const finishStartedAt = Number(state.finishStartedAt || 0);
+    const finishFromPercent = Number(state.finishFromPercent);
+    if (finishStartedAt && Number.isFinite(finishFromPercent)) {
+      const progress = Math.max(0, Math.min(1, (Date.now() - finishStartedAt) / AI_LOADING_FINISH_RAMP_MS));
+      return finishFromPercent + (forcePercent - finishFromPercent) * progress;
+    }
+    return forcePercent;
+  }
+  const startedAt = Number(state.startedAt || state.loadingStartedAt || 0);
+  if (!startedAt) return 0;
+  const duration = Number(state.durationMs || state.duration) || AI_LOADING_DURATIONS[kind] || 8000;
+  const elapsed = Math.max(0, Date.now() - startedAt);
+  const startPercent = Number.isFinite(Number(state.startPercent)) ? Number(state.startPercent) : 0;
+  const endPercent = Number.isFinite(Number(state.endPercent)) ? Number(state.endPercent) : 99;
+  const progress = Math.max(0, Math.min(1, elapsed / duration));
+  return Math.max(0, Math.min(99, startPercent + (endPercent - startPercent) * progress));
+}
+
+function renderAiLoadingProgress(state, kind) {
+  const percent = aiLoadingPercent(state, kind);
+  if (percent == null) return '';
+  const displayPercent = Math.floor(percent);
+  const startedAt = Number(state.startedAt || state.loadingStartedAt || 0) || Date.now();
+  const duration = Number(state.durationMs || state.duration) || AI_LOADING_DURATIONS[kind] || 8000;
+  const forcePercent = Number.isFinite(Number(state.forcePercent)) ? Number(state.forcePercent) : '';
+  const finishStartedAt = Number(state.finishStartedAt || 0) || '';
+  const finishFromPercent = Number.isFinite(Number(state.finishFromPercent)) ? Number(state.finishFromPercent) : '';
+  const startPercent = Number.isFinite(Number(state.startPercent)) ? Number(state.startPercent) : '';
+  const endPercent = Number.isFinite(Number(state.endPercent)) ? Number(state.endPercent) : '';
+  ensureAiLoadingProgressTicker();
+  return `
+    <div class="ai-loading-progress" aria-hidden="true" data-ai-progress data-started-at="${startedAt}" data-duration="${duration}" data-force-percent="${forcePercent}" data-finish-started-at="${finishStartedAt}" data-finish-from-percent="${finishFromPercent}" data-start-percent="${startPercent}" data-end-percent="${endPercent}">
+      <div class="ai-loading-progress__bar"><i style="width:${percent}%"></i></div>
+      <span class="ai-loading-progress__text">${displayPercent}%</span>
+    </div>
+  `;
+}
+
+function optionalNumberAttr(node, name) {
+  const raw = node.getAttribute(name);
+  if (raw == null || raw === '') return NaN;
+  return Number(raw);
+}
+
+function hasVisibleAiLoading(item = currentRenderedItem()) {
+  if (!item) return false;
+  const key = summaryKey(item);
+  const stageKey = sellerChatKey(item);
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const filterKey = comparisonFilterKey(item, stageComps);
+  const receiptKey = purchaseReceiptKey(item, stageComps);
+  return Boolean(
+    productSummaries.get(key)?.status === 'loading' ||
+      productRiskAnalyses.get(key)?.status === 'loading' ||
+      productRiskYoutubeAnalyses.get(key)?.status === 'loading' ||
+      listingTextAnalyses.get(key)?.status === 'loading' ||
+      listingImageAnalyses.get(key)?.status === 'loading' ||
+      searchQueryRegenerations.get(key)?.status === 'loading' ||
+      (filterKey && comparisonFilters.get(filterKey)?.status === 'loading') ||
+      (filterKey && usedPriceGuides.get(filterKey)?.status === 'loading') ||
+      (receiptKey && purchaseReceipts.get(receiptKey)?.status === 'loading') ||
+      sellerChatStates.get(stageKey)?.status === 'loading'
+  );
+}
+
+function isStageThreeCollectionFinalizing(key) {
+  const until = stageThreeCollectionFinalizingKeys.get(key) || 0;
+  if (until > Date.now()) return true;
+  if (until) stageThreeCollectionFinalizingKeys.delete(key);
+  return false;
+}
+
+function stageThreeSearchProgressPercent(progress = {}) {
+  if (Number.isFinite(Number(progress.forcePercent))) {
+    const forcePercent = Math.max(0, Math.min(100, Number(progress.forcePercent)));
+    const finishStartedAt = Number(progress.finishStartedAt || 0);
+    const finishFromPercent = Number(progress.finishFromPercent);
+    if (finishStartedAt && Number.isFinite(finishFromPercent)) {
+      const t = Math.max(0, Math.min(1, (Date.now() - finishStartedAt) / AI_LOADING_FINISH_RAMP_MS));
+      return finishFromPercent + (forcePercent - finishFromPercent) * t;
+    }
+    return forcePercent;
+  }
+  const startedAt = Number(progress.startedAt || 0);
+  const duration = Math.max(Number(progress.durationMs) || 1, 1);
+  const startPercent = Number.isFinite(Number(progress.startPercent)) ? Number(progress.startPercent) : 0;
+  const endPercent = Number.isFinite(Number(progress.endPercent)) ? Number(progress.endPercent) : 60;
+  const t = startedAt ? Math.max(0, Math.min(1, (Date.now() - startedAt) / duration)) : 0;
+  return Math.max(0, Math.min(99, startPercent + (endPercent - startPercent) * t));
+}
+
+function ensureStageThreeSearchProgress(item, seed = {}) {
+  const key = summaryKey(item);
+  if (!key) return null;
+  const existing = stageThreeSearchProgresses.get(key);
+  if (existing) return existing;
+  const progress = {
+    phase: 'collecting',
+    startedAt: seed.startedAt || Date.now(),
+    durationMs: 22000,
+    startPercent: 0,
+    endPercent: 62,
+  };
+  stageThreeSearchProgresses.set(key, progress);
+  return progress;
+}
+
+function stageThreeSearchProgressState(item, phase, seed = {}) {
+  const key = summaryKey(item);
+  const progress = ensureStageThreeSearchProgress(item, seed);
+  if (!key || !progress) return seed?.fallback || null;
+  if (phase === 'identifying' && progress.phase !== 'identifying' && progress.phase !== 'complete') {
+    const currentPercent = Math.max(stageThreeSearchProgressPercent(progress), 62);
+    Object.assign(progress, {
+      phase: 'identifying',
+      startedAt: Date.now(),
+      durationMs: 18000,
+      startPercent: Math.min(currentPercent, 78),
+      endPercent: 94,
+    });
+  }
+  if (phase === 'complete' && progress.phase !== 'complete') {
+    Object.assign(progress, {
+      phase: 'complete',
+      forcePercent: 100,
+      finishStartedAt: Date.now(),
+      finishFromPercent: Math.min(99, Math.max(0, stageThreeSearchProgressPercent(progress))),
+    });
+  }
+  return {
+    status: 'loading',
+    startedAt: progress.startedAt,
+    duration: progress.durationMs,
+    startPercent: progress.startPercent,
+    endPercent: progress.endPercent,
+    forcePercent: progress.forcePercent,
+    finishStartedAt: progress.finishStartedAt,
+    finishFromPercent: progress.finishFromPercent,
+  };
+}
+
+async function completeStageThreeSearchProgress(item, refresh) {
+  stageThreeSearchProgressState(item, 'complete');
+  if (typeof refresh === 'function') refresh();
+  await waitMs(AI_LOADING_FINISH_MS);
+  const key = summaryKey(item);
+  if (key) stageThreeSearchProgresses.delete(key);
+}
+
+function usedPriceGuideProgressKey(item) {
+  return summaryKey(item);
+}
+
+function usedPriceGuideProgressPercent(progress = {}) {
+  if (Number.isFinite(Number(progress.forcePercent))) {
+    const forcePercent = Math.max(0, Math.min(100, Number(progress.forcePercent)));
+    const finishStartedAt = Number(progress.finishStartedAt || 0);
+    const finishFromPercent = Number(progress.finishFromPercent);
+    if (finishStartedAt && Number.isFinite(finishFromPercent)) {
+      const t = Math.max(0, Math.min(1, (Date.now() - finishStartedAt) / AI_LOADING_FINISH_RAMP_MS));
+      return finishFromPercent + (forcePercent - finishFromPercent) * t;
+    }
+    return forcePercent;
+  }
+  const startedAt = Number(progress.startedAt || 0);
+  const duration = Math.max(Number(progress.durationMs) || 1, 1);
+  const startPercent = Number.isFinite(Number(progress.startPercent)) ? Number(progress.startPercent) : 0;
+  const endPercent = Number.isFinite(Number(progress.endPercent)) ? Number(progress.endPercent) : 76;
+  const t = startedAt ? Math.max(0, Math.min(1, (Date.now() - startedAt) / duration)) : 0;
+  return Math.max(0, Math.min(99, startPercent + (endPercent - startPercent) * t));
+}
+
+function ensureUsedPriceGuideProgress(item, seed = {}) {
+  const key = usedPriceGuideProgressKey(item);
+  if (!key) return null;
+  const existing = usedPriceGuideProgresses.get(key);
+  if (existing) return existing;
+  const progress = {
+    phase: 'waiting',
+    startedAt: seed.startedAt || Date.now(),
+    durationMs: 42_000,
+    startPercent: 0,
+    endPercent: 76,
+  };
+  usedPriceGuideProgresses.set(key, progress);
+  return progress;
+}
+
+function usedPriceGuideProgressState(item, phase, seed = {}) {
+  const key = usedPriceGuideProgressKey(item);
+  const progress = ensureUsedPriceGuideProgress(item, seed);
+  if (!key || !progress) return null;
+  if (phase === 'generating' && progress.phase !== 'generating' && progress.phase !== 'complete') {
+    const currentPercent = Math.max(usedPriceGuideProgressPercent(progress), 76);
+    Object.assign(progress, {
+      phase: 'generating',
+      startedAt: Date.now(),
+      durationMs: 15000,
+      startPercent: Math.min(currentPercent, 86),
+      endPercent: 94,
+    });
+  }
+  if (phase === 'complete' && progress.phase !== 'complete') {
+    Object.assign(progress, {
+      phase: 'complete',
+      forcePercent: 100,
+      finishStartedAt: Date.now(),
+      finishFromPercent: Math.min(99, Math.max(0, usedPriceGuideProgressPercent(progress))),
+    });
+  }
+  return {
+    status: 'loading',
+    startedAt: progress.startedAt,
+    duration: progress.durationMs,
+    startPercent: progress.startPercent,
+    endPercent: progress.endPercent,
+    forcePercent: progress.forcePercent,
+    finishStartedAt: progress.finishStartedAt,
+    finishFromPercent: progress.finishFromPercent,
+  };
+}
+
+async function completeUsedPriceGuideProgress(item, refresh) {
+  usedPriceGuideProgressState(item, 'complete');
+  if (typeof refresh === 'function') refresh();
+  await waitMs(AI_LOADING_FINISH_MS);
+  const key = usedPriceGuideProgressKey(item);
+  if (key) usedPriceGuideProgresses.delete(key);
+}
+
+function refreshVisibleAiLoadingCards(item = currentRenderedItem()) {
+  if (!item) {
+    if (directAiChat?.status === 'loading') {
+      renderDirectAiPanel();
+      return true;
+    }
+    return false;
+  }
+  const key = summaryKey(item);
+  let refreshed = false;
+  if (
+    productSummaries.get(key)?.status === 'loading' ||
+    productRiskAnalyses.get(key)?.status === 'loading' ||
+    listingTextAnalyses.get(key)?.status === 'loading' ||
+    listingImageAnalyses.get(key)?.status === 'loading'
+  ) {
+    refreshProductSummaryBlock(item);
+    refreshed = true;
+  }
+  if (productRiskYoutubeAnalyses.get(key)?.status === 'loading') {
+    refreshProductRiskYoutubeCard(item);
+    refreshed = true;
+  }
+  if (searchQueryRegenerations.get(key)?.status === 'loading') {
+    if (!$current.querySelector('[data-stage-three-panel]')) refreshStageThreeSection(item);
+    refreshed = true;
+  }
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const filterKey = comparisonFilterKey(item, stageComps);
+  if (filterKey && (comparisonFilters.get(filterKey)?.status === 'loading' || usedPriceGuides.get(filterKey)?.status === 'loading')) {
+    if (!$current.querySelector('[data-stage-three-panel]')) refreshStageThreeSection(item);
+    refreshed = true;
+  }
+  const receiptKey = purchaseReceiptKey(item, stageComps);
+  if (receiptKey && purchaseReceipts.get(receiptKey)?.status === 'loading') {
+    refreshStageFourSection(item);
+    refreshed = true;
+  }
+  const sellerState = sellerChatStates.get(sellerChatKey(item));
+  if (sellerState?.status === 'loading') {
+    refreshSellerChatSection(item);
+    refreshed = true;
+  }
+  return refreshed;
+}
+
+function ensureAiLoadingProgressTicker() {
+  if (aiLoadingProgressTimer) return;
+  const tick = () => {
+    const nodes = document.querySelectorAll('[data-ai-progress]');
+    let hasProgress = false;
+    nodes.forEach((node) => {
+      const startedAt = Number(node.getAttribute('data-started-at')) || Date.now();
+      const duration = Math.max(Number(node.getAttribute('data-duration')) || 8000, 1);
+      const forcePercent = optionalNumberAttr(node, 'data-force-percent');
+      const finishStartedAt = optionalNumberAttr(node, 'data-finish-started-at') || 0;
+      const finishFromPercent = optionalNumberAttr(node, 'data-finish-from-percent');
+      const startPercent = Number.isFinite(optionalNumberAttr(node, 'data-start-percent'))
+        ? optionalNumberAttr(node, 'data-start-percent')
+        : 0;
+      const endPercent = Number.isFinite(optionalNumberAttr(node, 'data-end-percent'))
+        ? optionalNumberAttr(node, 'data-end-percent')
+        : 99;
+      const raw = Number.isFinite(forcePercent)
+        ? finishStartedAt && Number.isFinite(finishFromPercent)
+          ? finishFromPercent + (forcePercent - finishFromPercent) * Math.max(0, Math.min(1, (Date.now() - finishStartedAt) / AI_LOADING_FINISH_RAMP_MS))
+          : forcePercent
+        : Math.min(99, Math.max(0, startPercent + (endPercent - startPercent) * Math.max(0, Math.min(1, (Date.now() - startedAt) / duration))));
+      const percent = Math.max(0, Math.min(100, raw));
+      const bar = node.querySelector('.ai-loading-progress__bar i');
+      const text = node.querySelector('.ai-loading-progress__text');
+      if (bar) bar.style.width = `${percent}%`;
+      if (text) text.textContent = `${Math.floor(percent)}%`;
+      hasProgress = true;
+    });
+    if (!hasProgress && !hasVisibleAiLoading()) {
+      aiLoadingProgressTimer = 0;
+      return;
+    }
+    aiLoadingProgressTimer = window.requestAnimationFrame(tick);
+  };
+  aiLoadingProgressTimer = window.requestAnimationFrame(tick);
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function createAiRequestScope() {
+  const controller = new AbortController();
+  const runId = activeAiRunId;
+  activeAiAbortControllers.add(controller);
+  return {
+    runId,
+    signal: controller.signal,
+    release() {
+      activeAiAbortControllers.delete(controller);
+    },
+  };
+}
+
+function isAbortError(error) {
+  return error?.name === 'AbortError' || /aborted/i.test(String(error?.message || error || ''));
+}
+
+function shouldIgnoreAiScope(scope, error = null) {
+  return !scope || scope.signal.aborted || scope.runId !== activeAiRunId || (error && isAbortError(error));
+}
+
+function deleteLoadingEntries(store) {
+  if (!store?.forEach) return;
+  for (const [key, value] of [...store.entries()]) {
+    if (value?.status === 'loading') store.delete(key);
+  }
+}
+
+function cancelActiveAiWork() {
+  activeAiRunId += 1;
+  for (const controller of activeAiAbortControllers) {
+    try {
+      controller.abort();
+    } catch {
+      /* ignore */
+    }
+  }
+  activeAiAbortControllers.clear();
+  [
+    productSummaries,
+    productRiskAnalyses,
+    productRiskYoutubeAnalyses,
+    listingTextAnalyses,
+    listingImageAnalyses,
+    comparisonFilters,
+    usedPriceGuides,
+    purchaseReceipts,
+    searchQueryRegenerations,
+  ].forEach(deleteLoadingEntries);
+  for (const [key, state] of [...sellerChatStates.entries()]) {
+    if (state?.status === 'loading') {
+      sellerChatStates.set(key, { ...state, status: 'idle', error: '' });
+    }
+  }
+  stageThreeSearchProgresses.clear();
+  usedPriceGuideProgresses.clear();
+  productImageSearches.clear();
+  persistAiCaches();
+}
+
+async function showAiLoadingComplete(store, key, refresh, kind = '') {
+  const current = store?.get?.(key);
+  if (current?.status === 'loading') {
+    store.set(key, {
+      ...current,
+      forcePercent: 100,
+      finishStartedAt: Date.now(),
+      finishFromPercent: Math.min(99, Math.max(0, aiLoadingPercent(current, kind) || 0)),
+    });
+    if (typeof refresh === 'function') refresh();
+    await waitMs(AI_LOADING_FINISH_MS);
+  }
+}
+
+async function finishAiLoadingState(store, key, nextState, refresh, kind = '') {
+  await showAiLoadingComplete(store, key, refresh, kind);
+  store.set(key, nextState);
+}
+
 function isStepOneDone(item) {
   const key = summaryKey(item);
   return Boolean(key && productSummaries.get(key)?.status === 'done');
@@ -276,23 +823,64 @@ function emptyComparisonComps(item) {
   };
 }
 
+function collectingComparisonComps(item) {
+  return {
+    status: 'collecting',
+    forItemKey: itemKey(item),
+    startedAt: Date.now(),
+    bunjang: null,
+    daangn: null,
+    joongna: null,
+  };
+}
+
+function isCompsCollectionTimedOut(comps) {
+  if (!comps || comps.status !== 'collecting') return false;
+  const startedAt = Number(comps.startedAt || 0);
+  return Boolean(startedAt && Date.now() - startedAt >= STAGE_THREE_COLLECTION_TIMEOUT_MS);
+}
+
+function scheduleStageThreeCollectionTimeoutRefresh(item, nextComps = comps) {
+  const key = summaryKey(item);
+  if (!key || !nextComps || nextComps.status !== 'collecting' || stageThreeCollectionTimeoutTimers.has(key)) return;
+  const startedAt = Number(nextComps.startedAt || 0) || Date.now();
+  const delay = Math.max(0, STAGE_THREE_COLLECTION_TIMEOUT_MS - (Date.now() - startedAt) + 80);
+  const timer = window.setTimeout(() => {
+    stageThreeCollectionTimeoutTimers.delete(key);
+    if (selectedKey === key) refreshStageThreeSection(item);
+  }, delay);
+  stageThreeCollectionTimeoutTimers.set(key, timer);
+}
+
+function clearStageThreeCollectionTimeout(key) {
+  const timer = stageThreeCollectionTimeoutTimers.get(key);
+  if (timer) window.clearTimeout(timer);
+  stageThreeCollectionTimeoutTimers.delete(key);
+}
+
 function effectiveStageThreeComps(item, nextComps = comps) {
   if (nextComps && isCompsCollected(nextComps)) return nextComps;
   const key = summaryKey(item);
-  return key && stageThreeComparisonSkippedKeys.has(key) ? emptyComparisonComps(item) : nextComps;
+  if (key && stageThreeComparisonSkippedKeys.has(key)) return emptyComparisonComps(item);
+  if (key && hasSettledStageThreeCache(key)) return emptyComparisonComps(item);
+  return nextComps;
 }
 
 function isStepThreeDone(item) {
   if (!isStepTwoDone(item) || !isStepThreeUnlocked(item)) return false;
+  const listingKey = summaryKey(item);
+  if (!listingKey) return false;
   const settledComps = effectiveStageThreeComps(item);
-  if (!settledComps || !isCompsCollected(settledComps)) return false;
-  const key = comparisonFilterKey(item, settledComps);
-  if (!key) return false;
-  const comparisonStatus = comparisonFilters.get(key)?.status;
-  const guideStatus = usedPriceGuides.get(key)?.status;
-  const comparisonSettled = comparisonStatus === 'done' || comparisonStatus === 'error';
-  const guideSettled = guideStatus === 'done' || guideStatus === 'error';
-  return Boolean(comparisonSettled && guideSettled);
+  const preferKey =
+    settledComps && isCompsCollected(settledComps) ? comparisonFilterKey(item, settledComps) : '';
+  const comparisonKey = findListingStageCacheKey(comparisonFilters, listingKey, preferKey);
+  const guideKey = findListingStageCacheKey(usedPriceGuides, listingKey, preferKey);
+  return Boolean(
+    comparisonKey &&
+      guideKey &&
+      isStageThreeCacheSettled(comparisonFilters.get(comparisonKey)?.status) &&
+      isStageThreeCacheSettled(usedPriceGuides.get(guideKey)?.status)
+  );
 }
 
 function isStepFourDone(item) {
@@ -322,6 +910,7 @@ function maybeMarkStageTwoComplete(item) {
 function ensureCachedStageTwoFollowups(item) {
   const key = summaryKey(item);
   if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
+  void ensureProductRiskYoutube(item);
   void ensureListingTextAnalysis(item);
   void ensureListingImageAnalysis(item);
 }
@@ -382,6 +971,10 @@ function moveStageSlide(dir) {
   stageSlideIndex = nextIndex;
   $appShell?.classList.add('is-stage-sliding');
   updateStageSlide();
+  if (stageSlideIndex === 1) {
+    const item = currentRenderedItem();
+    if (item) previewListingImageAnalysis(item);
+  }
   stageSlideAnimationTimer = window.setTimeout(() => {
     $appShell?.classList.remove('is-stage-sliding');
     stageSlideAnimationTimer = 0;
@@ -408,11 +1001,14 @@ function playAiResultMotion(duration = 560) {
 }
 
 function renderStageSlideControls() {
+  const count = stageSlideCount();
+  const prevDisabled = stageSlideIndex <= 0;
+  const nextDisabled = stageSlideIndex >= count - 1 || !canOpenStage(stageSlideIndex + 1);
   return `
     <nav class="stage-slide-controls" data-stage-slide-controls aria-label="단계 이동">
-      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-prev>&lt;&lt; 이전 단계</button>
+      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-prev ${prevDisabled ? 'disabled' : ''}>&lt;&lt; 이전 단계</button>
       <span class="stage-slide-label" data-stage-slide-label>Step 1/1</span>
-      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-next>다음 단계 &gt;&gt;</button>
+      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-next ${nextDisabled ? 'disabled' : ''}>다음 단계 &gt;&gt;</button>
     </nav>
   `;
 }
@@ -573,7 +1169,7 @@ function meaningfulListingTextAnalysis(analysis) {
   const bodyVerdict = stripListingPurchaseJudgment(analysis.bodyVerdict);
   const overall = stripListingPurchaseJudgment(analysis.overall);
   const sellerVerdict = isTrivialSellerVerdict(analysis.sellerVerdict)
-    ? '판매자 지표는 참고할 만하지만, 본문에 빠진 상태 설명을 대신해주지는 못합니다.'
+    ? ''
     : stripListingPurchaseJudgment(analysis.sellerVerdict);
   const hasBodyJudgment =
     bodyVerdict.length >= 24 && /누락|부족|언급|대조|리스크|고질병|상태|구성|확인|애매|근거/.test(bodyVerdict);
@@ -725,6 +1321,7 @@ function lightboxAnalysisItems(images) {
       kind: 'analysis',
       comment: image.comment || '',
       level: image.level || 'neutral',
+      defects: Array.isArray(image.defects) ? image.defects : [],
     }));
 }
 
@@ -734,16 +1331,23 @@ function imageAnalysisLabel(image) {
   const comment = String(image?.comment || '');
   const level = String(image?.level || 'neutral');
   if (level === 'risk') return '주의 사진';
-  if (/홍보|공식|쇼핑몰|스크랩|카탈로그|광고컷|렌더/i.test(comment)) return '홍보 이미지';
+  if (/구성품|박스|케이블|충전기|스트랩|부속|트레이|완충재|스티로폼|비닐|실물|직접 촬영|판매자.*사진/i.test(comment)) {
+    return '구성품 확인';
+  }
+  if (
+    /홍보|공식|쇼핑몰|스크랩|카탈로그|광고컷|렌더/i.test(comment) &&
+    !/홍보용으로\s*보이지|홍보.*아니|스크랩.*아니|실물.*보이|직접.*찍|판매자.*촬영/i.test(comment)
+  ) {
+    return '홍보 이미지';
+  }
   if (/실물.*확인|확인할 수 없|상태를 알 수 없/i.test(comment)) return '실물 확인 불가';
-  if (/구성품|박스|케이블|충전기|스트랩|부속/i.test(comment)) return '구성품 확인';
   if (/흠집|스크래치|찍힘|오염|마모|파손/i.test(comment)) return '흠집 확인';
   if (/작동|화면|전원|버튼|단자/i.test(comment)) return '작동 확인';
   if (/부족|안 보|확인 필요/i.test(comment)) return '부족한 사진';
   return level === 'safe' ? '상태 확인' : '사진 근거';
 }
 
-function renderStageTwoLoading(title, delay = 0) {
+function renderStageTwoLoading(title, delay = 0, state = null) {
   return `
     <article class="mini-card stage-two-risk-card is-loading" style="--stage-delay:${delay}ms">
       <div class="summary-loading summary-loading--skeleton">
@@ -751,6 +1355,7 @@ function renderStageTwoLoading(title, delay = 0) {
           <p class="stage-two-card-label">AI 분석 중</p>
           <h3>${escapeHtml(title)}</h3>
           <p class="mini-muted">제품 정보를 기반으로 구매 전 확인할 리스크를 정리합니다.</p>
+          ${renderAiLoadingProgress(state, 'productRisk')}
         </div>
         <div class="risk-loader">
           <span></span><span></span><span></span>
@@ -760,15 +1365,18 @@ function renderStageTwoLoading(title, delay = 0) {
   `;
 }
 
-function renderStageTwoLoadingCards() {
+function renderStageTwoLoadingCards(item) {
+  const state = item ? productRiskAnalyses.get(summaryKey(item)) : null;
   return ['관련 이슈 검색 중', '고질병 검색 중']
-    .map((title, idx) => renderStageTwoLoading(title, idx * 140))
+    .map((title, idx) => renderStageTwoLoading(title, idx * 140, state))
     .join('');
 }
 
 function stageTwoIssueIcon(kind, item) {
   const text = `${kind || ''} ${item?.title || ''} ${item?.detail || item?.desc || ''}`.toLowerCase();
   const rules = [
+    [/거래 전 확인|체크리스트|질문|요청|작동 확인|확대 사진|구성품 확인|보증 확인|락 해제|계정 해제/, 'checklist'],
+    [/시장 변수|가격 상승|가격 하락|시세|중고가|램값|ram|메모리|ssd|부품가|단종|재고|후속작|환율|as 종료|소모품 가격/, 'query_stats'],
     [/배송 중 파손|택배 파손|운송.*파손|포장.*파손|파손.*배송|완충.*부족/, 'package_2'],
     [/결합부|결합 부위|체결|나사산|유격|헐거움|조립|마감|공차|틈새/, 'construction'],
     [/상태 주관|상태.*주관|상태 판단|판매자.*주관|표현.*주관|컨디션/, 'fact_check'],
@@ -888,7 +1496,181 @@ function stageTwoIssueIcon(kind, item) {
   return kind === '고질병' ? 'handyman' : 'info';
 }
 
-function renderStageTwoRiskCard(kind, item, delay = 0) {
+function normalizeRiskSourceLinks(kind, item, productName = '') {
+  const isYoutubeUrl = (url) => {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      return host.includes('youtube.com') || host.includes('youtu.be');
+    } catch {
+      return false;
+    }
+  };
+  return (Array.isArray(item?.sources) ? item.sources : [])
+    .map((source) => {
+      const url = typeof source === 'string' ? source : source?.url;
+      const label = typeof source === 'string' ? '' : source?.label || source?.title || '';
+      const type = typeof source === 'string' ? '' : source?.type || '';
+      if (!/^https?:\/\//i.test(String(url || ''))) return null;
+      const youtube = isYoutubeUrl(String(url));
+      const normalizedType = String(type || 'article').toLowerCase();
+      if (youtube || normalizedType === 'video') return null;
+      return {
+        label: String(label || '근거 자료')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 46),
+        url: String(url),
+        type: normalizedType,
+        generated: false,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function youtubeVideoMeta(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase();
+    let id = '';
+    if (host.includes('youtu.be')) {
+      id = u.pathname.split('/').filter(Boolean)[0] || '';
+    } else if (host.includes('youtube.com') && u.pathname === '/watch') {
+      id = u.searchParams.get('v') || '';
+    } else if (host.includes('youtube.com')) {
+      const parts = u.pathname.split('/').filter(Boolean);
+      if ((parts[0] === 'shorts' || parts[0] === 'embed') && parts[1]) id = parts[1];
+    }
+    if (!id) return null;
+    return {
+      id,
+      thumbnailUrl: `https://i.ytimg.com/vi/${encodeURIComponent(id)}/hqdefault.jpg`,
+    };
+  } catch {
+    /* ignore invalid URLs */
+  }
+  return null;
+}
+
+function renderStageTwoRiskSources(kind, item, productName = '') {
+  return '';
+}
+
+function renderStageTwoRiskYoutube(item) {
+  const video = item?.youtubeReference;
+  const url = String(video?.url || '').trim();
+  const meta = youtubeVideoMeta(url);
+  if (!meta || !/^https?:\/\//i.test(url)) return '';
+  const title = String(video?.label || video?.title || '관련 YouTube 영상').replace(/\s+/g, ' ').trim();
+  return `
+    <a class="stage-two-risk-youtube" href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">
+      <span class="material-symbols-rounded" aria-hidden="true">play_circle</span>
+      <span>${escapeHtml(title || '관련 YouTube 영상')}</span>
+    </a>
+  `;
+}
+
+function normalizeStageTwoYoutubeVideos(analysis) {
+  const videos = (Array.isArray(analysis?.youtubeVideos) ? analysis.youtubeVideos : [])
+    .map((video) => {
+      const url = String(video?.url || '').trim();
+      const meta = youtubeVideoMeta(url);
+      if (!meta || !/^https?:\/\//i.test(url)) return null;
+      return {
+        id: meta.id,
+        url,
+        title: String(video?.title || '관련 YouTube 영상').replace(/\s+/g, ' ').trim().slice(0, 90),
+        thumbnailUrl: String(video?.thumbnailUrl || meta.thumbnailUrl || '').trim(),
+        summary: String(video?.summary || video?.buyerNote || video?.usedBuyerNote || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 180),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+  const summaryCounts = videos.reduce((acc, video) => {
+    const key = String(video.summary || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (key) acc.set(key, (acc.get(key) || 0) + 1);
+    return acc;
+  }, new Map());
+  const forcedCommentRe =
+    /확인해(?:야|보)|체크.*필요|상태를.*확인|구매.*전.*확인|관련.*살펴|참고.*하세요|도움이\s*될\s*수|신중히\s*확인/i;
+  return videos.map((video) => {
+    const summaryKey = String(video.summary || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const isDuplicate = summaryKey && summaryCounts.get(summaryKey) > 1;
+    const isForced = forcedCommentRe.test(video.summary) && !/[0-9A-Za-z가-힣]{2,}.*(불량|결함|고장|배터리|발열|소음|번인|파손|수리|교체|단종|업데이트|호환|내구|충전|전원|화면)/i.test(video.summary);
+    return {
+      ...video,
+      summary: isDuplicate || isForced ? '' : video.summary,
+    };
+  });
+}
+
+function renderStageTwoYoutubeCard(analysis) {
+  const videos = normalizeStageTwoYoutubeVideos(analysis);
+  if (!videos.length) return '';
+  const items = videos
+    .map(
+      (video) => `
+        <div class="stage-two-youtube-item">
+          <iframe
+            class="stage-two-youtube-embed"
+            src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(video.id)}"
+            title="${escapeAttr(video.title)}"
+            loading="lazy"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+          ></iframe>
+          <span class="stage-two-youtube-title">${escapeHtml(video.title)}</span>
+          ${video.summary ? `<div class="stage-two-youtube-insight"><p>${escapeHtml(video.summary)}</p></div>` : ''}
+          <a class="stage-two-youtube-open" href="${escapeAttr(video.url)}" target="_blank" rel="noopener noreferrer">
+            YouTube에서 열기
+            <span class="material-symbols-rounded" aria-hidden="true">open_in_new</span>
+          </a>
+        </div>`
+    )
+    .join('');
+  return `
+    <article class="mini-card stage-two-card stage-two-youtube-card" data-stage-two-youtube style="--stage-delay:720ms">
+      <div class="stage-two-card-head">
+        <p class="stage-two-card-label">YouTube 참고 영상</p>
+        <h3>관련 영상</h3>
+      </div>
+      <div class="stage-two-youtube-list">${items}</div>
+    </article>
+  `;
+}
+
+function renderStageTwoYoutubePanel(item, fallbackAnalysis = null) {
+  const key = summaryKey(item);
+  const state = key ? productRiskYoutubeAnalyses.get(key) : null;
+  if (state?.status === 'loading') {
+    return renderAnalysisLoadingCard(
+      'YouTube 참고 영상',
+      '구매 전에 참고할 만한 영상을 찾고 있습니다.',
+      'stage-two-youtube-card',
+      720,
+      state,
+      'productRiskYoutube'
+    ).replace('<article ', '<article data-stage-two-youtube ');
+  }
+  if (state?.status === 'error') {
+    return `
+      <article class="mini-card stage-two-card stage-two-youtube-card stage-two-card--error" data-stage-two-youtube>
+        <p class="stage-two-card-label">YouTube 참고 영상</p>
+        <h3>영상 참고자료를 불러오지 못했습니다.</h3>
+        <p>${escapeHtml(state.error || '나중에 다시 시도해 주세요.')}</p>
+      </article>
+    `;
+  }
+  if (state?.status === 'done') {
+    return renderStageTwoYoutubeCard(state.analysis || {});
+  }
+  return fallbackAnalysis?.youtubeVideos?.length ? renderStageTwoYoutubeCard(fallbackAnalysis) : '';
+}
+
+function renderStageTwoRiskCard(kind, item, delay = 0, productName = '') {
   const level = String(item?.level || 'caution').trim();
   const icon = stageTwoIssueIcon(kind, item);
   return `
@@ -897,20 +1679,27 @@ function renderStageTwoRiskCard(kind, item, delay = 0) {
         <p class="stage-two-card-label">${escapeHtml(kind)}</p>
         <h3>${escapeHtml(item?.title || '확인 필요')}</h3>
         <p>${escapeHtml(item?.detail || item?.desc || '구매 전 추가 확인이 필요합니다.')}</p>
+        ${renderStageTwoRiskSources(kind, item, productName)}
+        ${renderStageTwoRiskYoutube(item)}
       </div>
       <span class="material-symbols-rounded stage-two-risk-card__icon" aria-hidden="true">${escapeHtml(icon)}</span>
     </article>
   `;
 }
 
-function renderStageTwoRiskCards(analysis) {
+function renderStageTwoRiskCards(analysis, item) {
   const related = Array.isArray(analysis?.relatedIssues) ? analysis.relatedIssues : [];
   const defects = Array.isArray(analysis?.chronicDefects) ? analysis.chronicDefects : [];
+  const marketFactors = Array.isArray(analysis?.marketFactors) ? analysis.marketFactors : [];
   const verdict = String(analysis?.verdict || '').trim();
+  const productName = getProductSummaryState(item)?.summary?.productName || fallbackSearchQuery(item);
   const cards = [
-    ...related.slice(0, 3).map((item, idx) => renderStageTwoRiskCard('관련 이슈', item, idx * 130)),
+    ...related.slice(0, 3).map((riskItem, idx) => renderStageTwoRiskCard('관련 이슈', riskItem, idx * 130, productName)),
     ...defects.slice(0, 3).map((item, idx) =>
-      renderStageTwoRiskCard('고질병', item, (related.length + idx) * 130)
+      renderStageTwoRiskCard('고질병', item, (related.length + idx) * 130, productName)
+    ),
+    ...marketFactors.slice(0, 1).map((item, idx) =>
+      renderStageTwoRiskCard('시장 변수', item, (related.length + defects.length + idx) * 130, productName)
     ),
   ];
   if (cards.length) return cards.join('');
@@ -924,7 +1713,7 @@ function renderStageTwoRiskCards(analysis) {
   `;
 }
 
-function renderAnalysisLoadingCard(title, desc, className = '', delay = 0) {
+function renderAnalysisLoadingCard(title, desc, className = '', delay = 0, state = null, kind = 'listingText') {
   return `
     <article class="mini-card stage-two-card is-loading ${escapeAttr(className)}" style="--stage-delay:${delay}ms">
       <div class="summary-loading summary-loading--skeleton">
@@ -932,6 +1721,7 @@ function renderAnalysisLoadingCard(title, desc, className = '', delay = 0) {
           <p class="stage-two-card-label">AI 분석 중</p>
           <h3>${escapeHtml(title)}</h3>
           <p class="mini-muted">${escapeHtml(desc)}</p>
+          ${renderAiLoadingProgress(state, kind)}
         </div>
         <div class="risk-loader">
           <span></span><span></span><span></span>
@@ -949,7 +1739,9 @@ function renderListingTextAnalysisCard(item) {
       '판매자·본문 분석',
       '판매자 지표와 본문에서 상태·구성품·거래조건 누락을 확인합니다.',
       'stage-two-card--listing-text',
-      520
+      520,
+      state,
+      'listingText'
     ).replace('<article ', '<article data-listing-text-analysis ');
   }
   if (state?.status !== 'done' || state.source !== 'ai') return '';
@@ -980,7 +1772,14 @@ function renderListingImageAnalysisCard(item) {
   const key = summaryKey(item);
   const state = key ? listingImageAnalyses.get(key) : null;
   if (state?.status === 'loading') {
-    return renderAnalysisLoadingCard('판매자 이미지 분석', '매물 사진별 하자·구성품·상태를 확인합니다.', 'stage-two-card--image-analysis', 250).replace('<article ', '<article data-listing-image-analysis ');
+    return renderAnalysisLoadingCard(
+      '판매자 이미지 분석',
+      '매물 사진별 하자·구성품·상태를 확인합니다.',
+      'stage-two-card--image-analysis',
+      250,
+      state,
+      'listingImage'
+    ).replace('<article ', '<article data-listing-image-analysis ');
   }
   if (state?.status === 'error') {
     return `
@@ -1004,67 +1803,333 @@ function renderListingImageAnalysisCard(item) {
   `;
 }
 
+function renderListingImageGroupsCard(item) {
+  const key = summaryKey(item);
+  const state = key ? listingImageAnalyses.get(key) : null;
+  if (state?.status !== 'done' || !state?.analysis) return '';
+  const groupsHtml = renderImageAnalysisGroups(item);
+  if (!groupsHtml) return '';
+  return `
+    <article class="mini-card stage-two-card stage-two-card--image-groups" data-listing-image-groups style="--stage-delay:760ms">
+      <div class="stage-two-card-head">
+        <p class="stage-two-card-label">판매자 이미지 분류</p>
+        <h3>이미지 분류</h3>
+      </div>
+      ${groupsHtml}
+    </article>
+  `;
+}
+
+function directAiStepLabel(item) {
+  if (!item) return '매물 대기';
+  if (isStepFourDone(item)) return 'Step 4 최종 판단까지 반영';
+  if (isStepThreeDone(item)) return 'Step 3 가격 참고자료까지 반영';
+  if (isStepTwoDone(item)) return 'Step 2 리스크 판별까지 반영';
+  if (isStepOneDone(item)) return 'Step 1 제품 정리까지 반영';
+  return 'Step 1 매물 기본 정보만 반영';
+}
+
+function directAiContext(item = currentRenderedItem()) {
+  if (!item) return { stage: '매물 없음', listing: null };
+  const key = summaryKey(item);
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
+  const usedGuideState = stageComps ? resolvedUsedPriceGuideState(item, stageComps).state : null;
+  return {
+    stage: directAiStepLabel(item),
+    listing: {
+      platform: item.platformLabel || item.platform || '',
+      title: item.title || '',
+      priceLabel: item.priceLabel || '',
+      shippingFeeLabel: item.shippingFeeLabel || '',
+      body: String(item.body || '').slice(0, 1600),
+      seller: item.seller || null,
+      imageCount: Array.isArray(item.imageUrls) ? item.imageUrls.length : 0,
+    },
+    productSummary: productSummaries.get(key)?.status === 'done' ? productSummaries.get(key)?.summary || null : null,
+    productRisk: productRiskAnalyses.get(key)?.status === 'done' ? productRiskAnalyses.get(key)?.analysis || null : null,
+    youtube: productRiskYoutubeAnalyses.get(key)?.status === 'done' ? productRiskYoutubeAnalyses.get(key)?.analysis || null : null,
+    listingTextAnalysis: listingTextAnalyses.get(key)?.status === 'done' ? listingTextAnalyses.get(key)?.analysis || null : null,
+    listingImageAnalysis: listingImageAnalyses.get(key)?.status === 'done' ? listingImageAnalyses.get(key)?.analysis || null : null,
+    comparison:
+      stageComps && isCompsCollected(stageComps)
+        ? {
+            stats: compStats(filteredComparisonItems(item, stageComps) || comparisonFilterCandidates(item, stageComps, 12) || []),
+            sampleCount: comparisonItems(stageComps).length,
+            platforms: ['bunjang', 'daangn', 'joongna'].map((id) => ({
+              id,
+              count: Array.isArray(stageComps?.[id]?.items) ? stageComps[id].items.length : 0,
+              query: stageComps?.[id]?.query || '',
+            })),
+          }
+        : null,
+    usedPriceGuide: usedGuideState?.status === 'done' ? usedGuideState.guide || null : null,
+    purchaseReceipt: receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done' ? purchaseReceipts.get(receiptKey)?.receipt || null : null,
+  };
+}
+
+function resetDirectAiChat({ close = false } = {}) {
+  if (close) directAiChat.open = false;
+  directAiChat.status = 'idle';
+  directAiChat.messages = [];
+  directAiChat.keywordStatus = 'idle';
+  directAiChat.keywordItems = [];
+  directAiChat.keywordSignature = '';
+}
+
+function saveDirectAiChatState(key = selectedKey || (latest ? itemKey(latest) : '')) {
+  if (!key) return;
+  const cleaned = directAiChatStateToPersistable(directAiChat);
+  if (cleaned) directAiChatStates.set(key, cleaned);
+  else directAiChatStates.delete(key);
+  persistAiCaches();
+}
+
+function loadDirectAiChatState(key, { keepOpen = directAiChat.open } = {}) {
+  const cached = key ? directAiChatStates.get(key) : null;
+  const open = keepOpen;
+  resetDirectAiChat();
+  directAiChat.open = open;
+  if (cached) {
+    directAiChat.status = cached.status || 'idle';
+    directAiChat.messages = Array.isArray(cached.messages) ? cached.messages.map((msg) => ({ ...msg })) : [];
+    directAiChat.keywordStatus = cached.keywordStatus || 'idle';
+    directAiChat.keywordItems = Array.isArray(cached.keywordItems) ? [...cached.keywordItems] : [];
+    directAiChat.keywordSignature = cached.keywordSignature || '';
+  }
+}
+
+function directAiKeywordDigest(value) {
+  const text = String(value || '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  }
+  return String(hash);
+}
+
+function directAiKeywordStageSignature(item = currentRenderedItem()) {
+  if (!item) return 'empty';
+  const key = summaryKey(item);
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
+  const contextDigest = directAiKeywordDigest(JSON.stringify(directAiContext(item)).slice(0, 12000));
+  return [
+    key,
+    productSummaries.get(key)?.status || 'none',
+    productRiskAnalyses.get(key)?.status || 'none',
+    productRiskYoutubeAnalyses.get(key)?.status || 'none',
+    listingTextAnalyses.get(key)?.status || 'none',
+    listingImageAnalyses.get(key)?.status || 'none',
+    stageComps && isCompsCollected(stageComps) ? 'comps-done' : 'comps-none',
+    stageComps ? resolvedUsedPriceGuideState(item, stageComps).state?.status || 'guide-none' : 'guide-none',
+    receiptKey ? purchaseReceipts.get(receiptKey)?.status || 'receipt-none' : 'receipt-none',
+    contextDigest,
+  ].join('|');
+}
+
+function normalizeDirectAiKeyword(value) {
+  const clean = String(value || '')
+    .replace(/[()[\]{}"'“”‘’]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 32);
+  if (!clean || clean.length < 2) return '';
+  if (/^(중고|거래|판매|구매|가격|시세|매물|확인|상태|사진|구성품|안심결제|직거래|택배|배송|네고|판매자|구매자|하자|사용감|거래완료|추정 신품가|신품가|고질병)$/i.test(clean)) return '';
+  return clean;
+}
+
+function parseDirectAiKeywords(answer) {
+  const raw = String(answer || '').trim();
+  if (!raw) return [];
+  const parse = (text) => {
+    try {
+      const data = JSON.parse(text);
+      const list = Array.isArray(data) ? data : Array.isArray(data?.keywords) ? data.keywords : [];
+      return list.map(normalizeDirectAiKeyword).filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] || '';
+  const bracket = raw.match(/\[[\s\S]*\]/)?.[0] || raw.match(/\{[\s\S]*\}/)?.[0] || '';
+  const parsed = parse(fenced);
+  if (parsed.length) return parsed.slice(0, 3);
+  const parsedBracket = parse(bracket);
+  if (parsedBracket.length) return parsedBracket.slice(0, 3);
+  const parsedRaw = parse(raw);
+  if (parsedRaw.length) return parsedRaw.slice(0, 3);
+  return raw
+    .split(/\n|,|ㆍ|·/)
+    .map((line) => line.replace(/^\s*[-*\d.)]+\s*/, '').replace(/^"|"$/g, ''))
+    .map(normalizeDirectAiKeyword)
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function directAiKeywordPrompt(item = currentRenderedItem()) {
+  const context = directAiContext(item);
+  return [
+    '현재 중고 매물 분석 맥락을 보고, 사용자가 제품을 잘 모르면 생소할 수 있는 키워드만 1~3개 고르세요.',
+    '중고거래 일반 용어는 제외하세요. 예: 구성품, 직거래, 안심결제, 네고, 거래완료, 신품가, 하자, 시세는 제외.',
+    '제품/브랜드/제조사/캐릭터/시리즈/기기 구조/부품/펌웨어/플랫폼/장르 고유 용어만 고르세요.',
+    '이미 화면에 있는 기존 키워드는 되도록 다시 고르지 마세요.',
+    `기존 키워드: ${JSON.stringify(directAiChat.keywordItems || [])}`,
+    '반드시 JSON만 출력하세요. 형식: {"keywords":["키워드1","키워드2"]}',
+    '',
+    `현재 분석 맥락 JSON:\n${JSON.stringify(context, null, 2).slice(0, 10000)}`,
+  ].join('\n');
+}
+
+async function ensureDirectAiKeywords(item = currentRenderedItem()) {
+  if (!item || !directAiChat.open) return;
+  const requestKey = summaryKey(item);
+  const signature = directAiKeywordStageSignature(item);
+  if (directAiChat.keywordStatus === 'loading' || directAiChat.keywordSignature === signature) return;
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') return;
+  directAiChat.keywordStatus = 'loading';
+  directAiChat.keywordSignature = signature;
+  updateDirectAiSuggestions();
+  try {
+    const data = await globalThis.UlsaAi.askDirect({ prompt: directAiKeywordPrompt(item), apiKey });
+    if (selectedKey !== requestKey) return;
+    const next = parseDirectAiKeywords(data.answer || '');
+    const current = Array.isArray(directAiChat.keywordItems) ? directAiChat.keywordItems : [];
+    for (const keyword of next) {
+      if (!current.some((x) => x.toLowerCase() === keyword.toLowerCase())) current.push(keyword);
+    }
+    directAiChat.keywordItems = current.slice(-12);
+    directAiChat.keywordStatus = 'done';
+  } catch {
+    if (selectedKey !== requestKey) return;
+    directAiChat.keywordStatus = 'error';
+  }
+  saveDirectAiChatState(requestKey);
+  updateDirectAiSuggestions();
+}
+
+function directAiPrompt(question, item = currentRenderedItem()) {
+  const context = directAiContext(item);
+  return [
+    '너는 중고 매물 분석 도우미 챗봇입니다.',
+    '중고거래 일반 용어는 웬만하면 설명하지 말고, 제품/브랜드/장르/기기 구조/펌웨어/부품/캐릭터/제조사처럼 해당 제품을 모르면 생소할 수 있는 정보만 중심으로 설명하세요.',
+    '현재 완료된 단계까지만 확정적으로 말하고, 아직 나오지 않은 분석은 추측하지 마세요.',
+    '답변은 한국어 일반 텍스트로 짧고 친절하게 작성하세요. 용어가 무엇인지 먼저 설명하고, 중고로 살 때 확인할 점이 있으면 1~2문장으로만 덧붙이세요.',
+    '',
+    `현재 분석 맥락 JSON:\n${JSON.stringify(context, null, 2).slice(0, 12000)}`,
+    '',
+    `사용자 질문: ${question}`,
+  ].join('\n');
+}
+
+function renderDirectAiSuggestionsHtml() {
+  const chips = Array.isArray(directAiChat.keywordItems) ? directAiChat.keywordItems : [];
+  if (chips.length) {
+    return chips.map((chip) => `<button type="button" data-direct-chat-keyword="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`).join('');
+  }
+  return `<p>${directAiChat.keywordStatus === 'loading' ? 'AI가 제품 관련 키워드를 고르는 중...' : '도우미를 열면 AI가 제품 관련 키워드를 골라줍니다.'}</p>`;
+}
+
+function bindDirectAiKeywordButtons(root = $directAiPanel) {
+  root?.querySelectorAll('[data-direct-chat-keyword]').forEach((btn) => {
+    if (btn.dataset.directChatKeywordBound === '1') return;
+    btn.dataset.directChatKeywordBound = '1';
+    btn.addEventListener('click', () => {
+      const keyword = btn.getAttribute('data-direct-chat-keyword') || '';
+      const form = $directAiPanel.querySelector('.direct-chat-form');
+      const textarea = form?.querySelector('textarea[name="prompt"]');
+      if (textarea) textarea.value = directAiKeywordQuestion(keyword);
+      form?.requestSubmit?.();
+    });
+  });
+}
+
+function updateDirectAiSuggestions() {
+  const suggestions = $directAiPanel?.querySelector('.direct-chat-suggestions');
+  if (!suggestions) return;
+  suggestions.innerHTML = renderDirectAiSuggestionsHtml();
+  bindDirectAiKeywordButtons(suggestions);
+}
+
 function renderDirectAiPanel() {
   if (!$directAiPanel) return;
   const messages = Array.isArray(directAiChat.messages) ? directAiChat.messages : [];
-  const productName = latest ? stepTwoProductName(latest) : '스팀덱 OLED 512GB';
-  const defaultPrompt = `${productName} 중고매물을 사려는데 고질병이나 관련 이슈를 알려줘.`;
+  const item = currentRenderedItem();
+  const productName = item ? stepTwoProductName(item) : '이 매물';
+  const defaultPrompt = `${productName}에서 궁금한 용어나 구매 판단 포인트를 물어보세요.`;
   const rows = messages.length
     ? messages
         .map(
           (msg) => `
             <div class="direct-chat-msg direct-chat-msg--${escapeAttr(msg.role || 'ai')}">
-              <span>${msg.role === 'user' ? '나' : 'AI'}</span>
+              <span>${msg.role === 'user' ? '나' : '도우미'}</span>
               <p>${escapeHtml(msg.text || '')}</p>
             </div>
           `
         )
         .join('')
-    : `<p class="direct-chat-empty">여기에 직접 물어보면 입력한 문장 그대로 Gemini에 보냅니다.</p>`;
+    : `<div class="direct-chat-empty">
+        <strong>분석 내용을 보면서 바로 설명해드릴게요.</strong>
+        <p>${escapeHtml(directAiStepLabel(item))} 상태입니다. 생소한 키워드를 누르거나 직접 질문해보세요.</p>
+      </div>`;
+  const loadingRow =
+    directAiChat.status === 'loading'
+      ? `<div class="direct-chat-msg direct-chat-msg--ai direct-chat-msg--loading"><span>도우미</span><p>분석 맥락을 읽고 답변 중...</p></div>`
+      : '';
   $directAiPanel.hidden = !directAiChat.open;
   $directAiPanel.setAttribute('aria-hidden', directAiChat.open ? 'false' : 'true');
+  $btnDirectAi?.setAttribute('aria-expanded', directAiChat.open ? 'true' : 'false');
+  $btnDirectAi?.classList.toggle('is-active', directAiChat.open);
   $directAiPanel.innerHTML = `
     <article class="direct-chat-card">
       <div class="direct-chat-head">
         <div>
-          <p class="stage-two-card-label">직접 대화</p>
-          <h3>AI 모델에게 그대로 물어보기</h3>
+          <p class="stage-two-card-label">분석 도우미</p>
+          <h3>모르는 용어를 쉽게 풀어드려요</h3>
+          <span data-direct-chat-stage>${escapeHtml(directAiStepLabel(item))}</span>
         </div>
         <div class="direct-chat-actions">
           <button type="button" class="chip-btn direct-chat-clear">지우기</button>
-          <button type="button" class="chip-btn direct-chat-close">닫기</button>
+          <button type="button" class="chip-btn direct-chat-close" aria-label="도우미 닫기">×</button>
         </div>
       </div>
-      <div class="direct-chat-log">${rows}</div>
+      <div class="direct-chat-suggestions" aria-label="추천 질문">
+        ${renderDirectAiSuggestionsHtml()}
+      </div>
+      <div class="direct-chat-log">${rows}${loadingRow}</div>
       <form class="direct-chat-form">
-        <textarea name="prompt" rows="3" placeholder="${escapeAttr(defaultPrompt)}"${directAiChat.status === 'loading' ? ' disabled' : ''}></textarea>
-        <button type="submit" class="btn btn-small"${directAiChat.status === 'loading' ? ' disabled' : ''}>${directAiChat.status === 'loading' ? '질문 중...' : '보내기'}</button>
+        <textarea name="prompt" rows="2" placeholder="${escapeAttr(defaultPrompt)}"${directAiChat.status === 'loading' ? ' disabled' : ''}></textarea>
+        <button type="submit" class="btn btn-small"${directAiChat.status === 'loading' ? ' disabled' : ''}>${directAiChat.status === 'loading' ? '...' : '질문'}</button>
       </form>
     </article>
   `;
-  requestAnimationFrame(positionDirectAiPanel);
+  requestAnimationFrame(() => {
+    positionDirectAiPanel();
+    const log = $directAiPanel.querySelector('.direct-chat-log');
+    if (log) log.scrollTop = log.scrollHeight;
+  });
   bindDirectAiChat();
 }
 
 function positionDirectAiPanel() {
   if (!$directAiPanel || $directAiPanel.hidden) return;
-  const trigger = document.querySelector('[data-rail-action="direct-ai"]');
-  if (!trigger) return;
-  const rect = trigger.getBoundingClientRect();
-  const panelRect = $directAiPanel.getBoundingClientRect();
-  const gap = 14;
-  const isBottomRail = window.matchMedia('(max-width: 1080px)').matches;
-  if (isBottomRail) {
-    const left = Math.max(12, Math.min(window.innerWidth - panelRect.width - 12, rect.left + rect.width / 2 - panelRect.width / 2));
-    const top = Math.max(12, rect.top - panelRect.height - gap);
-    $directAiPanel.style.left = `${left}px`;
-    $directAiPanel.style.top = `${top}px`;
-    return;
-  }
-  const left = Math.min(window.innerWidth - panelRect.width - 14, rect.right + gap);
-  const top = Math.max(14, Math.min(window.innerHeight - panelRect.height - 14, rect.top - 8));
-  $directAiPanel.style.left = `${left}px`;
-  $directAiPanel.style.top = `${top}px`;
+  $directAiPanel.style.left = '';
+  $directAiPanel.style.top = '';
+}
+
+function refreshDirectAiPanelIfOpen() {
+  if (!directAiChat.open) return;
+  const stage = $directAiPanel?.querySelector('[data-direct-chat-stage]');
+  if (stage) stage.textContent = directAiStepLabel(currentRenderedItem());
+  updateDirectAiSuggestions();
+  void ensureDirectAiKeywords();
+}
+
+function refreshDirectAiPanelForListingChange() {
+  if (!directAiChat.open) return;
+  renderDirectAiPanel();
+  void ensureDirectAiKeywords();
 }
 
 function stripChatMarkdown(text) {
@@ -1090,6 +2155,8 @@ function defaultSellerChatState() {
     status: 'idle',
     messages: [],
     lastSuggestion: null,
+    lastRequestMessage: '',
+    lastRequestWasSellerReply: false,
     error: '',
   };
 }
@@ -1165,14 +2232,18 @@ function sellerChatContext(item, comps) {
   };
 }
 
-function sellerChatQuickChips(mode, response = null) {
+function sellerChatQuickChips(mode, response = null, messages = []) {
   const responseChips = Array.isArray(response?.quickReplies)
     ? response.quickReplies.filter(Boolean).slice(0, 4)
     : [];
   if (responseChips.length) return responseChips;
-  return mode === 'reply'
+  const defaults = mode === 'reply'
     ? ['구성품 한 번만 더 확인할게요', '하자 부분 사진 부탁드려요', '가격 조금 조정 가능할까요?', '직거래도 가능할까요?']
     : ['인사하고 상태부터 확인', '구성품 확인', '하자 여부 질문', '가격 조정 가능 여부'];
+  const sentTexts = (Array.isArray(messages) ? messages : [])
+    .filter((msg) => msg?.role === 'me')
+    .map((msg) => msg.text || '');
+  return defaults.filter((chip) => !sellerChatIsDuplicateText(chip, sentTexts)).slice(0, 4);
 }
 
 function sellerChatSuggestionTexts(response) {
@@ -1215,8 +2286,91 @@ function sellerChatHasNegotiation(text) {
   return /네고|가격\s*조정|조정\s*가능|협상|할인|깎|낮춰/.test(String(text || ''));
 }
 
-function enforceSellerChatNegotiation(response, context) {
+function normalizeSellerChatTextForCompare(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sellerChatKeywordSet(text) {
+  const stop = new Set(['안녕하세요', '혹시', '문의', '드립니다', '가능할까요', '확인', '부탁드립니다', '구매', '하고', '싶습니다']);
+  return new Set(
+    normalizeSellerChatTextForCompare(text)
+      .split(' ')
+      .filter((word) => word.length >= 2 && !stop.has(word))
+  );
+}
+
+function sellerChatIntentSet(text) {
+  const raw = String(text || '');
+  const intents = new Set();
+  if (/안녕|연락|관심|구매하고|구매 의향/.test(raw)) intents.add('greeting');
+  if (/구성품|동글|케이블|박스|충전기|부속|포함/.test(raw)) intents.add('components');
+  if (/하자|흠집|스크래치|기스|찍힘|오염|파손|상태/.test(raw)) intents.add('condition');
+  if (/가격|네고|조정|할인|깎|만원|원에|원으로/.test(raw)) intents.add('price');
+  if (/영수증|구매\s*영수증|인증|거래내역|구매내역/.test(raw)) intents.add('receipt');
+  if (/직거래|택배|배송|거래\s*장소|어디서/.test(raw)) intents.add('delivery');
+  return intents;
+}
+
+function sellerChatIsDuplicateText(candidate, sentTexts) {
+  const normalized = normalizeSellerChatTextForCompare(candidate);
+  if (!normalized) return true;
+  const candidateKeywords = sellerChatKeywordSet(candidate);
+  const candidateIntents = sellerChatIntentSet(candidate);
+  for (const sent of sentTexts) {
+    const sentNormalized = normalizeSellerChatTextForCompare(sent);
+    if (!sentNormalized) continue;
+    if (normalized === sentNormalized) return true;
+    if (normalized.includes(sentNormalized) || sentNormalized.includes(normalized)) return true;
+    const sentIntents = sellerChatIntentSet(sent);
+    const overlappingIntents = [...candidateIntents].filter((intent) => sentIntents.has(intent));
+    if (overlappingIntents.length >= 2) return true;
+    const sentKeywords = sellerChatKeywordSet(sent);
+    const overlap = [...candidateKeywords].filter((word) => sentKeywords.has(word)).length;
+    const denominator = Math.max(1, Math.min(candidateKeywords.size, sentKeywords.size));
+    if (candidateKeywords.size >= 4 && sentKeywords.size >= 4 && overlap / denominator >= 0.62) return true;
+  }
+  return false;
+}
+
+function filterSellerChatDuplicateSuggestions(response, messages = []) {
+  const sentTexts = (Array.isArray(messages) ? messages : [])
+    .filter((msg) => msg?.role === 'me')
+    .map((msg) => String(msg.text || '').trim())
+    .filter(Boolean);
+  if (!sentTexts.length) return response;
+  const seen = new Set();
+  const keepUnique = (items, limit) =>
+    (Array.isArray(items) ? items : [])
+      .map((item) => String(item || '').trim())
+      .filter((item) => {
+        const key = normalizeSellerChatTextForCompare(item);
+        if (!key || seen.has(key)) return false;
+        if (sellerChatIsDuplicateText(item, sentTexts)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, limit);
+  const candidates = keepUnique([response.primary, ...(Array.isArray(response.alternatives) ? response.alternatives : [])], 6);
+  return {
+    ...response,
+    primary: candidates[0] || '',
+    alternatives: candidates.slice(1, 5),
+    followUps: keepUnique(response.followUps, 3),
+    quickReplies: keepUnique(response.quickReplies, 4),
+  };
+}
+
+function enforceSellerChatNegotiation(response, context, messages = [], requestText = '') {
   if (!sellerChatNeedsNegotiation(context)) return response;
+  if (String(requestText || '').trim()) return response;
+  const sentTexts = (Array.isArray(messages) ? messages : [])
+    .filter((msg) => msg?.role === 'me')
+    .map((msg) => msg.text || '');
+  if (sentTexts.some(sellerChatHasNegotiation)) return response;
   const negotiation = sellerChatNegotiationSentence(context);
   const primary = String(response.primary || '').trim();
   const alternatives = Array.isArray(response.alternatives) ? response.alternatives.filter(Boolean) : [];
@@ -1238,6 +2392,14 @@ function sellerChatHistoryPayload(messages = []) {
       text: String(msg?.text || '').trim(),
     }))
     .filter((msg) => msg.text);
+}
+
+function copyIconSvg() {
+  return `
+    <svg class="seller-chat__copy-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M8 7.5C8 6.67 8.67 6 9.5 6h8c.83 0 1.5.67 1.5 1.5v10c0 .83-.67 1.5-1.5 1.5h-8c-.83 0-1.5-.67-1.5-1.5v-10Z" />
+      <path d="M5 15.5v-9C5 5.12 6.12 4 7.5 4h7" />
+    </svg>`;
 }
 
 function renderSellerChatMessage(msg, index = -1) {
@@ -1262,7 +2424,7 @@ function renderSellerChatMessage(msg, index = -1) {
     : '';
   const copyButton =
     (role === 'assistant' || role === 'me') && msg?.text
-      ? `<button type="button" class="seller-chat__copy seller-chat__copy--icon" data-seller-chat-copy="${escapeAttr(msg.text)}" aria-label="메시지 복사" title="복사"><span class="material-symbols-rounded" aria-hidden="true">content_copy</span></button>`
+      ? `<button type="button" class="seller-chat__copy seller-chat__copy--icon" data-seller-chat-copy="${escapeAttr(msg.text)}" aria-label="메시지 복사" title="복사">${copyIconSvg()}</button>`
       : '';
   const deleteButton =
     index >= 0 && (role === 'me' || role === 'seller')
@@ -1322,6 +2484,7 @@ function renderSellerChatSuggestions(state) {
         <div class="seller-chat__suggestions-head">
           <strong>문구 생성 중...</strong>
           <span>가격·리스크 근거를 반영하고 있습니다.</span>
+          ${renderAiLoadingProgress(state, 'sellerChat')}
         </div>
         <div class="seller-chat__suggestion-card seller-chat__suggestion-card--skeleton">
           <span class="seller-chat__skeleton-line seller-chat__skeleton-line--short"></span>
@@ -1341,8 +2504,11 @@ function renderSellerChatSuggestions(state) {
   return `
     <div class="seller-chat__suggestions">
       <div class="seller-chat__suggestions-head">
-        <strong>선택 가능한 메시지 후보</strong>
-        <span>거래를 이어갈 때만 골라 보내세요.</span>
+        <div>
+          <strong>선택 가능한 메시지 후보</strong>
+          <span>거래를 이어갈 때만 골라 보내세요.</span>
+        </div>
+        <button type="button" class="seller-chat__regen" data-seller-chat-regenerate ${state.status === 'loading' ? 'disabled' : ''}>다시 만들기</button>
       </div>
       ${suggestions
         .map(
@@ -1352,7 +2518,7 @@ function renderSellerChatSuggestions(state) {
               <strong>${escapeHtml(text)}</strong>
               <span class="seller-chat__suggestion-actions">
                 <small>클릭하면 바로 보낸 메시지로 추가</small>
-                <button type="button" class="seller-chat__copy seller-chat__copy--icon" data-seller-chat-copy="${escapeAttr(text)}" aria-label="추천 문구 복사" title="복사"><span class="material-symbols-rounded" aria-hidden="true">content_copy</span></button>
+                <button type="button" class="seller-chat__copy seller-chat__copy--icon" data-seller-chat-copy="${escapeAttr(text)}" aria-label="추천 문구 복사" title="복사">${copyIconSvg()}</button>
               </span>
             </div>
           `
@@ -1363,7 +2529,7 @@ function renderSellerChatSuggestions(state) {
 }
 
 function renderSellerChatChips(state) {
-  const quickChips = sellerChatQuickChips(state?.mode || 'first', state?.lastSuggestion || null);
+  const quickChips = sellerChatQuickChips(state?.mode || 'first', state?.lastSuggestion || null, state?.messages || []);
   return quickChips
     .map((chip) => `<button type="button" class="seller-chat__chip" data-seller-chat-chip="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`)
     .join('');
@@ -1387,6 +2553,25 @@ function renderSellerChatMeta(item) {
         </div>
       </div>
       ${item?.pageUrl ? `<a class="seller-chat__listing-link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>` : ''}
+    </div>
+  `;
+}
+
+function renderSellerChatChecklist(item) {
+  const riskAnalysis = productRiskAnalyses.get(summaryKey(item))?.analysis || null;
+  const checklist = Array.isArray(riskAnalysis?.purchaseChecklist) ? riskAnalysis.purchaseChecklist : [];
+  const items = checklist
+    .map((entry) => String(entry?.title || entry?.detail || entry?.desc || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!items.length) return '';
+  return `
+    <div class="seller-chat__checklist" aria-label="거래 전 확인">
+      <span class="material-symbols-rounded" aria-hidden="true">checklist</span>
+      <strong>거래 전 확인</strong>
+      <div>
+        ${items.map((text) => `<span>${escapeHtml(text)}</span>`).join('')}
+      </div>
     </div>
   `;
 }
@@ -1498,6 +2683,7 @@ function renderSellerChatPanel(item, comps) {
               <button type="button" class="seller-chat__reset-icon" data-seller-chat-reset aria-label="대화 초기화">↺</button>
             </header>
             ${renderSellerChatMeta(item)}
+            ${renderSellerChatChecklist(item)}
             <div class="seller-chat__toolbar">
               <div class="seller-chat__tone-row">
                 ${sellerChatToneOptions
@@ -1640,7 +2826,7 @@ function renderStageTwoSection(item) {
 
   const followupHtml =
     isActive && riskState?.status === 'done'
-      ? `${renderListingTextAnalysisCard(item)}${renderListingImageAnalysisCard(item)}`
+      ? `${renderListingTextAnalysisCard(item)}${renderListingImageAnalysisCard(item)}${renderListingImageGroupsCard(item)}`
       : '';
   return `
     <section class="stage-two-panel stage-zone stage-two-zone is-active" data-stage-panel data-stage-two-panel>
@@ -1669,8 +2855,8 @@ function renderStageTwoSection(item) {
                   <button type="button" class="chip-btn stage-two-start-btn" data-stage-two-start="${escapeAttr(key)}">다시 분석</button>
                 </article>`
             : riskState?.status === 'done'
-              ? renderStageTwoRiskCards(analysis)
-              : renderStageTwoLoadingCards()
+              ? `${renderStageTwoRiskCards(analysis, item)}${renderStageTwoYoutubePanel(item, analysis)}`
+              : renderStageTwoLoadingCards(item)
         }
         ${followupHtml}
       </div>
@@ -1760,7 +2946,13 @@ function renderStageThreeSearchCard(item, comps) {
           ? `<p class="meta empty">검색어 재생성 실패: ${escapeHtml(queryState.error || '다시 시도해 주세요.')}</p>`
           : ''
       }
-      <div class="stage-three-comps">${queryState?.status === 'loading' ? renderCompsLoading('AI가 검색어를 다시 만들고 있습니다...') : renderCompsBlock(item, comps)}</div>
+      <div class="stage-three-comps">
+        ${
+          queryState?.status === 'loading'
+            ? renderCompsLoading('AI가 검색어를 다시 만들고 있습니다...', queryState, 'searchQuery')
+            : renderCompsBlock(item, comps)
+        }
+      </div>
     </article>
   `;
 }
@@ -1775,7 +2967,10 @@ function stageThreeSearchQueries(item) {
 function activeCompsForItem(item, rawComps) {
   if (!item || !rawComps?.forItemKey) return null;
   if (rawComps.forItemKey !== itemKey(item)) return null;
-  return rawComps.bunjang || rawComps.daangn || rawComps.joongna ? rawComps : null;
+  if (rawComps.status === 'collected') return rawComps;
+  if (rawComps.bunjang || rawComps.daangn || rawComps.joongna) return rawComps;
+  if (rawComps.status === 'collecting') return rawComps;
+  return null;
 }
 
 function renderProductSummaryBlock(item) {
@@ -1792,6 +2987,7 @@ function renderProductSummaryBlock(item) {
           <div class="ai-loading-copy">
             <p class="mini-value">AI가 제품 정보를 정리하는 중...</p>
             <p class="mini-muted">${escapeHtml(loadingHint)}</p>
+            ${renderAiLoadingProgress(state, 'productSummary')}
           </div>
           <div class="risk-loader">
             <span></span><span></span><span></span>
@@ -1832,7 +3028,7 @@ function renderProductSummaryBlock(item) {
             <h2 class="hover-full" title="${escapeAttr(summary?.productName || '제품 정리 대기')}">${escapeHtml(summary?.productName || '제품 정리 대기')}</h2>
             ${
               summary?.newPrice
-                ? `<p class="mini-value">AI 추정 신품가 참고: ${escapeHtml(summary.newPrice)}${
+                ? `<p class="mini-value">추정 신품가: ${escapeHtml(summary.newPrice)}${
                     danawaUrl ? ` <a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''
                   }</p>`
                 : ''
@@ -1940,7 +3136,8 @@ function comparisonThumbnailSignature(comps) {
 
 function comparisonFilterKey(item, comps) {
   const key = summaryKey(item);
-  if (!key || !comps || !isCompsCollected(comps)) return '';
+  if (!key || !comps) return '';
+  if (!isCompsCollected(comps)) return `${key}::collecting`;
   const signature = comparisonSignature(comps);
   return signature ? `${key}::${signature}` : `${key}::collected::empty`;
 }
@@ -1949,20 +3146,42 @@ function stageThreeCompsRenderKey(item, nextComps) {
   const key = summaryKey(item);
   if (!key) return '';
   if (!nextComps) return `${key}::empty`;
-  if (!isCompsCollected(nextComps)) return `${key}::collecting`;
+  if (!isCompsCollected(nextComps)) {
+    return `${key}::collecting::${comparisonSignature(nextComps)}::thumbs::${comparisonThumbnailSignature(nextComps)}`;
+  }
   return `${key}::collected::${comparisonSignature(nextComps)}::thumbs::${comparisonThumbnailSignature(nextComps)}`;
 }
 
-function isCompsCollected(comps) {
-  return comps?.status === 'collected';
+function stageThreeSectionRenderKey(item, nextComps) {
+  const key = summaryKey(item);
+  if (!key) return '';
+  const stageComps = effectiveStageThreeComps(item, nextComps);
+  const comparison = resolvedComparisonFilterState(item, stageComps);
+  const guide = resolvedUsedPriceGuideState(item, stageComps);
+  return [
+    stageThreeCompsRenderKey(item, stageComps),
+    stageThreeActiveKeys.has(key) ? 'active' : 'idle',
+    stageThreeComparisonSkippedKeys.has(key) ? 'skipped' : 'normal',
+    isStageThreeCollectionFinalizing(key) ? 'finalizing' : 'steady',
+    searchQueryRegenerations.get(key)?.status || 'query-none',
+    comparison.filterKey || 'filter-none',
+    comparison.state?.status || 'filter-none',
+    guide.key || 'guide-none',
+    guide.state?.status || 'guide-none',
+  ].join('|');
 }
 
-function renderCompsLoading(message) {
+function isCompsCollected(comps) {
+  return comps?.status === 'collected' || isCompsCollectionTimedOut(comps);
+}
+
+function renderCompsLoading(message, state = null, kind = 'comparisonFilter') {
   return `
     <div class="summary-loading summary-loading--skeleton comparison-loading">
       <div class="ai-loading-copy">
         <p class="mini-value">${escapeHtml(message)}</p>
         <p class="mini-muted">완료되면 일치하는 매물만 한 번에 표시합니다.</p>
+        ${renderAiLoadingProgress(state, kind)}
       </div>
       <div class="risk-loader"><span></span><span></span><span></span></div>
     </div>
@@ -1971,8 +3190,7 @@ function renderCompsLoading(message) {
 
 function filteredComparisonItems(item, comps) {
   const all = comparisonItems(comps);
-  const filterKey = comparisonFilterKey(item, comps);
-  const state = filterKey ? comparisonFilters.get(filterKey) : null;
+  const { state } = resolvedComparisonFilterState(item, comps);
   if (state?.status !== 'done') return null;
   const accepted = new Set((state.matches || []).map((match) => String(match.key || '').trim()).filter(Boolean));
   const matched = all.filter((candidate) => accepted.has(comparisonItemKey(candidate)));
@@ -2058,11 +3276,10 @@ function receiptVerdictLabel(verdict) {
 
 function renderPurchaseReceiptBlock(item, comps) {
   if (!item || !comps || !isCompsCollected(comps)) return '';
-  const filterKey = comparisonFilterKey(item, comps);
-  const filterState = filterKey ? comparisonFilters.get(filterKey) : null;
-  if (filterState?.status !== 'done' && filterState?.status !== 'error') return '';
-  const guideState = filterKey ? usedPriceGuides.get(filterKey) : null;
-  if (guideState?.status !== 'done' && guideState?.status !== 'error') return '';
+  const { state: filterState } = resolvedComparisonFilterState(item, comps);
+  if (!isStageThreeCacheSettled(filterState?.status)) return '';
+  const { state: guideState } = resolvedUsedPriceGuideState(item, comps);
+  if (!isStageThreeCacheSettled(guideState?.status)) return '';
   const key = purchaseReceiptKey(item, comps);
   const state = key ? purchaseReceipts.get(key) : null;
   if (state?.status === 'loading') {
@@ -2070,6 +3287,7 @@ function renderPurchaseReceiptBlock(item, comps) {
       <article class="mini-card stage-three-card purchase-receipt-card is-loading">
         <p class="stage-two-card-label">최종 판단 영수증</p>
         <h4>Step 1 · Step 2 · Step 3을 종합해 최종 결론을 만드는 중입니다...</h4>
+        ${renderAiLoadingProgress(state, 'purchaseReceipt')}
         <div class="risk-loader"><span></span><span></span><span></span></div>
       </article>
     `;
@@ -2159,6 +3377,8 @@ function renderPurchaseReceiptBlock(item, comps) {
 function renderStageFourSection(item, comps) {
   if (!item || !isStepThreeDone(item)) return '';
   const stageComps = effectiveStageThreeComps(item, comps);
+  const receiptHtml = renderPurchaseReceiptBlock(item, stageComps);
+  if (!receiptHtml.trim()) return '';
   return `
     <section class="stage-four-panel stage-zone stage-four-zone is-active" data-stage-panel data-stage-four-panel>
       <aside class="stage-zone-label">
@@ -2166,7 +3386,7 @@ function renderStageFourSection(item, comps) {
         <span>최종 결론</span>
       </aside>
       <div class="stage-zone-grid stage-four-zone-grid">
-        ${renderPurchaseReceiptBlock(item, stageComps)}
+        ${receiptHtml}
       </div>
     </section>
   `;
@@ -2199,21 +3419,47 @@ function renderCompsBlock(item, comps) {
   if (key && stageThreeComparisonSkippedKeys.has(key)) {
     return `<p class="stage-three-status-pill">비교 매물 스킵됨</p>`;
   }
+  if (key && isStageThreeCollectionFinalizing(key)) {
+    return renderCompsLoading(
+      '자동 매물검색 결과를 정리하고 있습니다...',
+      stageThreeSearchProgressState(item, 'complete'),
+      'searchQuery'
+    );
+  }
   if (!comps || !isCompsCollected(comps)) {
-    return renderCompsLoading('번개·당근·중고나라 검색 결과를 수집 중입니다...');
+    if (comps?.status === 'collecting') {
+      scheduleStageThreeCollectionTimeoutRefresh(item, comps);
+      return renderCompsLoading(
+        '번개·당근·중고나라 검색 결과를 수집 중입니다...',
+        stageThreeSearchProgressState(item, 'collecting', { startedAt: comps?.startedAt || Date.now() }),
+        'searchQuery'
+      );
+    }
+    if (key && hasSettledStageThreeCache(key)) return renderStageThreeRestoredSearchState(item);
+    if (key && stageThreeActiveKeys.has(key)) return renderStageThreeInterruptedSearch(key);
+    return renderStageThreeInterruptedSearch(key);
   }
   const all = comparisonItems(comps);
   if (!all.length) {
+    if (key && hasSettledStageThreeCache(key)) return renderStageThreeRestoredSearchState(item);
     if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
-      return renderCompsLoading('AI가 검색어를 다시 조정 중입니다...');
+      return renderCompsLoading('AI가 검색어를 다시 조정 중입니다...', searchQueryRegenerations.get(key), 'searchQuery');
     }
-    return `<p class="meta empty">자동 검색어 조정 후에도 관련 매물을 충분히 찾지 못했습니다.</p>`;
+    return renderStageThreeEmptySearch(key);
   }
-  const filterKey = comparisonFilterKey(item, comps);
-  const filterState = filterKey ? comparisonFilters.get(filterKey) : null;
+  const { filterKey, state: filterState } = resolvedComparisonFilterState(item, comps);
+  const currentFilterKey = comparisonFilterKey(item, comps);
+  const currentFilterState = currentFilterKey ? comparisonFilters.get(currentFilterKey) : null;
   const allMatched = filteredComparisonItems(item, comps) || [];
+  if (
+    (!filterState || filterState.status === 'loading') &&
+    currentFilterState?.status === 'loading' &&
+    currentFilterKey !== filterKey
+  ) {
+    return renderCompsLoading('수집한 매물을 AI가 같은 제품인지 판별 중입니다...', stageThreeSearchProgressState(item, 'identifying'), 'comparisonFilter');
+  }
   if (!filterState || filterState.status === 'loading') {
-    return renderCompsLoading('AI가 같은 제품인지 판별 중입니다...');
+    return renderCompsLoading('수집한 매물을 AI가 같은 제품인지 판별 중입니다...', stageThreeSearchProgressState(item, 'identifying'), 'comparisonFilter');
   }
   if (filterState.status === 'error') {
     return `<p class="meta empty">동일 제품 판별에 실패했습니다.</p>`;
@@ -2221,9 +3467,9 @@ function renderCompsBlock(item, comps) {
   if (!allMatched.length) {
     const key = summaryKey(item);
     if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
-      return renderCompsLoading('AI가 더 맞는 검색어를 다시 생각하고 있습니다...');
+      return renderCompsLoading('AI가 더 맞는 검색어를 다시 생각하고 있습니다...', searchQueryRegenerations.get(key), 'searchQuery');
     }
-    return `<p class="meta empty">자동 검색어 조정 후에도 같은 제품으로 볼 만한 매물을 찾지 못했습니다.</p>`;
+    return renderStageThreeEmptySearch(key);
   }
   const st = compStats(allMatched);
   const statsTxt = st
@@ -2245,17 +3491,86 @@ function renderCompsBlock(item, comps) {
   `;
 }
 
+function renderStageThreeEmptySearch(key = '') {
+  return `
+    <div class="stage-three-empty-search">
+      <p class="stage-three-empty-search__text">매물을 찾지 못했습니다.</p>
+      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}">
+        다시 검색
+      </button>
+    </div>
+  `;
+}
+
+function renderStageThreeRestoredSearchState(item) {
+  const key = summaryKey(item);
+  const stageComps = emptyComparisonComps(item);
+  const { state: filterState } = resolvedComparisonFilterState(item, stageComps);
+  if (filterState?.skipped) {
+    return `<p class="stage-three-status-pill">비교 매물 스킵됨</p>`;
+  }
+  const matchCount = Array.isArray(filterState?.matches) ? filterState.matches.length : 0;
+  const summary =
+    matchCount > 0
+      ? `저장된 비교 결과 ${matchCount}건`
+      : '저장된 Step 3 결과';
+  return `
+    <div class="stage-three-restored-search">
+      <p class="stage-three-status-pill">${escapeHtml(summary)} · 새로고침·최근 매물에서 이어서 불러왔습니다.</p>
+      <p class="meta stage-three-restored-search__hint">비교 매물 목록을 다시 보려면 상단 「다시 검색·정리」를 누르세요.</p>
+    </div>
+  `;
+}
+
+function renderStageThreeInterruptedSearch(key = '') {
+  return `
+    <div class="stage-three-empty-search">
+      <p class="stage-three-empty-search__text">이전 검색이 완료되지 않았습니다.</p>
+      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}">
+        다시 검색
+      </button>
+    </div>
+  `;
+}
+
 function renderUsedPriceGuideBlock(item, comps) {
   const stageComps = effectiveStageThreeComps(item, comps);
-  if (!item || !stageComps || !isCompsCollected(stageComps)) return '';
-  const key = usedPriceGuideKey(item, stageComps);
-  const state = key ? usedPriceGuides.get(key) : null;
-  if (!state || state.status === 'loading') {
+  if (!item || !stageComps) return '';
+  const { key, state } = resolvedUsedPriceGuideState(item, stageComps);
+  const currentKey = usedPriceGuideKey(item, stageComps);
+  const currentState = currentKey ? usedPriceGuides.get(currentKey) : null;
+  if (
+    (!state || state.status === 'loading') &&
+    currentState?.status === 'loading' &&
+    currentKey !== key
+  ) {
+    const loadingState = usedPriceGuideProgressState(item, 'generating', currentState);
     return `
       <article class="mini-card stage-three-card used-price-guide-card is-loading">
-        <p class="stage-two-card-label">AI 중고가이드</p>
+        <p class="stage-two-card-label">중고 시세 참고표</p>
         <h4>번개·중고나라 기반 가격표를 정리하는 중입니다...</h4>
         <p class="mini-muted">검색 결과와 수집 매물을 함께 보고 상태별 참고가를 만듭니다.</p>
+        ${renderAiLoadingProgress(loadingState, 'usedPriceGuide')}
+        <div class="risk-loader"><span></span><span></span><span></span></div>
+      </article>
+    `;
+  }
+  if (!state || state.status === 'loading') {
+    const listingKey = summaryKey(item);
+    const loadingState = state
+      ? usedPriceGuideProgressState(item, 'generating', state)
+      : listingKey && isStageThreeCollectionFinalizing(listingKey)
+        ? usedPriceGuideProgressState(item, 'waiting', { startedAt: stageComps.startedAt || Date.now() })
+        : !isCompsCollected(stageComps)
+          ? usedPriceGuideProgressState(item, 'waiting', { startedAt: stageComps.startedAt || Date.now() })
+          : usedPriceGuideProgressState(item, 'waiting');
+    if (stageComps && !isCompsCollected(stageComps)) scheduleStageThreeCollectionTimeoutRefresh(item, stageComps);
+    return `
+      <article class="mini-card stage-three-card used-price-guide-card is-loading">
+        <p class="stage-two-card-label">중고 시세 참고표</p>
+        <h4>번개·중고나라 기반 가격표를 정리하는 중입니다...</h4>
+        <p class="mini-muted">검색 결과와 수집 매물을 함께 보고 상태별 참고가를 만듭니다.</p>
+        ${renderAiLoadingProgress(loadingState, 'usedPriceGuide')}
         <div class="risk-loader"><span></span><span></span><span></span></div>
       </article>
     `;
@@ -2263,10 +3578,10 @@ function renderUsedPriceGuideBlock(item, comps) {
   if (state.status === 'error') {
     return `
       <article class="mini-card stage-three-card used-price-guide-card">
-        <p class="stage-two-card-label">AI 중고가이드</p>
+        <p class="stage-two-card-label">중고 시세 참고표</p>
         <h4>가격표 생성 실패</h4>
         <p>${escapeHtml(state.error || '다시 시도해 주세요.')}</p>
-        <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">다시 만들기</button>
+        <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">가격 다시 만들기</button>
       </article>
     `;
   }
@@ -2288,8 +3603,8 @@ function renderUsedPriceGuideBlock(item, comps) {
   return `
     <article class="mini-card stage-three-card used-price-guide-card">
       <div class="mini-card-head">
-        <p class="stage-two-card-label">AI 중고가이드</p>
-        <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">다시 만들기</button>
+        <p class="stage-two-card-label">중고 시세 참고표</p>
+        <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">가격 다시 만들기</button>
       </div>
       <h4>${escapeHtml(guide.headline || '상태별 중고 가격 참고표')}</h4>
       <div class="comparison-price-table-wrap">
@@ -2371,6 +3686,270 @@ function imageAnalysisEntries(item) {
   });
 }
 
+function normalizeImageGroupLabel(label) {
+  return String(label || '사진 묶음').replace(/\s+/g, ' ').trim().slice(0, 18) || '사진 묶음';
+}
+
+function imageLabelGroups(images) {
+  if (!Array.isArray(images) || images.length < 2) return [];
+  const grouped = new Map();
+  for (const image of images) {
+    const label = normalizeImageGroupLabel(image.label);
+    if (!grouped.has(label)) grouped.set(label, []);
+    grouped.get(label).push(image);
+  }
+  return [...grouped.entries()]
+    .map(([label, list]) => ({
+      label,
+      summary: '유사한 이미지로 분류되었습니다.',
+      imageIndexes: list.map((image) => image.index),
+      level: list.some((image) => image.level === 'risk')
+        ? 'risk'
+        : list.some((image) => image.level === 'caution')
+          ? 'caution'
+          : list.every((image) => image.level === 'safe')
+            ? 'safe'
+            : 'neutral',
+    }))
+    .slice(0, 6);
+}
+
+function imageAnalysisGroups(item, images) {
+  const key = summaryKey(item);
+  const state = key ? listingImageAnalyses.get(key) : null;
+  const analysis = state?.analysis || null;
+  if (state?.status !== 'done' || !analysis) return [];
+  if (!Array.isArray(images) || images.length < 2) return [];
+  return imageLabelGroups(images);
+}
+
+function renderImageAnalysisGroups(item) {
+  const images = imageAnalysisEntries(item);
+  const groups = imageAnalysisGroups(item, images);
+  if (!groups.length) return '';
+  const imagesByIndex = new Map(images.map((image) => [Number(image.index), image]));
+  return `
+    <div class="image-analysis-groups" aria-label="이미지 카테고리 묶음">
+      ${groups
+        .map((group) => {
+          const groupImages = group.imageIndexes
+            .map((index) => imagesByIndex.get(Number(index)))
+            .filter((image) => image?.imageUrl);
+          if (!groupImages.length) return '';
+          const lightboxItems = JSON.stringify(lightboxAnalysisItems(groupImages));
+          return `
+            <section class="image-analysis-group risk-${escapeAttr(group.level || 'neutral')}">
+              <div class="image-analysis-group__head">
+                <span class="image-analysis-group__label">${escapeHtml(group.label)}</span>
+                <span class="image-analysis-group__count">${groupImages.length}장</span>
+              </div>
+              <div class="image-analysis-group__thumbs">
+                ${groupImages
+                  .map(
+                    (image, idx) => `
+                      <img
+                        class="zoomable image-analysis-group__thumb"
+                        src="${escapeAttr(image.imageUrl)}"
+                        data-full="${escapeAttr(image.imageUrl)}"
+                        data-image-width="${escapeAttr(image.imageWidth || '')}"
+                        data-image-height="${escapeAttr(image.imageHeight || '')}"
+                        data-label="${escapeAttr(image.label || group.label)}"
+                        data-comment="${escapeAttr(image.comment || group.summary || '')}"
+                        data-level="${escapeAttr(image.level || group.level || 'neutral')}"
+                        data-lightbox-items="${escapeAttr(lightboxItems)}"
+                        data-lightbox-index="${idx}"
+                        alt=""
+                        loading="lazy"
+                      />
+                    `
+                  )
+                  .join('')}
+              </div>
+            </section>
+          `;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
+function gridColumnIndex(label) {
+  const value = String(label || '').trim().toUpperCase();
+  if (!/^[A-Z]{1,2}$/.test(value)) return -1;
+  let n = 0;
+  for (const ch of value) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+function defectBoxToRect(raw) {
+  const box = Array.isArray(raw)
+    ? { x: raw[0], y: raw[1], width: raw[2], height: raw[3] }
+    : typeof raw === 'string'
+      ? (() => {
+          const parts = raw
+            .split(/[,\s]+/)
+            .map((part) => Number(part.trim()))
+            .filter(Number.isFinite);
+          return parts.length >= 4 ? { x: parts[0], y: parts[1], width: parts[2], height: parts[3] } : null;
+        })()
+      : raw && typeof raw === 'object'
+        ? raw
+        : null;
+  if (!box) return null;
+  const left = Number(box.x ?? box.left ?? box.leftPercent);
+  const top = Number(box.y ?? box.top ?? box.topPercent);
+  const width = Number(box.width ?? box.w ?? box.widthPercent);
+  const height = Number(box.height ?? box.h ?? box.heightPercent);
+  if (![left, top, width, height].every(Number.isFinite)) return null;
+  return {
+    left: Math.max(0, Math.min(99, left)),
+    top: Math.max(0, Math.min(99, top)),
+    width: Math.max(1, Math.min(100 - left, width)),
+    height: Math.max(1, Math.min(100 - top, height)),
+  };
+}
+
+function gridCellToRect(cell, gridCols = 12, gridRows = 18) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 12));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 18));
+  const parseCell = (value) => {
+    const match = String(value || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
+    if (!match) return null;
+    const col = gridColumnIndex(match[1]);
+    const row = Number(match[2]) - 1;
+    if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
+    return { col, row };
+  };
+  const value = String(cell || '').trim().toUpperCase();
+  const rangeMatch = value.match(/^([A-Z]{1,2}\s*0?(?:[1-9]|[1-9][0-9]))\s*(?:-|~|–|—|TO|부터|에서)\s*([A-Z]{1,2}\s*0?(?:[1-9]|[1-9][0-9]))$/);
+  const start = rangeMatch ? parseCell(rangeMatch[1]) : parseCell(value);
+  const end = rangeMatch ? parseCell(rangeMatch[2]) : start;
+  if (!start || !end) return null;
+
+  let left = Math.min(start.col, end.col);
+  let right = Math.max(start.col, end.col) + 1;
+  let top = Math.min(start.row, end.row);
+  let bottom = Math.max(start.row, end.row) + 1;
+  if (!rangeMatch) {
+    left = Math.max(0, left - 0.45);
+    right = Math.min(cols, right + 0.45);
+    top = Math.max(0, top - 0.45);
+    bottom = Math.min(rows, bottom + 0.45);
+  }
+  return {
+    left: (left / cols) * 100,
+    top: (top / rows) * 100,
+    width: ((right - left) / cols) * 100,
+    height: ((bottom - top) / rows) * 100,
+  };
+}
+
+function renderImageDefectMarkers(image) {
+  const markers = (Array.isArray(image?.defects) ? image.defects : [])
+    .map((defect) => {
+      const rawGridCell =
+        defect?.gridCell ||
+        defect?.gridRange ||
+        defect?.range ||
+        defect?.cell ||
+        (defect?.startCell && defect?.endCell ? `${defect.startCell}-${defect.endCell}` : '');
+      const bboxRect = defectBoxToRect(defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area);
+      const rect = bboxRect || gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
+      if (!rect) return '';
+      const description = String(defect?.description || defect?.detail || '하자 의심')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 44);
+      const size = String(defect?.approximateSize || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+      const label = size ? `${description} · ${size}` : description;
+      const severity = String(defect?.severity || 'caution').toLowerCase();
+      const labelSide =
+        rect.left + rect.width > 66
+          ? 'left'
+          : rect.left < 12
+            ? 'right'
+            : rect.top < 16
+              ? 'bottom'
+              : rect.top + rect.height > 82
+                ? 'top'
+                : 'right';
+      return `
+        <button
+          type="button"
+          class="image-defect-marker image-defect-marker--label-${labelSide} risk-${escapeAttr(severity)}"
+          style="left:${rect.left.toFixed(2)}%;top:${rect.top.toFixed(2)}%;width:${rect.width.toFixed(2)}%;height:${rect.height.toFixed(2)}%"
+          title="${escapeAttr(label)}"
+          aria-label="${escapeAttr(label)}"
+        >
+          <span class="image-defect-marker__dot"></span>
+          <span class="image-defect-marker__label">${escapeHtml(description)}</span>
+        </button>
+      `;
+    })
+    .filter(Boolean)
+    .join('');
+  return markers ? `<div class="image-defect-markers" aria-label="하자 의심 위치">${markers}</div>` : '';
+}
+
+function containImageFrame(containerWidth, containerHeight, imageWidth, imageHeight) {
+  if (!containerWidth || !containerHeight || !imageWidth || !imageHeight) return null;
+  const imageRatio = imageWidth / imageHeight;
+  const wrapRatio = containerWidth / containerHeight;
+  let width = containerWidth;
+  let height = containerHeight;
+  if (wrapRatio > imageRatio) {
+    height = containerHeight;
+    width = height * imageRatio;
+  } else {
+    width = containerWidth;
+    height = width / imageRatio;
+  }
+  return {
+    width,
+    height,
+    left: (containerWidth - width) / 2,
+    top: (containerHeight - height) / 2,
+  };
+}
+
+function updateDefectMarkerFrames(root = document) {
+  const boxes = root?.matches?.('.annotated-photo-box')
+    ? [root]
+    : Array.from(root?.querySelectorAll?.('.annotated-photo-box') || []);
+  boxes.forEach((box) => {
+    const img = box.querySelector('img');
+    const markers = box.querySelector('.image-defect-markers');
+    if (!img || !markers) return;
+    if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
+      img.addEventListener('load', () => updateDefectMarkerFrames(box), { once: true });
+      return;
+    }
+    const boxRect = box.getBoundingClientRect();
+    const frame = containImageFrame(boxRect.width, boxRect.height, img.naturalWidth, img.naturalHeight);
+    if (!frame) return;
+    markers.style.width = `${frame.width}px`;
+    markers.style.height = `${frame.height}px`;
+    markers.style.left = `${frame.left}px`;
+    markers.style.top = `${frame.top}px`;
+  });
+}
+
+function updateLightboxOverlayFrame() {
+  if (!$lightboxOverlay || !$lightboxImg || !$lightboxImg.complete || !$lightboxImg.naturalWidth || !$lightboxImg.naturalHeight) {
+    return;
+  }
+  const wrapRect = $lightboxImg.parentElement?.getBoundingClientRect();
+  if (!wrapRect?.width || !wrapRect?.height) return;
+  const frame = containImageFrame(wrapRect.width, wrapRect.height, $lightboxImg.naturalWidth, $lightboxImg.naturalHeight);
+  if (!frame) return;
+  $lightboxImg.style.width = `${frame.width}px`;
+  $lightboxImg.style.height = `${frame.height}px`;
+  $lightboxOverlay.style.width = `${frame.width}px`;
+  $lightboxOverlay.style.height = `${frame.height}px`;
+  $lightboxOverlay.style.left = `${frame.left}px`;
+  $lightboxOverlay.style.top = `${frame.top}px`;
+}
+
 function renderImageAnalysisSlider(item) {
   const key = summaryKey(item);
   const state = key ? listingImageAnalyses.get(key) : null;
@@ -2409,6 +3988,7 @@ function renderImageAnalysisSlider(item) {
               loading="lazy"
             />
             <span class="image-analysis-badge risk-${escapeAttr(current.level || 'neutral')}">${escapeHtml(label)}</span>
+            ${renderImageDefectMarkers(current)}
           </div>
         </div>
         <button type="button" class="photo-nav next image-analysis-nav" data-image-analysis-dir="1" ${images.length < 2 ? 'disabled' : ''}>›</button>
@@ -2492,11 +4072,11 @@ function renderItem(item, comps) {
   bindStageThreeFlow($current, item);
   bindUsedPriceGuide($current, item);
   bindPurchaseReceipt($current, item);
-  updatePurchaseReceiptLayout($current);
+  const receiptKey = item && comps ? purchaseReceiptKey(item, comps) : '';
+  const receiptDone = Boolean(receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done');
+  const receiptPrinted = Boolean(receiptKey && purchaseReceiptPrintedKeys.has(receiptKey));
   window.requestAnimationFrame(() => {
-    updatePurchaseReceiptLayout($current);
-    const receiptKey = item && comps ? purchaseReceiptKey(item, comps) : '';
-    if (receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done' && !purchaseReceiptPrintedKeys.has(receiptKey)) {
+    if (receiptDone && !receiptPrinted) {
       followPurchaseReceiptPrint($current);
     }
   });
@@ -2511,6 +4091,7 @@ function renderItem(item, comps) {
     scheduleComparisonFilter(item);
     void ensureUsedPriceGuide(item);
   }
+  refreshDirectAiPanelIfOpen();
 }
 
 function setHistoryOpen(open) {
@@ -2532,7 +4113,10 @@ function setLightboxImage(item, opts = {}) {
   $lightboxImg.src = src;
   $lightboxImg.setAttribute('data-image-width', item?.imageWidth || '');
   $lightboxImg.setAttribute('data-image-height', item?.imageHeight || '');
-  if ($lightboxOverlay) $lightboxOverlay.innerHTML = '';
+  if ($lightboxOverlay) {
+    $lightboxOverlay.innerHTML = item?.kind === 'analysis' ? renderImageDefectMarkers(item) : '';
+    updateLightboxOverlayFrame();
+  }
   if ($lightboxBadge) {
     const label = item?.kind === 'analysis' ? String(item?.label || '').trim() : '';
     $lightboxBadge.textContent = label;
@@ -2552,6 +4136,7 @@ function setLightboxImage(item, opts = {}) {
     $lightboxCount.textContent = `${lightboxState.index + 1}/${lightboxState.items.length}`;
     $lightboxCount.hidden = !lightboxState.items.length;
   }
+  $lightboxImg.onload = updateLightboxOverlayFrame;
   if (content && motionClass) content.classList.add(motionClass);
 }
 
@@ -2585,6 +4170,8 @@ function closeLightbox() {
     $lightbox.hidden = true;
     $lightbox.classList.remove('is-closing');
     $lightboxImg.removeAttribute('src');
+    $lightboxImg.style.width = '';
+    $lightboxImg.style.height = '';
     if ($lightboxOverlay) $lightboxOverlay.innerHTML = '';
     if ($lightboxBadge) {
       $lightboxBadge.textContent = '';
@@ -2777,6 +4364,7 @@ function bindImageAnalysisSlider(root, item) {
   const key = summaryKey(item);
   if (!key) return;
   window.clearInterval(imageAnalysisAutoTimer);
+  updateDefectMarkerFrames(root);
   root?.querySelectorAll('.image-analysis-nav').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -2811,6 +4399,7 @@ function refreshImageAnalysisSlider(item) {
   const updated = $current.querySelector('[data-image-analysis-slide-wrap]');
   bindImageAnalysisSlider(updated, item);
   bindImageZoom(updated);
+  updateDefectMarkerFrames(updated);
 }
 
 function bindStageTwoFlow(root, item) {
@@ -2820,7 +4409,10 @@ function bindStageTwoFlow(root, item) {
       if (!key) return;
       const shouldRetry = productRiskAnalyses.get(key)?.status === 'error';
       stageTwoActiveKeys.add(key);
-      if (shouldRetry) productRiskAnalyses.delete(key);
+      if (shouldRetry) {
+        productRiskAnalyses.delete(key);
+        productRiskYoutubeAnalyses.delete(key);
+      }
       playStageStartMotion();
       if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
       void ensureProductRisk(item);
@@ -2847,14 +4439,22 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   relatedRequestedKeys.add(key);
   if (isolated) stageThreeIsolatedRefreshKeys.add(key);
   else stageThreeIsolatedRefreshKeys.delete(key);
-  comps = null;
-  lastStageThreeCompsRenderKey = `${key}::empty`;
+  stageThreeSearchProgresses.set(key, {
+    phase: 'collecting',
+    startedAt: Date.now(),
+    durationMs: 22000,
+    startPercent: 0,
+    endPercent: 62,
+  });
+  comps = collectingComparisonComps(item);
+  lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
   for (const filterKey of [...comparisonFilters.keys()]) {
     if (filterKey.startsWith(`${key}::`)) {
       comparisonFilters.delete(filterKey);
       if (!isolated) {
         usedPriceGuides.delete(filterKey);
+        usedPriceGuideProgresses.delete(key);
         purchaseReceipts.delete(filterKey);
         purchaseReceiptPrintedKeys.delete(filterKey);
       }
@@ -2882,10 +4482,17 @@ function resetStageThreeComparisonWork(item, opts = {}) {
   if (!key) return;
   stageThreeComparisonRunIds.set(key, (stageThreeComparisonRunIds.get(key) || 0) + 1);
   if (opts.clearSearchQuery !== false) searchQueryRegenerations.delete(key);
+  stageThreeCollectionFinalizingKeys.delete(key);
+  stageThreeSearchProgresses.delete(key);
+  clearStageThreeCollectionTimeout(key);
+  usedPriceGuideProgresses.delete(key);
   for (const filterKey of [...comparisonFilters.keys()]) {
     if (!filterKey.startsWith(`${key}::`)) continue;
     comparisonFilters.delete(filterKey);
-    if (opts.clearGuide) usedPriceGuides.delete(filterKey);
+    if (opts.clearGuide) {
+      usedPriceGuides.delete(filterKey);
+      usedPriceGuideProgresses.delete(key);
+    }
     if (opts.clearReceipt !== false) {
       purchaseReceipts.delete(filterKey);
       purchaseReceiptPrintedKeys.delete(filterKey);
@@ -2948,11 +4555,7 @@ function maybeAutoRegenerateStageThreeSearchQueries(item) {
   const key = summaryKey(item);
   if (!key) return false;
   if (searchQueryRegenerations.get(key)?.status === 'loading') return true;
-  const count = stageThreeAutoQueryRetryCounts.get(key) || 0;
-  if (count >= MAX_STAGE_THREE_AUTO_QUERY_RETRIES) return false;
-  stageThreeAutoQueryRetryCounts.set(key, count + 1);
-  void regenerateStageThreeSearchQueries(item, null, { auto: true });
-  return true;
+  return false;
 }
 
 async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
@@ -2965,7 +4568,7 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
     refreshStageThreeSearchCard(item);
     return;
   }
-  searchQueryRegenerations.set(key, { status: 'loading' });
+  searchQueryRegenerations.set(key, { status: 'loading', startedAt: Date.now() });
   if (btn) btn.disabled = true;
   refreshStageThreeSearchCard(item);
   try {
@@ -2990,6 +4593,9 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
       },
     });
     persistAiCaches();
+    await showAiLoadingComplete(searchQueryRegenerations, key, () => {
+      refreshStageThreeSearchCard(item);
+    }, 'searchQuery');
     searchQueryRegenerations.delete(key);
     refreshStageThreeSearchCard(item);
     openRelatedSearchForItem(item, queries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
@@ -3084,10 +4690,11 @@ function bindUsedPriceGuide(root, item) {
       const key = usedPriceGuideKey(item, comps);
       if (key) {
         usedPriceGuides.delete(key);
+        usedPriceGuideProgresses.delete(summaryKey(item));
         purchaseReceipts.delete(key);
         purchaseReceiptPrintedKeys.delete(key);
       }
-      void ensureUsedPriceGuide(item);
+      void ensureUsedPriceGuide(item, { regenerate: true });
     });
   });
 }
@@ -3105,34 +4712,6 @@ function bindPurchaseReceipt(root, item) {
   });
 }
 
-function updatePurchaseReceiptLayout(root = $current, opts = {}) {
-  const stage = root?.querySelector('.purchase-receipt-stage');
-  const reveal = stage?.querySelector('.receipt-paper-reveal');
-  const paper = stage?.querySelector('.purchase-receipt-paper');
-  const zone = stage?.closest?.('[data-stage-four-panel]');
-  if (!stage || !reveal || !paper || !zone) return 0;
-  const printHeight = Math.ceil(paper.scrollHeight + 12);
-  const labelHeight = Math.ceil(zone.querySelector('.stage-zone-label')?.getBoundingClientRect().height || 0);
-  const zoneTarget = printHeight + labelHeight + 260;
-  reveal.style.setProperty('--receipt-print-height', `${printHeight}px`);
-  if (!reveal.classList.contains('is-printing')) {
-    reveal.style.height = 'auto';
-    reveal.style.minHeight = `${printHeight}px`;
-  }
-  if (opts.animate) {
-    const currentHeight = Math.max(0, Math.ceil(zone.getBoundingClientRect().height));
-    zone.classList.remove('is-receipt-layout-animating');
-    zone.style.setProperty('--stage-four-receipt-height', `${currentHeight}px`);
-    void zone.offsetHeight;
-    zone.classList.add('is-receipt-layout-animating');
-    zone.style.setProperty('--stage-four-receipt-height', `${zoneTarget}px`);
-  } else {
-    zone.classList.remove('is-receipt-layout-animating');
-    zone.style.setProperty('--stage-four-receipt-height', `${zoneTarget}px`);
-  }
-  return printHeight;
-}
-
 function followPurchaseReceiptPrint(root = $current) {
   const stage = root?.querySelector('.purchase-receipt-stage');
   const reveal = stage?.querySelector('.receipt-paper-reveal');
@@ -3141,8 +4720,10 @@ function followPurchaseReceiptPrint(root = $current) {
   const item = currentRenderedItem();
   const receiptKey = item && comps ? purchaseReceiptKey(item, comps) : '';
   stage.dataset.receiptScrollStarted = '1';
-  const printHeight = updatePurchaseReceiptLayout(root, { animate: true }) || Math.ceil(paper.scrollHeight + 12);
-  reveal.style.height = '';
+  const printHeight = Math.ceil(paper.scrollHeight + 12);
+  reveal.style.setProperty('--receipt-print-height', `${printHeight}px`);
+  reveal.style.height = '0px';
+  reveal.style.maxHeight = '';
   reveal.style.minHeight = '0px';
 
   const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
@@ -3151,11 +4732,12 @@ function followPurchaseReceiptPrint(root = $current) {
     reveal.style.minHeight = `${printHeight}px`;
     if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
     if (item) refreshStageFiveSection(item);
-    reveal.scrollIntoView({ block: 'end', behavior: 'auto' });
+    if (!$appShell?.classList.contains('app-shell--slide')) {
+      reveal.scrollIntoView({ block: 'end', behavior: 'auto' });
+    }
     return;
   }
 
-  reveal.classList.add('is-printing');
   reveal.addEventListener(
     'animationend',
     () => {
@@ -3163,7 +4745,6 @@ function followPurchaseReceiptPrint(root = $current) {
       reveal.style.minHeight = `${printHeight}px`;
       reveal.classList.remove('is-printing');
       if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
-      updatePurchaseReceiptLayout(root);
       if (item) refreshStageFiveSection(item);
     },
     { once: true }
@@ -3181,23 +4762,29 @@ function followPurchaseReceiptPrint(root = $current) {
 
   const step = (now) => {
     const progress = Math.min(1, (now - startedAt) / RECEIPT_PRINT_SCROLL_MS);
-    const desired = targetTop();
-    const catchUp = isScrollLayout ? 0.16 : 0.045 + progress * 0.09;
-    const nextTop = window.scrollY + (desired - window.scrollY) * catchUp;
-    window.scrollTo(0, nextTop);
+    if (isScrollLayout) {
+      const desired = targetTop();
+      const nextTop = window.scrollY + (desired - window.scrollY) * 0.16;
+      window.scrollTo(0, nextTop);
+    }
     if (progress < 1) {
       window.requestAnimationFrame(step);
       return;
     }
-    window.setTimeout(() => {
-      const finalTop = targetTop();
-      if (Math.abs(finalTop - window.scrollY) > 2) {
-        window.scrollTo({ top: finalTop, behavior: 'smooth' });
-      }
-    }, 120);
+    if (isScrollLayout) {
+      window.setTimeout(() => {
+        const finalTop = targetTop();
+        if (Math.abs(finalTop - window.scrollY) > 2) {
+          window.scrollTo({ top: finalTop, behavior: 'smooth' });
+        }
+      }, 120);
+    }
   };
 
-  window.requestAnimationFrame(step);
+  window.requestAnimationFrame((now) => {
+    reveal.classList.add('is-printing');
+    step(now);
+  });
 }
 
 function hasListingTextAnalysisContent(analysis) {
@@ -3211,19 +4798,41 @@ function hasListingTextAnalysisContent(analysis) {
   );
 }
 
+function directAiKeywordQuestion(keyword) {
+  const clean = String(keyword || '').trim();
+  const last = clean.charCodeAt(clean.length - 1);
+  const hasFinalConsonant = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 > 0;
+  return `${clean}${hasFinalConsonant ? '이' : '가'} 뭐야?`;
+}
+
+function submitTextareaOnEnter(e) {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+  const textarea = e.target;
+  const form = textarea?.form;
+  if (!form) return;
+  e.preventDefault();
+  form.requestSubmit?.();
+}
+
 function bindDirectAiChat() {
   $directAiPanel?.querySelector('.direct-chat-close')?.addEventListener('click', () => {
     directAiChat.open = false;
+    saveDirectAiChatState();
     renderDirectAiPanel();
   });
 
   $directAiPanel?.querySelector('.direct-chat-clear')?.addEventListener('click', () => {
     directAiChat.status = 'idle';
     directAiChat.messages = [];
+    saveDirectAiChatState();
     renderDirectAiPanel();
   });
 
-  $directAiPanel?.querySelector('.direct-chat-form')?.addEventListener('submit', async (e) => {
+  bindDirectAiKeywordButtons();
+
+  const directForm = $directAiPanel?.querySelector('.direct-chat-form');
+  directForm?.querySelector('textarea[name="prompt"]')?.addEventListener('keydown', submitTextareaOnEnter);
+  directForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const textarea = e.currentTarget.querySelector('textarea[name="prompt"]');
     const prompt = String(textarea?.value || textarea?.getAttribute('placeholder') || '').trim();
@@ -3235,16 +4844,22 @@ function bindDirectAiChat() {
 
     directAiChat.messages.push({ role: 'user', text: prompt });
     directAiChat.status = 'loading';
+    saveDirectAiChatState();
+    if (textarea) textarea.value = '';
     renderDirectAiPanel();
 
+    const requestKey = selectedKey || (currentRenderedItem() ? summaryKey(currentRenderedItem()) : '');
     try {
-      const data = await globalThis.UlsaAi.askDirect({ prompt, apiKey });
+      const data = await globalThis.UlsaAi.askDirect({ prompt: directAiPrompt(prompt), apiKey });
+      if (requestKey && selectedKey !== requestKey) return;
       directAiChat.messages.push({ role: 'ai', text: stripChatMarkdown(data.answer || '(빈 응답)') });
       directAiChat.status = 'done';
     } catch (err) {
+      if (requestKey && selectedKey !== requestKey) return;
       directAiChat.messages.push({ role: 'ai', text: err instanceof Error ? err.message : String(err) });
       directAiChat.status = 'error';
     }
+    saveDirectAiChatState(requestKey);
     renderDirectAiPanel();
   });
 }
@@ -3262,20 +4877,28 @@ async function submitSellerChat(item, opts = {}) {
   }
 
   const asSellerReply = opts.asSellerReply === true;
-  const message = String((asSellerReply ? state.sellerReply : state.input) || '').trim();
+  const isRegenerate = opts.regenerate === true;
+  const message = String(
+    isRegenerate ? state.lastRequestMessage || state.input || '' : (asSellerReply ? state.sellerReply : state.input) || ''
+  ).trim();
   const payloadMessage = message || '';
   const context = sellerChatContext(item, comps);
   let appendedSellerReply = false;
 
-  if (asSellerReply && payloadMessage) {
+  if (asSellerReply && payloadMessage && !isRegenerate) {
     const sellerMessage = { role: 'seller', text: payloadMessage };
     state.messages.push(sellerMessage);
     appendedSellerReply = appendSellerChatMessageToThread(item, sellerMessage, state.messages.length - 1);
   }
   state.status = 'loading';
+  state.startedAt = Date.now();
   state.error = '';
-  if (asSellerReply) state.sellerReply = '';
-  else state.input = '';
+  state.lastRequestMessage = payloadMessage;
+  state.lastRequestWasSellerReply = asSellerReply;
+  if (!isRegenerate) {
+    if (asSellerReply) state.sellerReply = '';
+    else state.input = '';
+  }
   state.lastSuggestion = null;
   if (!refreshSellerChatDynamic(item, { skipThread: appendedSellerReply || !asSellerReply })) refreshSellerChatSection(item);
 
@@ -3308,16 +4931,29 @@ async function submitSellerChat(item, opts = {}) {
     const quickReplies = Array.isArray(data.quickReplies)
       ? data.quickReplies.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 4)
       : [];
-    state.lastSuggestion = enforceSellerChatNegotiation({
+    const rawSuggestion = {
       primary,
       alternatives,
       followUps,
       quickReplies,
       summary: stripChatMarkdown(data.summary || '').trim(),
-    }, context);
+    };
+    const dedupedSuggestion = filterSellerChatDuplicateSuggestions(rawSuggestion, state.messages);
+    state.lastSuggestion = enforceSellerChatNegotiation(dedupedSuggestion, context, state.messages, payloadMessage);
+    state.finishStartedAt = Date.now();
+    state.finishFromPercent = Math.min(99, Math.max(0, aiLoadingPercent(state, 'sellerChat') || 0));
+    state.forcePercent = 100;
+    if (!refreshSellerChatDynamic(item, { skipThread: true })) refreshSellerChatSection(item);
+    await waitMs(AI_LOADING_FINISH_MS);
     state.status = 'done';
+    delete state.forcePercent;
+    delete state.finishStartedAt;
+    delete state.finishFromPercent;
   } catch (err) {
     state.status = 'error';
+    delete state.forcePercent;
+    delete state.finishStartedAt;
+    delete state.finishFromPercent;
     state.error = err instanceof Error ? err.message : String(err);
   }
   if (!refreshSellerChatDynamic(item, { skipThread: true })) refreshSellerChatSection(item);
@@ -3362,8 +4998,14 @@ function bindSellerChatFlow(root, item) {
       void submitSellerChat(item);
       return;
     }
-    if (target.matches('[data-seller-chat-copy]')) {
-      void copySellerChatText(target.getAttribute('data-seller-chat-copy') || '');
+    if (target.matches('[data-seller-chat-regenerate]')) {
+      currentState.error = '';
+      void submitSellerChat(item, { regenerate: true, asSellerReply: currentState.lastRequestWasSellerReply === true });
+      return;
+    }
+    const copyTarget = target.closest?.('[data-seller-chat-copy]');
+    if (copyTarget) {
+      void copySellerChatText(copyTarget.getAttribute('data-seller-chat-copy') || '');
       return;
     }
     if (target.matches('[data-seller-chat-send-suggestion]')) {
@@ -3401,6 +5043,10 @@ function bindSellerChatFlow(root, item) {
   });
 
   panel.addEventListener('keydown', (e) => {
+    if (e.target.matches('[data-seller-chat-input], [data-seller-chat-reply]')) {
+      submitTextareaOnEnter(e);
+      return;
+    }
     const target = e.target.closest('[data-seller-chat-send-suggestion]');
     if (!target || !panel.contains(target)) return;
     if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -3437,6 +5083,7 @@ function bindSellerChatFlow(root, item) {
 $btnDirectAi?.addEventListener('click', () => {
   directAiChat.open = !directAiChat.open;
   renderDirectAiPanel();
+  if (directAiChat.open) void ensureDirectAiKeywords();
 });
 $btnLayoutMode?.addEventListener('click', () => {
   const nextMode = $appShell?.classList.contains('app-shell--slide') ? 'scroll' : 'slide';
@@ -3461,7 +5108,7 @@ function openRailPanel(action = 'import') {
   setRailActive(action);
   $railPanel.hidden = false;
   window.requestAnimationFrame(() => $railPanel.classList.add('is-open'));
-  $railUrlInput?.focus();
+  ($railUrlInput || $urlImportInput)?.focus();
 }
 
 function bindDashboardRail() {
@@ -3476,29 +5123,14 @@ function bindDashboardRail() {
       return;
     }
     const action = target.getAttribute('data-rail-action') || '';
-    if (action === 'import') {
-      openRailPanel(action);
-      return;
-    }
     closeRailPanel();
     if (action === 'layout') $btnLayoutMode?.click();
+    if (action === 'import') openRailPanel('import');
     if (action === 'history') $btnHistory?.click();
     if (action === 'direct-ai') $btnDirectAi?.click();
     if (action === 'settings') document.getElementById('btnAiSettings')?.click();
     if (action === 'reanalyze') $btnRefresh?.click();
     if (action === 'new') startNewAnalysis();
-  });
-
-  $railImportForm?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const value = String($railUrlInput?.value || '').trim();
-    if (!value) {
-      if ($railStatus) $railStatus.textContent = '먼저 매물 링크를 붙여넣어 주세요.';
-      return;
-    }
-    if ($urlImportInput) $urlImportInput.value = value;
-    if ($railStatus) $railStatus.textContent = '기존 분석 흐름으로 전달 중...';
-    $btnUrlImport?.click();
   });
 
   if ($urlImportStatus && $railStatus) {
@@ -3516,7 +5148,11 @@ function bindDashboardRail() {
 
 bindDashboardRail();
 
-window.addEventListener('resize', positionDirectAiPanel);
+window.addEventListener('resize', () => {
+  positionDirectAiPanel();
+  updateDefectMarkerFrames(document);
+  updateLightboxOverlayFrame();
+});
 
 function refreshPhotoSlider(item) {
   const current = $current.querySelector('[data-photo-slider]');
@@ -3639,10 +5275,15 @@ function clearProductSummaryCaches(key) {
   imageAnalysisDirections.delete(key);
   imageAnalysisPreviewedKeys.delete(key);
   searchQueryRegenerations.delete(key);
+  stageThreeCollectionFinalizingKeys.delete(key);
+  stageThreeSearchProgresses.delete(key);
+  clearStageThreeCollectionTimeout(key);
+  usedPriceGuideProgresses.delete(key);
   stageThreeAutoQueryRetryCounts.delete(key);
   stageThreeComparisonSkippedKeys.delete(key);
   stageThreeComparisonRunIds.delete(key);
   productRiskAnalyses.delete(key);
+  productRiskYoutubeAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
   stageTwoActiveKeys.delete(key);
@@ -3670,6 +5311,62 @@ function clearCurrentAiCaches() {
   if (key) clearProductSummaryCaches(key);
 }
 
+function resetCurrentAnalysisRuntimeState() {
+  const key = selectedKey || (latest ? itemKey(latest) : '');
+  if (!key) return;
+  imageAnalysisIndexes.delete(key);
+  imageAnalysisDirections.delete(key);
+  imageAnalysisPreviewedKeys.delete(key);
+  searchQueryRegenerations.delete(key);
+  stageThreeCollectionFinalizingKeys.delete(key);
+  stageThreeSearchProgresses.delete(key);
+  clearStageThreeCollectionTimeout(key);
+  usedPriceGuideProgresses.delete(key);
+  stageThreeAutoQueryRetryCounts.delete(key);
+  stageThreeComparisonRunIds.delete(key);
+  sellerChatStates.delete(key);
+  for (const timerKey of [...comparisonFilterTimers]) {
+    if (listingKeyFromStageCacheKey(timerKey) === key) comparisonFilterTimers.delete(timerKey);
+  }
+  comps = null;
+  lastStageThreeCompsRenderKey = '';
+  stageSlideIndex = 0;
+}
+
+function activateListingItem(item, opts = {}) {
+  if (!item) return;
+  const key = itemKey(item);
+  const currentKey = selectedKey || (latest ? itemKey(latest) : '');
+  if (
+    opts.skipIfSameActive &&
+    key &&
+    key === currentKey &&
+    latest?.exportedAt &&
+    item.exportedAt &&
+    latest.exportedAt === item.exportedAt &&
+    $current.querySelector('[data-stage-one-zone]')
+  ) {
+    latest = { ...latest, ...item };
+    history = [latest, ...history.filter((h) => itemKey(h) !== key)];
+    renderHistoryList();
+    return;
+  }
+  saveDirectAiChatState(currentKey);
+  cancelActiveAiWork();
+  latest = item;
+  selectedKey = key;
+  history = [item, ...history.filter((h) => itemKey(h) !== selectedKey)];
+  loadDirectAiChatState(key);
+  resetCurrentAnalysisRuntimeState();
+  comps = restoredStageThreeComps(item, opts.comps ?? item.comps ?? null);
+  lastStageThreeCompsRenderKey = '';
+  stageSlideIndex = 0;
+  renderItem(item, comps);
+  refreshDirectAiPanelForListingChange();
+  renderHistoryList();
+  void ensureProductSummary(item);
+}
+
 function clearCurrentAnalysisState() {
   const key = selectedKey || (latest ? itemKey(latest) : '');
   if (!key) return;
@@ -3684,10 +5381,15 @@ function clearCurrentAnalysisState() {
   stageThreeIsolatedRefreshKeys.delete(key);
   sellerChatStates.delete(key);
   productRiskAnalyses.delete(key);
+  productRiskYoutubeAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
   imageAnalysisPreviewedKeys.delete(key);
   searchQueryRegenerations.delete(key);
+  stageThreeCollectionFinalizingKeys.delete(key);
+  stageThreeSearchProgresses.delete(key);
+  clearStageThreeCollectionTimeout(key);
+  usedPriceGuideProgresses.delete(key);
   stageThreeAutoQueryRetryCounts.delete(key);
   stageThreeComparisonSkippedKeys.delete(key);
   stageThreeComparisonRunIds.delete(key);
@@ -3716,13 +5418,13 @@ function clearCurrentAnalysisState() {
 
 function startNewAnalysis() {
   closeRailPanel();
+  saveDirectAiChatState();
   latest = null;
   selectedKey = null;
   comps = null;
   stageSlideIndex = 0;
   directAiChat.open = false;
-  directAiChat.status = 'idle';
-  directAiChat.messages = [];
+  resetDirectAiChat({ close: true });
   if ($urlImportInput) $urlImportInput.value = '';
   if ($railUrlInput) $railUrlInput.value = '';
   if ($urlImportStatus) $urlImportStatus.textContent = '';
@@ -3731,7 +5433,8 @@ function startNewAnalysis() {
   renderDirectAiPanel();
   renderItem(null);
   updateStageSlide();
-  openRailPanel('import');
+  closeRailPanel();
+  $urlImportInput?.focus();
 }
 
 function bindProductSummaryRetry(root, item) {
@@ -3764,10 +5467,25 @@ async function ensureComparisonFilter(item) {
   const runId = currentKey ? stageThreeComparisonRunIds.get(currentKey) || 0 : 0;
   const isolated = currentKey ? stageThreeIsolatedRefreshKeys.has(currentKey) : false;
   const existing = comparisonFilters.get(filterKey);
-  if (existing?.status === 'loading' || existing?.status === 'done') return;
+  if (existing?.status === 'loading') return;
+  if (isStageThreeCacheSettled(existing?.status)) return;
+  if (ensureListingStageCacheAlias(comparisonFilters, currentKey, filterKey)) {
+    if (selectedKey === currentKey) {
+      if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+      else refreshStageThreeSection(item);
+      if (isStepThreeDone(item)) refreshStageFourSection(item);
+    }
+    void ensureUsedPriceGuide(item);
+    return;
+  }
   const candidates = comparisonFilterCandidates(item, comps);
   if (!candidates.length) {
-    if (maybeAutoRegenerateStageThreeSearchQueries(item)) return;
+    await completeStageThreeSearchProgress(item, () => {
+      if (selectedKey === currentKey) {
+        if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+        else refreshStageThreeSection(item);
+      }
+    });
     advanceStageThreeAfterComparisonFilter(item, filterKey, [], isolated);
     return;
   }
@@ -3780,7 +5498,8 @@ async function ensureComparisonFilter(item) {
     return;
   }
 
-  comparisonFilters.set(filterKey, { status: 'loading' });
+  comparisonFilters.set(filterKey, { status: 'loading', startedAt: Date.now() });
+  stageThreeSearchProgressState(item, 'identifying');
   if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
   else refreshStageThreeSection(item);
   try {
@@ -3795,17 +5514,20 @@ async function ensureComparisonFilter(item) {
     });
     if (currentKey && runId !== (stageThreeComparisonRunIds.get(currentKey) || 0)) return;
     const matches = Array.isArray(data.analysis?.matches) ? data.analysis.matches : [];
-    if (!matches.length && maybeAutoRegenerateStageThreeSearchQueries(item)) {
-      comparisonFilters.set(filterKey, { status: 'done', matches: [] });
-      persistAiCaches();
+    if (matches.length && currentKey) stageThreeAutoQueryRetryCounts.delete(currentKey);
+    await completeStageThreeSearchProgress(item, () => {
       if (selectedKey === currentKey) {
         if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
         else refreshStageThreeSection(item);
       }
-      return;
+    });
+    comparisonFilters.set(filterKey, { status: 'done', matches: matches || [] });
+    persistAiCaches();
+    if (selectedKey === currentKey) {
+      if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
+      else refreshStageThreeSection(item);
     }
-    if (matches.length && currentKey) stageThreeAutoQueryRetryCounts.delete(currentKey);
-    advanceStageThreeAfterComparisonFilter(item, filterKey, matches, isolated);
+    if (!isolated) void ensureUsedPriceGuide(item);
     return;
   } catch (e) {
     if (currentKey && runId !== (stageThreeComparisonRunIds.get(currentKey) || 0)) return;
@@ -3821,13 +5543,29 @@ async function ensureComparisonFilter(item) {
   }
 }
 
-async function ensureUsedPriceGuide(item) {
+async function ensureUsedPriceGuide(item, opts = {}) {
   const stageComps = effectiveStageThreeComps(item);
   if (!item || !isStepThreeUnlocked(item) || !stageComps || !isCompsCollected(stageComps)) return;
   const key = usedPriceGuideKey(item, stageComps);
   if (!key) return;
+  const listingKey = summaryKey(item);
   const existing = usedPriceGuides.get(key);
-  if (existing?.status === 'loading' || existing?.status === 'done') return;
+  if (existing?.status === 'loading') return;
+  if (opts.regenerate) {
+    usedPriceGuides.delete(key);
+    usedPriceGuideProgresses.delete(listingKey);
+    purchaseReceipts.delete(key);
+    purchaseReceiptPrintedKeys.delete(key);
+    persistAiCaches();
+  } else if (isStageThreeCacheSettled(existing?.status)) return;
+  if (!opts.regenerate && ensureListingStageCacheAlias(usedPriceGuides, listingKey, key)) {
+    if (selectedKey === listingKey) {
+      refreshStageThreeSection(item);
+      if (isStepThreeDone(item)) refreshStageFourSection(item);
+      else updateStageSlide();
+    }
+    return;
+  }
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchUsedPriceGuide !== 'function') {
     usedPriceGuides.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
@@ -3838,12 +5576,16 @@ async function ensureUsedPriceGuide(item) {
 
   purchaseReceipts.delete(key);
   purchaseReceiptPrintedKeys.delete(key);
-  usedPriceGuides.set(key, { status: 'loading' });
+  usedPriceGuideProgressState(item, 'generating');
+  usedPriceGuides.set(key, { status: 'loading', startedAt: Date.now() });
   refreshStageThreeSection(item);
   try {
     const data = await globalThis.UlsaAi.fetchUsedPriceGuide({
       ...usedPriceGuidePayload(item, stageComps),
       apiKey,
+    });
+    await completeUsedPriceGuideProgress(item, () => {
+      if (selectedKey === summaryKey(item)) refreshStageThreeSection(item);
     });
     usedPriceGuides.set(key, { status: 'done', guide: data.guide || {} });
     persistAiCaches();
@@ -3874,9 +5616,6 @@ async function ensurePurchaseReceipt(item, opts = {}) {
     persistAiCaches();
   } else if (existing?.status === 'done') {
     refreshStageFourSection(item);
-    if (selectedKey === summaryKey(item)) {
-      window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
-    }
     return;
   }
   const apiKey = getAiApiKey();
@@ -3886,13 +5625,13 @@ async function ensurePurchaseReceipt(item, opts = {}) {
     return;
   }
   const summary = getProductSummaryState(item)?.summary || null;
-  const guideState = usedPriceGuides.get(key);
-  if (guideState?.status !== 'done' && guideState?.status !== 'error') {
+  let guideState = resolvedUsedPriceGuideState(item, stageComps).state;
+  if (!isStageThreeCacheSettled(guideState?.status)) {
     await ensureUsedPriceGuide(item);
-    const nextGuideStatus = usedPriceGuides.get(key)?.status;
-    if (nextGuideStatus !== 'done' && nextGuideStatus !== 'error') return;
+    guideState = resolvedUsedPriceGuideState(item, stageComps).state;
+    if (!isStageThreeCacheSettled(guideState?.status)) return;
   }
-  purchaseReceipts.set(key, { status: 'loading' });
+  purchaseReceipts.set(key, { status: 'loading', startedAt: Date.now() });
   refreshStageFourSection(item);
   try {
     const data = await globalThis.UlsaAi.fetchPurchaseReceipt({
@@ -3915,7 +5654,9 @@ async function ensurePurchaseReceipt(item, opts = {}) {
       comparison: purchaseReceiptComparisonPayload(item, stageComps),
       apiKey,
     });
-    purchaseReceipts.set(key, { status: 'done', receipt: data.receipt || {} });
+    await finishAiLoadingState(purchaseReceipts, key, { status: 'done', receipt: data.receipt || {} }, () => {
+      if (selectedKey === summaryKey(item)) refreshStageFourSection(item);
+    }, 'purchaseReceipt');
     persistAiCaches();
   } catch (e) {
     purchaseReceipts.set(key, {
@@ -3935,7 +5676,17 @@ async function ensurePurchaseReceipt(item, opts = {}) {
 function scheduleComparisonFilter(item) {
   if (!item || !isStepThreeUnlocked(item) || !comps || !isCompsCollected(comps)) return;
   const filterKey = comparisonFilterKey(item, comps);
-  if (!filterKey || comparisonFilterTimers.has(filterKey) || comparisonFilters.has(filterKey)) return;
+  const listingKey = summaryKey(item);
+  if (!filterKey) return;
+  const existing = comparisonFilters.get(filterKey);
+  if (existing?.status === 'loading') return;
+  if (isStageThreeCacheSettled(existing?.status)) return;
+  if (ensureListingStageCacheAlias(comparisonFilters, listingKey, filterKey)) {
+    updateStageSlide();
+    if (isStepThreeDone(item)) refreshStageFourSection(item);
+    return;
+  }
+  if (comparisonFilterTimers.has(filterKey)) return;
   comparisonFilterTimers.add(filterKey);
   window.setTimeout(() => {
     comparisonFilterTimers.delete(filterKey);
@@ -3966,7 +5717,10 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
   if (!panel) return;
   const grid = panel.querySelector('.stage-zone-grid') || panel;
   const existing = grid.querySelector(selector);
-  const isFollowupCard = selector === '[data-listing-text-analysis]' || selector === '[data-listing-image-analysis]';
+  const isFollowupCard =
+    selector === '[data-listing-text-analysis]' ||
+    selector === '[data-listing-image-analysis]' ||
+    selector === '[data-listing-image-groups]';
   if (isFollowupCard && (panel.querySelector('[data-stage-two-start]') || !canRenderStageTwoFollowups(item))) {
     existing?.remove();
     return;
@@ -3992,29 +5746,47 @@ function canRenderStageTwoFollowups(item) {
 }
 
 function removeStageTwoFollowupCards() {
-  $current.querySelectorAll('[data-listing-text-analysis], [data-listing-image-analysis]').forEach((el) => el.remove());
+  $current
+    .querySelectorAll('[data-listing-text-analysis], [data-listing-image-analysis], [data-listing-image-groups]')
+    .forEach((el) => el.remove());
+}
+
+function refreshProductRiskYoutubeCard(item) {
+  const key = summaryKey(item);
+  if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
+  upsertStageTwoCard(item, '[data-stage-two-youtube]', renderStageTwoYoutubePanel(item), '[data-listing-text-analysis]');
 }
 
 function refreshStageThreeSection(item) {
   const html = renderStageThreeSection(item, comps);
   const existing = $current.querySelector('[data-stage-three-panel]');
+  const renderKey = stageThreeSectionRenderKey(item, comps);
+  let didReplace = false;
   if (!html) {
     existing?.remove();
     refreshStageFourSection(item);
     updateStageSlide();
     return;
   }
-  if (existing) {
+  if (existing && existing.dataset.stageThreeRenderKey === renderKey) {
+    updateStageSlide();
+  } else if (existing) {
     existing.outerHTML = html;
+    didReplace = true;
   } else {
     const stageTwo = $current.querySelector('[data-stage-two-panel]');
     const stageOne = $current.querySelector('[data-stage-one-zone]');
     if (stageTwo) stageTwo.insertAdjacentHTML('afterend', html);
     else if (stageOne) stageOne.insertAdjacentHTML('afterend', html);
+    didReplace = true;
   }
-  bindStageThreeFlow($current, item);
-  bindUsedPriceGuide($current, item);
-  bindPurchaseReceipt($current, item);
+  const panel = $current.querySelector('[data-stage-three-panel]');
+  if (panel) panel.dataset.stageThreeRenderKey = renderKey;
+  if (didReplace) {
+    bindStageThreeFlow($current, item);
+    bindUsedPriceGuide($current, item);
+    bindPurchaseReceipt($current, item);
+  }
   updateStageSlide();
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   if (isStepThreeUnlocked(item)) {
@@ -4024,6 +5796,7 @@ function refreshStageThreeSection(item) {
   } else {
     syncStagePanels(item);
   }
+  refreshDirectAiPanelIfOpen();
 }
 
 function refreshStageFourSection(item) {
@@ -4045,12 +5818,8 @@ function refreshStageFourSection(item) {
   }
   bindPurchaseReceipt($current, item);
   updateStageSlide();
-  const receiptStage = $current.querySelector('.purchase-receipt-stage');
-  if (!receiptStage || receiptStage.dataset.receiptScrollStarted === '1') {
-    updatePurchaseReceiptLayout($current);
-    window.requestAnimationFrame(() => updatePurchaseReceiptLayout($current));
-  }
   refreshStageFiveSection(item);
+  refreshDirectAiPanelIfOpen();
 }
 
 function refreshStageFiveSection(item) {
@@ -4071,6 +5840,7 @@ function refreshStageFiveSection(item) {
   }
   bindSellerChatFlow($current, item);
   updateStageSlide();
+  refreshDirectAiPanelIfOpen();
 }
 
 function refreshSellerChatSection(item) {
@@ -4122,6 +5892,7 @@ function refreshListingImageAnalysisCard(item) {
     return;
   }
   upsertStageTwoCard(item, '[data-listing-image-analysis]', renderListingImageAnalysisCard(item));
+  upsertStageTwoCard(item, '[data-listing-image-groups]', renderListingImageGroupsCard(item));
   const panel = $current.querySelector('[data-stage-two-panel]');
   bindImageAnalysisSlider(panel, item);
   bindImageZoom(panel);
@@ -4132,6 +5903,9 @@ function refreshListingImageAnalysisCard(item) {
 function previewListingImageAnalysis(item) {
   const key = summaryKey(item);
   if (!key || imageAnalysisPreviewedKeys.has(key)) return;
+  if (!$appShell?.classList.contains('app-shell--slide') || stageSlideIndex !== 1) return;
+  if (!isStepTwoStarted(item)) return;
+  if (!$current.querySelector('[data-listing-image-analysis]')) return;
   const images = imageAnalysisEntries(item);
   const items = lightboxAnalysisItems(images);
   if (!items.length) return;
@@ -4181,6 +5955,7 @@ function refreshProductSummaryBlock(item, opts = {}) {
   maybeMarkStageTwoComplete(item);
   ensureCachedStageTwoFollowups(item);
   refreshStageThreeSection(item);
+  refreshDirectAiPanelIfOpen();
 }
 
 $lightbox?.addEventListener('click', (e) => {
@@ -4203,8 +5978,8 @@ $btnHistoryClear?.addEventListener('click', () => {
   selectedKey = null;
   comps = null;
   productSummaries.clear();
-  directAiChat.status = 'idle';
-  directAiChat.messages = [];
+  directAiChatStates.clear();
+  resetDirectAiChat();
   relatedRequestedKeys.clear();
   productImageSearches.clear();
   imageAnalysisIndexes.clear();
@@ -4213,6 +5988,7 @@ $btnHistoryClear?.addEventListener('click', () => {
   stageThreeActiveKeys.clear();
   stageThreeIsolatedRefreshKeys.clear();
   productRiskAnalyses.clear();
+  productRiskYoutubeAnalyses.clear();
   listingTextAnalyses.clear();
   listingImageAnalyses.clear();
   comparisonFilters.clear();
@@ -4222,9 +5998,14 @@ $btnHistoryClear?.addEventListener('click', () => {
   comparisonFilterTimers.clear();
   imageAnalysisPreviewedKeys.clear();
   searchQueryRegenerations.clear();
+  stageThreeCollectionFinalizingKeys.clear();
+  stageThreeSearchProgresses.clear();
+  for (const key of [...stageThreeCollectionTimeoutTimers.keys()]) clearStageThreeCollectionTimeout(key);
+  usedPriceGuideProgresses.clear();
   stageThreeAutoQueryRetryCounts.clear();
   stageThreeComparisonSkippedKeys.clear();
   stageThreeComparisonRunIds.clear();
+  persistAiCaches();
   renderItem(null);
   renderHistoryList();
   setHistoryOpen(false);
@@ -4264,9 +6045,14 @@ function renderHistoryList() {
       const key = btn.getAttribute('data-key');
       const found = promoteHistoryItem(key);
       if (found) {
+        if (selectedKey !== key) {
+          saveDirectAiChatState(selectedKey);
+          loadDirectAiChatState(key);
+        }
         selectedKey = key;
-        comps = activeCompsForItem(found, found.comps) || activeCompsForItem(found, comps);
+        comps = restoredStageThreeComps(found, found.comps || comps);
         renderItem(found, comps);
+        refreshDirectAiPanelForListingChange();
         void ensureProductSummary(found);
         renderHistoryList();
         window.postMessage({ type: 'MARKET_SCRAPE_PROMOTE_HISTORY', key }, '*');
@@ -4279,6 +6065,7 @@ function renderHistoryList() {
       const key = btn.getAttribute('data-delete-key');
       history = history.filter((h) => itemKey(h) !== key);
       productSummaries.delete(key);
+      directAiChatStates.delete(key);
       relatedRequestedKeys.delete(key);
       productImageSearches.delete(key);
       imageAnalysisIndexes.delete(key);
@@ -4289,10 +6076,15 @@ function renderHistoryList() {
       stageThreeIsolatedRefreshKeys.delete(key);
       sellerChatStates.delete(key);
       productRiskAnalyses.delete(key);
+      productRiskYoutubeAnalyses.delete(key);
       listingTextAnalyses.delete(key);
       listingImageAnalyses.delete(key);
       imageAnalysisPreviewedKeys.delete(key);
       searchQueryRegenerations.delete(key);
+      stageThreeCollectionFinalizingKeys.delete(key);
+      stageThreeSearchProgresses.delete(key);
+      clearStageThreeCollectionTimeout(key);
+      usedPriceGuideProgresses.delete(key);
       stageThreeAutoQueryRetryCounts.delete(key);
       for (const filterKey of [...purchaseReceipts.keys()]) {
         if (filterKey.startsWith(`${key}::`)) {
@@ -4305,8 +6097,11 @@ function renderHistoryList() {
         latest = history[0] || null;
         selectedKey = latest ? itemKey(latest) : null;
         comps = null;
+        loadDirectAiChatState(selectedKey);
         renderItem(latest, comps);
+        refreshDirectAiPanelForListingChange();
       }
+      persistAiCaches();
       renderHistoryList();
       window.postMessage({ type: 'MARKET_SCRAPE_DELETE_HISTORY', key }, '*');
     });
@@ -4337,9 +6132,10 @@ async function ensureProductSummary(item, opts = {}) {
     return;
   }
 
-  productSummaries.set(key, { status: 'loading', model: summaryModel || null });
+  productSummaries.set(key, { status: 'loading', model: summaryModel || null, startedAt: Date.now() });
   if (selectedKey === key) refreshProductSummaryBlock(item);
 
+  const aiScope = createAiRequestScope();
   try {
     const data = await globalThis.UlsaAi.fetchProductSummary({
       title: item.title || '',
@@ -4347,16 +6143,24 @@ async function ensureProductSummary(item, opts = {}) {
       imageUrls: item.imageUrls || [],
       apiKey,
       model: summaryModel,
+      signal: aiScope.signal,
     });
+    if (shouldIgnoreAiScope(aiScope)) return;
     const summary = await enrichSummaryWithProductImage(data.summary || null, item);
-    productSummaries.set(key, { status: 'done', summary });
+    if (shouldIgnoreAiScope(aiScope)) return;
+    await finishAiLoadingState(productSummaries, key, { status: 'done', summary }, () => {
+      if (selectedKey === key) refreshProductSummaryBlock(item);
+    }, 'productSummary');
     persistAiCaches();
   } catch (e) {
+    if (shouldIgnoreAiScope(aiScope, e)) return;
     productSummaries.set(key, {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
     });
     persistAiCaches();
+  } finally {
+    aiScope.release();
   }
 
   if (selectedKey === key) refreshProductSummaryBlock(item);
@@ -4368,6 +6172,7 @@ async function ensureProductRisk(item) {
   const existing = productRiskAnalyses.get(key);
   if (existing?.status === 'loading') return;
   if (existing?.status === 'done') {
+    void ensureProductRiskYoutube(item);
     void ensureListingTextAnalysis(item);
     void ensureListingImageAnalysis(item);
     return;
@@ -4381,9 +6186,16 @@ async function ensureProductRisk(item) {
   }
 
   const summary = getProductSummaryState(item)?.summary || null;
-  productRiskAnalyses.set(key, { status: 'loading' });
+  productRiskAnalyses.set(key, {
+    status: 'loading',
+    startedAt: Date.now(),
+    durationMs: 46000,
+    startPercent: 4,
+    endPercent: 96,
+  });
   if (selectedKey === key) refreshProductSummaryBlock(item);
 
+  const aiScope = createAiRequestScope();
   try {
     const data = await globalThis.UlsaAi.fetchProductRisk({
       title: item.title || '',
@@ -4392,15 +6204,22 @@ async function ensureProductRisk(item) {
       productName: summary?.productName || fallbackSearchQuery(item),
       summary,
       apiKey,
+      signal: aiScope.signal,
     });
-    productRiskAnalyses.set(key, { status: 'done', analysis: data.analysis || {} });
+    if (shouldIgnoreAiScope(aiScope)) return;
+    await finishAiLoadingState(productRiskAnalyses, key, { status: 'done', analysis: data.analysis || {} }, () => {
+      if (selectedKey === key) refreshProductSummaryBlock(item);
+    }, 'productRisk');
     persistAiCaches();
   } catch (e) {
+    if (shouldIgnoreAiScope(aiScope, e)) return;
     productRiskAnalyses.set(key, {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
     });
     persistAiCaches();
+  } finally {
+    aiScope.release();
   }
 
   if (selectedKey === key) {
@@ -4408,9 +6227,76 @@ async function ensureProductRisk(item) {
     refreshProductSummaryBlock(item);
   }
   if (productRiskAnalyses.get(key)?.status === 'done') {
+    void ensureProductRiskYoutube(item);
     void ensureListingTextAnalysis(item);
     void ensureListingImageAnalysis(item);
   }
+}
+
+async function ensureProductRiskYoutube(item) {
+  const key = summaryKey(item);
+  if (!key) return;
+  const riskState = productRiskAnalyses.get(key);
+  if (riskState?.status !== 'done') return;
+  const existing = productRiskYoutubeAnalyses.get(key);
+  if (existing?.status === 'loading' || existing?.status === 'done') return;
+
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchProductRiskYoutube !== 'function') {
+    return;
+  }
+
+  const summary = getProductSummaryState(item)?.summary || null;
+  const analysis = riskState.analysis || {};
+  productRiskYoutubeAnalyses.set(key, {
+    status: 'loading',
+    startedAt: Date.now(),
+    durationMs: 30000,
+    startPercent: 8,
+    endPercent: 94,
+  });
+  if (selectedKey === key) refreshProductRiskYoutubeCard(item);
+
+  const aiScope = createAiRequestScope();
+  try {
+    const data = await globalThis.UlsaAi.fetchProductRiskYoutube({
+      title: item.title || '',
+      body: item.body || '',
+      productName: summary?.productName || fallbackSearchQuery(item),
+      summary,
+      analysis,
+      apiKey,
+      signal: aiScope.signal,
+    });
+    if (shouldIgnoreAiScope(aiScope)) return;
+    await finishAiLoadingState(
+      productRiskYoutubeAnalyses,
+      key,
+      {
+        status: 'done',
+        analysis: {
+          youtubeVideos: data.youtubeVideos || [],
+          youtubeSearch: data.youtubeSearch || null,
+        },
+      },
+      () => {
+        if (selectedKey === key) refreshProductRiskYoutubeCard(item);
+      },
+      'productRiskYoutube'
+    );
+    persistAiCaches();
+  } catch (e) {
+    if (shouldIgnoreAiScope(aiScope, e)) return;
+    productRiskYoutubeAnalyses.set(key, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+    persistAiCaches();
+  } finally {
+    aiScope.release();
+  }
+
+  if (selectedKey === key) refreshProductRiskYoutubeCard(item);
 }
 
 async function ensureListingTextAnalysis(item) {
@@ -4428,9 +6314,10 @@ async function ensureListingTextAnalysis(item) {
 
   const summary = getProductSummaryState(item)?.summary || null;
   const riskAnalysis = productRiskAnalyses.get(key)?.analysis || null;
-  listingTextAnalyses.set(key, { status: 'loading' });
+  listingTextAnalyses.set(key, { status: 'loading', startedAt: Date.now() });
   if (selectedKey === key) refreshListingTextAnalysisCard(item);
 
+  const aiScope = createAiRequestScope();
   try {
     const data = await globalThis.UlsaAi.fetchListingTextAnalysis({
       title: item.title || '',
@@ -4442,27 +6329,37 @@ async function ensureListingTextAnalysis(item) {
       summary,
       riskAnalysis,
       apiKey,
+      signal: aiScope.signal,
     });
+    if (shouldIgnoreAiScope(aiScope)) return;
     const analysis =
       data.analysis?.parseOk && hasListingTextAnalysisContent(data.analysis)
         ? meaningfulListingTextAnalysis(data.analysis)
         : null;
     if (!analysis) {
+      await showAiLoadingComplete(listingTextAnalyses, key, () => {
+        if (selectedKey === key) refreshListingTextAnalysisCard(item);
+      }, 'listingText');
       listingTextAnalyses.delete(key);
       persistAiCaches();
       if (selectedKey === key) refreshListingTextAnalysisCard(item);
       return;
     }
-    listingTextAnalyses.set(key, { status: 'done', analysis, source: 'ai' });
+    await finishAiLoadingState(listingTextAnalyses, key, { status: 'done', analysis, source: 'ai' }, () => {
+      if (selectedKey === key) refreshListingTextAnalysisCard(item);
+    }, 'listingText');
     persistAiCaches();
     if (selectedKey === key) {
       playAiResultMotion();
       refreshListingTextAnalysisCard(item);
     }
   } catch (e) {
+    if (shouldIgnoreAiScope(aiScope, e)) return;
     listingTextAnalyses.delete(key);
     persistAiCaches();
     if (selectedKey === key) refreshListingTextAnalysisCard(item);
+  } finally {
+    aiScope.release();
   }
 }
 
@@ -4499,9 +6396,10 @@ async function ensureListingImageAnalysis(item) {
   }
 
   const summary = getProductSummaryState(item)?.summary || null;
-  listingImageAnalyses.set(key, { status: 'loading' });
+  listingImageAnalyses.set(key, { status: 'loading', startedAt: Date.now() });
   if (selectedKey === key) refreshListingImageAnalysisCard(item);
 
+  const aiScope = createAiRequestScope();
   try {
     const data = await globalThis.UlsaAi.fetchListingImageAnalysis({
       title: item.title || '',
@@ -4509,8 +6407,12 @@ async function ensureListingImageAnalysis(item) {
       imageUrls,
       productName: summary?.productName || fallbackSearchQuery(item),
       apiKey,
+      signal: aiScope.signal,
     });
-    listingImageAnalyses.set(key, { status: 'done', analysis: data.analysis || {}, overlayVersion: 11 });
+    if (shouldIgnoreAiScope(aiScope)) return;
+    await finishAiLoadingState(listingImageAnalyses, key, { status: 'done', analysis: data.analysis || {}, overlayVersion: 11 }, () => {
+      if (selectedKey === key) refreshListingImageAnalysisCard(item);
+    }, 'listingImage');
     persistAiCaches();
     if (selectedKey === key) {
       playAiResultMotion();
@@ -4518,35 +6420,53 @@ async function ensureListingImageAnalysis(item) {
       previewListingImageAnalysis(item);
     }
   } catch (e) {
+    if (shouldIgnoreAiScope(aiScope, e)) return;
     listingImageAnalyses.set(key, {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
     });
     persistAiCaches();
     if (selectedKey === key) refreshListingImageAnalysisCard(item);
+  } finally {
+    aiScope.release();
   }
 }
 
-function applyPayload(payload) {
+function applyPayload(payload, opts = {}) {
+  const prevLatestKey = latest ? itemKey(latest) : '';
+  const prevExportedAt = latest?.exportedAt || '';
   const previousSelectedKey = selectedKey;
   const hadRenderedItem = Boolean($current.querySelector('[data-stage-one-zone]'));
+
   latest = payload?.latest ?? latest;
   history = Array.isArray(payload?.history) ? payload.history : history;
+
+  const latestKey = latest ? itemKey(latest) : '';
+  const latestUpdated =
+    opts.forceRestart ||
+    (payload?.latest &&
+      latest &&
+      (latestKey !== prevLatestKey ||
+        (latest.exportedAt && prevExportedAt && latest.exportedAt !== prevExportedAt)));
+
+  if (latestUpdated && latest) {
+    activateListingItem(latest);
+    return;
+  }
+
   const selectedItem =
     (selectedKey && history.find((item) => itemKey(item) === selectedKey)) ||
     latest ||
     null;
   const rawComps = payload?.comps ?? selectedItem?.comps ?? latest?.comps ?? null;
   const selectedItemKey = selectedItem ? itemKey(selectedItem) : '';
-  comps =
-    selectedItemKey && relatedRequestedKeys.has(selectedItemKey)
-      ? activeCompsForItem(selectedItem, rawComps)
-      : null;
-  if (!comps && selectedItemKey && stageThreeComparisonSkippedKeys.has(selectedItemKey)) {
-    comps = emptyComparisonComps(selectedItem);
-  }
+  comps = selectedItemKey ? restoredStageThreeComps(selectedItem, rawComps) : null;
 
   if (selectedItem) {
+    if (previousSelectedKey !== selectedItemKey) {
+      saveDirectAiChatState(previousSelectedKey);
+      loadDirectAiChatState(selectedItemKey);
+    }
     selectedKey = selectedItemKey;
     if (hadRenderedItem && previousSelectedKey === selectedItemKey && relatedRequestedKeys.has(selectedItemKey)) {
       const nextRenderKey = stageThreeCompsRenderKey(selectedItem, comps);
@@ -4557,21 +6477,29 @@ function applyPayload(payload) {
           refreshStageThreeSection(selectedItem);
         }
       }
-    } else {
+    } else if (!hadRenderedItem) {
       renderItem(selectedItem, comps);
+      refreshDirectAiPanelForListingChange();
       void ensureProductSummary(selectedItem);
     }
   } else if (!history.length) {
+    loadDirectAiChatState('', { keepOpen: directAiChat.open });
     renderItem(null);
+    refreshDirectAiPanelForListingChange();
   }
 
   renderHistoryList();
 }
 
 function setUrlImportStatus(message = '', tone = '') {
-  if (!$urlImportStatus) return;
-  $urlImportStatus.textContent = message;
-  $urlImportStatus.dataset.tone = tone;
+  if ($urlImportStatus) {
+    $urlImportStatus.textContent = message;
+    $urlImportStatus.dataset.tone = tone;
+  }
+  if ($railStatus) {
+    $railStatus.textContent = message || 'URL을 붙여넣으면 탭을 열어 매물 정보를 가져옵니다.';
+    $railStatus.dataset.tone = tone;
+  }
 }
 
 function supportedListingUrl(rawUrl) {
@@ -4593,15 +6521,9 @@ function requestListingUrlImport(rawUrl) {
     setUrlImportStatus('지원 URL 아님', 'error');
     return;
   }
-  if ($btnUrlImport) $btnUrlImport.disabled = true;
+  pendingImportUrl = url;
   setUrlImportStatus('페이지 여는 중...', 'loading');
   window.postMessage({ type: 'MARKET_SCRAPE_IMPORT_URL', url }, '*');
-  window.setTimeout(() => {
-    if ($btnUrlImport?.disabled && $urlImportStatus?.dataset.tone === 'loading') {
-      if ($btnUrlImport) $btnUrlImport.disabled = false;
-      setUrlImportStatus('확장 연결 확인 필요', 'error');
-    }
-  }, 30_000);
 }
 
 function escapeHtml(s) {
@@ -4630,32 +6552,24 @@ function initMain() {
       return;
     }
     if (d.type === 'MARKET_SCRAPE_URL_IMPORT_RESULT') {
-      if ($btnUrlImport) $btnUrlImport.disabled = false;
+      const resultUrl = String(d.url || '').trim();
+      if (pendingImportUrl && resultUrl && resultUrl !== pendingImportUrl) return;
       if (d.ok) {
+        pendingImportUrl = '';
         setUrlImportStatus('불러옴', 'success');
         if ($urlImportInput) $urlImportInput.value = '';
-        
-        // IMPORTANT: Use the direct listing data returned from the extension
+        if ($railUrlInput) $railUrlInput.value = '';
         if (d.listing) {
-          // Clear and force render new data
-          clearCurrentAnalysisState();
-          latest = d.listing;
-          // Ensure it's in history too
-          if (!history.find(h => itemKey(h) === itemKey(d.listing))) {
-            history = [d.listing, ...history];
-          }
-          selectedKey = itemKey(d.listing);
-          renderItem(d.listing, null);
-          void ensureProductSummary(d.listing);
+          activateListingItem(d.listing, { skipIfSameActive: true });
+          closeRailPanel();
         } else {
           window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
         }
-
-        // Background sync to ensure storage consistency
         window.setTimeout(() => {
           window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
         }, 800);
-      } else {
+      } else if (!pendingImportUrl || !resultUrl || resultUrl === pendingImportUrl) {
+        pendingImportUrl = '';
         setUrlImportStatus(d.error || '불러오기 실패', 'error');
       }
     }
@@ -4666,13 +6580,22 @@ function initMain() {
     requestListingUrlImport($urlImportInput?.value || '');
   });
 
+  $railImportForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    requestListingUrlImport($railUrlInput?.value || '');
+  });
+
   $btnRefresh.addEventListener('click', () => {
     clearCurrentAnalysisState();
     renderItem(null);
     window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
   });
 
-  window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+  for (const delay of [0, 250, 800, 1600]) {
+    window.setTimeout(() => {
+      window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+    }, delay);
+  }
 }
 
 function bootstrapApp() {

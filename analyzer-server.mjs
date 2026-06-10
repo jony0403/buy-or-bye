@@ -1931,6 +1931,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`가격 분석 페이지: http://127.0.0.1:${PORT}/`);
+  console.log(`Buy or Bye · 중고매물 살까말까: http://127.0.0.1:${PORT}/`);
   console.log('종료: Ctrl+C');
 });

@@ -193,13 +193,13 @@
 .toast.open{opacity:1;visibility:visible;transform:translateY(0)}
 </style>
 <div class="dock">
-  <button class="launch" type="button" id="msLauncher" title="중고 매물 스크랩 열기" aria-label="중고 매물 스크랩 열기">
+  <button class="launch" type="button" id="msLauncher" title="Buy or Bye 열기" aria-label="Buy or Bye 열기">
     <img src="${iconUrl}" alt="" />
   </button>
   <div class="toast" id="msToast" role="status" aria-live="polite"></div>
 </div>
 <div class="panel" id="msPanel">
-  <div class="head"><span id="msHead">중고 매물</span><span class="badge" id="msSrc">—</span></div>
+  <div class="head"><span id="msHead">중고매물 살까말까</span><span class="badge" id="msSrc">—</span></div>
   <div class="price" id="msPrice">—</div>
   <div class="ttl" id="msTitle"></div>
   <div class="sec-title">판매자</div>
