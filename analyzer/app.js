@@ -66,7 +66,15 @@ const stageThreeCollectionFinalizingKeys = new Map();
 const stageThreeSearchProgresses = new Map();
 const stageThreeCollectionTimeoutTimers = new Map();
 const usedPriceGuideProgresses = new Map();
-const directAiChat = { open: false, status: 'idle', messages: [], keywordStatus: 'idle', keywordItems: [], keywordSignature: '' };
+const directAiChat = {
+  open: false,
+  status: 'idle',
+  messages: [],
+  keywordStatus: 'idle',
+  keywordItems: [],
+  keywordGroups: [],
+  keywordSignature: '',
+};
 const directAiChatStates = new Map();
 const sellerChatStates = new Map();
 const sellerChatToneOptions = [
@@ -133,15 +141,15 @@ function directAiChatStateToPersistable(state) {
         .filter((msg) => msg.text)
         .slice(-40)
     : [];
-  const keywordItems = Array.isArray(state.keywordItems)
-    ? state.keywordItems.map((x) => String(x || '').trim()).filter(Boolean).slice(-12)
-    : [];
-  if (!messages.length && !keywordItems.length && !state.keywordSignature) return null;
+  const keywordGroups = sanitizeDirectAiKeywordGroups(state);
+  const keywordItems = flattenDirectAiKeywordGroups(keywordGroups, state.keywordItems).slice(-15);
+  if (!messages.length && !keywordItems.length && !keywordGroups.length && !state.keywordSignature) return null;
   return {
     status: state.status === 'loading' ? 'idle' : state.status || 'idle',
     messages,
     keywordStatus: state.keywordStatus === 'loading' ? 'idle' : state.keywordStatus || 'idle',
     keywordItems,
+    keywordGroups,
     keywordSignature: String(state.keywordSignature || ''),
   };
 }
@@ -1948,18 +1956,111 @@ function directAiStepLabel(item) {
   if (isStepFourDone(item)) return 'Step 4 최종 판단까지 반영';
   if (isStepThreeDone(item)) return 'Step 3 가격 참고자료까지 반영';
   if (isStepTwoDone(item)) return 'Step 2 리스크 판별까지 반영';
-  if (isStepOneDone(item)) return 'Step 1 제품 정리까지 반영';
+  if (isStepOneDone(item)) return 'Step 1 매물 정리까지 반영';
   return 'Step 1 매물 기본 정보만 반영';
 }
 
-function directAiContext(item = currentRenderedItem()) {
+function directAiKeywordStages(item = currentRenderedItem()) {
+  if (!item) return [];
+  const stages = [];
+  if (isStepOneDone(item)) stages.push({ id: 'step1', label: 'Step 1 매물 정리' });
+  if (isStepTwoDone(item)) stages.push({ id: 'step2', label: 'Step 2 리스크 판별' });
+  if (isStepThreeDone(item)) stages.push({ id: 'step3', label: 'Step 3 가격 참고자료' });
+  if (isStepFourDone(item)) stages.push({ id: 'step4', label: 'Step 4 최종 판단' });
+  return stages;
+}
+
+function currentDirectAiKeywordStage(item = currentRenderedItem()) {
+  return directAiKeywordStages(item).at(-1) || { id: 'step1', label: 'Step 1 매물 기본 정보' };
+}
+
+function directAiKeywordGroupKey(item = currentRenderedItem(), stage = currentDirectAiKeywordStage(item)) {
+  const key = item ? summaryKey(item) : selectedKey || 'unknown';
+  return `${key || 'unknown'}::${stage.id || stage.label || 'step'}`;
+}
+
+function directAiKeywordGroupLabel(item = currentRenderedItem(), stage = currentDirectAiKeywordStage(item)) {
+  return stage?.label || directAiStepLabel(item).replace(/\s*까지 반영$/, '').replace(/\s*만 반영$/, '');
+}
+
+function uniqueDirectAiKeywords(values = []) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const keyword = String(value || '').trim();
+    const key = keyword.toLowerCase();
+    if (!keyword || seen.has(key)) continue;
+    seen.add(key);
+    out.push(keyword);
+  }
+  return out;
+}
+
+function sanitizeDirectAiKeywordGroups(state = {}) {
+  const groups = Array.isArray(state.keywordGroups)
+    ? state.keywordGroups
+        .map((group) => {
+          const items = uniqueDirectAiKeywords(Array.isArray(group?.items) ? group.items : []).slice(0, 3);
+          if (!items.length) return null;
+          return {
+            key: String(group?.key || group?.signature || '').trim() || `legacy-${items.join('|')}`,
+            label: String(group?.label || '추천 키워드').trim(),
+            signature: String(group?.signature || '').trim(),
+            items,
+          };
+        })
+        .filter(Boolean)
+    : [];
+  if (!groups.length && Array.isArray(state.keywordItems) && state.keywordItems.length) {
+    const items = uniqueDirectAiKeywords(state.keywordItems).slice(0, 3);
+    if (items.length) {
+      groups.push({
+        key: String(state.keywordSignature || 'legacy'),
+        label: '이전 추천',
+        signature: String(state.keywordSignature || ''),
+        items,
+      });
+    }
+  }
+  return groups.slice(-6);
+}
+
+function flattenDirectAiKeywordGroups(groups = [], fallbackItems = []) {
+  const grouped = groups.flatMap((group) => (Array.isArray(group?.items) ? group.items : []));
+  return uniqueDirectAiKeywords([...grouped, ...(Array.isArray(fallbackItems) ? fallbackItems : [])]);
+}
+
+function currentDirectAiKeywordItems() {
+  return flattenDirectAiKeywordGroups(directAiChat.keywordGroups, directAiChat.keywordItems);
+}
+
+function upsertDirectAiKeywordGroup(item, stage, signature, keywords) {
+  const groupKey = directAiKeywordGroupKey(item, stage);
+  const groups = sanitizeDirectAiKeywordGroups(directAiChat);
+  let group = groups.find((entry) => entry.key === groupKey);
+  if (!group) {
+    group = { key: groupKey, label: directAiKeywordGroupLabel(item, stage), signature: '', items: [] };
+    groups.push(group);
+  }
+  group.signature = signature;
+  group.label = directAiKeywordGroupLabel(item, stage);
+  group.items = uniqueDirectAiKeywords([...(group.items || []), ...keywords]).slice(0, 3);
+  directAiChat.keywordGroups = groups.slice(-6);
+  directAiChat.keywordItems = flattenDirectAiKeywordGroups(directAiChat.keywordGroups).slice(-15);
+}
+
+function directAiContext(item = currentRenderedItem(), opts = {}) {
   if (!item) return { stage: '매물 없음', listing: null };
   const key = summaryKey(item);
   const stageComps = effectiveStageThreeComps(item, comps);
   const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
   const usedGuideState = stageComps ? resolvedUsedPriceGuideState(item, stageComps).state : null;
+  const targetStage = opts.keywordStage || '';
+  const includeStep2 = !targetStage || ['step2', 'step3', 'step4'].includes(targetStage);
+  const includeStep3 = !targetStage || ['step3', 'step4'].includes(targetStage);
+  const includeStep4 = !targetStage || targetStage === 'step4';
   return {
-    stage: directAiStepLabel(item),
+    stage: opts.stageLabel || directAiStepLabel(item),
     listing: {
       platform: item.platformLabel || item.platform || '',
       title: item.title || '',
@@ -1970,12 +2071,12 @@ function directAiContext(item = currentRenderedItem()) {
       imageCount: Array.isArray(item.imageUrls) ? item.imageUrls.length : 0,
     },
     productSummary: productSummaries.get(key)?.status === 'done' ? productSummaries.get(key)?.summary || null : null,
-    productRisk: productRiskAnalyses.get(key)?.status === 'done' ? productRiskAnalyses.get(key)?.analysis || null : null,
-    youtube: productRiskYoutubeAnalyses.get(key)?.status === 'done' ? productRiskYoutubeAnalyses.get(key)?.analysis || null : null,
-    listingTextAnalysis: listingTextAnalyses.get(key)?.status === 'done' ? listingTextAnalyses.get(key)?.analysis || null : null,
-    listingImageAnalysis: listingImageAnalyses.get(key)?.status === 'done' ? listingImageAnalyses.get(key)?.analysis || null : null,
+    productRisk: includeStep2 && productRiskAnalyses.get(key)?.status === 'done' ? productRiskAnalyses.get(key)?.analysis || null : null,
+    youtube: includeStep2 && productRiskYoutubeAnalyses.get(key)?.status === 'done' ? productRiskYoutubeAnalyses.get(key)?.analysis || null : null,
+    listingTextAnalysis: includeStep2 && listingTextAnalyses.get(key)?.status === 'done' ? listingTextAnalyses.get(key)?.analysis || null : null,
+    listingImageAnalysis: includeStep2 && listingImageAnalyses.get(key)?.status === 'done' ? listingImageAnalyses.get(key)?.analysis || null : null,
     comparison:
-      stageComps && isCompsCollected(stageComps)
+      includeStep3 && stageComps && isCompsCollected(stageComps)
         ? {
             stats: compStats(filteredComparisonItems(item, stageComps) || comparisonFilterCandidates(item, stageComps, 12) || []),
             sampleCount: comparisonItems(stageComps).length,
@@ -1986,8 +2087,8 @@ function directAiContext(item = currentRenderedItem()) {
             })),
           }
         : null,
-    usedPriceGuide: usedGuideState?.status === 'done' ? usedGuideState.guide || null : null,
-    purchaseReceipt: receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done' ? purchaseReceipts.get(receiptKey)?.receipt || null : null,
+    usedPriceGuide: includeStep3 && usedGuideState?.status === 'done' ? usedGuideState.guide || null : null,
+    purchaseReceipt: includeStep4 && receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done' ? purchaseReceipts.get(receiptKey)?.receipt || null : null,
   };
 }
 
@@ -1997,6 +2098,7 @@ function resetDirectAiChat({ close = false } = {}) {
   directAiChat.messages = [];
   directAiChat.keywordStatus = 'idle';
   directAiChat.keywordItems = [];
+  directAiChat.keywordGroups = [];
   directAiChat.keywordSignature = '';
 }
 
@@ -2017,7 +2119,8 @@ function loadDirectAiChatState(key, { keepOpen = directAiChat.open } = {}) {
     directAiChat.status = cached.status || 'idle';
     directAiChat.messages = Array.isArray(cached.messages) ? cached.messages.map((msg) => ({ ...msg })) : [];
     directAiChat.keywordStatus = cached.keywordStatus || 'idle';
-    directAiChat.keywordItems = Array.isArray(cached.keywordItems) ? [...cached.keywordItems] : [];
+    directAiChat.keywordGroups = sanitizeDirectAiKeywordGroups(cached);
+    directAiChat.keywordItems = flattenDirectAiKeywordGroups(directAiChat.keywordGroups, cached.keywordItems).slice(-15);
     directAiChat.keywordSignature = cached.keywordSignature || '';
   }
 }
@@ -2031,14 +2134,17 @@ function directAiKeywordDigest(value) {
   return String(hash);
 }
 
-function directAiKeywordStageSignature(item = currentRenderedItem()) {
+function directAiKeywordStageSignature(item = currentRenderedItem(), stage = currentDirectAiKeywordStage(item)) {
   if (!item) return 'empty';
   const key = summaryKey(item);
   const stageComps = effectiveStageThreeComps(item, comps);
   const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
-  const contextDigest = directAiKeywordDigest(JSON.stringify(directAiContext(item)).slice(0, 12000));
+  const contextDigest = directAiKeywordDigest(
+    JSON.stringify(directAiContext(item, { keywordStage: stage.id, stageLabel: stage.label })).slice(0, 12000)
+  );
   return [
     key,
+    stage.id || stage.label || 'step',
     productSummaries.get(key)?.status || 'none',
     productRiskAnalyses.get(key)?.status || 'none',
     productRiskYoutubeAnalyses.get(key)?.status || 'none',
@@ -2090,14 +2196,14 @@ function parseDirectAiKeywords(answer) {
     .slice(0, 3);
 }
 
-function directAiKeywordPrompt(item = currentRenderedItem()) {
-  const context = directAiContext(item);
+function directAiKeywordPrompt(item = currentRenderedItem(), stage = currentDirectAiKeywordStage(item)) {
+  const context = directAiContext(item, { keywordStage: stage.id, stageLabel: stage.label });
   return [
-    '현재 중고 매물 분석 맥락을 보고, 사용자가 제품을 잘 모르면 생소할 수 있는 키워드만 1~3개 고르세요.',
+    `${stage.label} 분석 맥락을 보고, 사용자가 제품을 잘 모르면 생소할 수 있는 키워드만 1~3개 고르세요.`,
     '중고거래 일반 용어는 제외하세요. 예: 구성품, 직거래, 안심결제, 네고, 거래완료, 신품가, 하자, 시세는 제외.',
     '제품/브랜드/제조사/캐릭터/시리즈/기기 구조/부품/펌웨어/플랫폼/장르 고유 용어만 고르세요.',
     '이미 화면에 있는 기존 키워드는 되도록 다시 고르지 마세요.',
-    `기존 키워드: ${JSON.stringify(directAiChat.keywordItems || [])}`,
+    `기존 키워드: ${JSON.stringify(currentDirectAiKeywordItems())}`,
     '반드시 JSON만 출력하세요. 형식: {"keywords":["키워드1","키워드2"]}',
     '',
     `현재 분석 맥락 JSON:\n${JSON.stringify(context, null, 2).slice(0, 10000)}`,
@@ -2107,22 +2213,28 @@ function directAiKeywordPrompt(item = currentRenderedItem()) {
 async function ensureDirectAiKeywords(item = currentRenderedItem()) {
   if (!item || !directAiChat.open) return;
   const requestKey = summaryKey(item);
-  const signature = directAiKeywordStageSignature(item);
-  if (directAiChat.keywordStatus === 'loading' || directAiChat.keywordSignature === signature) return;
+  if (directAiChat.keywordStatus === 'loading') return;
+  const stages = directAiKeywordStages(item);
+  const groups = sanitizeDirectAiKeywordGroups(directAiChat);
+  const pendingStages = stages.filter((stage) => {
+    const group = groups.find((entry) => entry.key === directAiKeywordGroupKey(item, stage));
+    return (group?.items?.length || 0) < 3 && group?.signature !== directAiKeywordStageSignature(item, stage);
+  });
+  if (!pendingStages.length) return;
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') return;
   directAiChat.keywordStatus = 'loading';
-  directAiChat.keywordSignature = signature;
   updateDirectAiSuggestions();
   try {
-    const data = await globalThis.UlsaAi.askDirect({ prompt: directAiKeywordPrompt(item), apiKey });
-    if (selectedKey !== requestKey) return;
-    const next = parseDirectAiKeywords(data.answer || '');
-    const current = Array.isArray(directAiChat.keywordItems) ? directAiChat.keywordItems : [];
-    for (const keyword of next) {
-      if (!current.some((x) => x.toLowerCase() === keyword.toLowerCase())) current.push(keyword);
+    for (const stage of pendingStages) {
+      const signature = directAiKeywordStageSignature(item, stage);
+      directAiChat.keywordSignature = signature;
+      const data = await globalThis.UlsaAi.askDirect({ prompt: directAiKeywordPrompt(item, stage), apiKey });
+      if (selectedKey !== requestKey) return;
+      const next = parseDirectAiKeywords(data.answer || '');
+      upsertDirectAiKeywordGroup(item, stage, signature, next);
+      updateDirectAiSuggestions();
     }
-    directAiChat.keywordItems = current.slice(-12);
     directAiChat.keywordStatus = 'done';
   } catch {
     if (selectedKey !== requestKey) return;
@@ -2147,7 +2259,24 @@ function directAiPrompt(question, item = currentRenderedItem()) {
 }
 
 function renderDirectAiSuggestionsHtml() {
-  const chips = Array.isArray(directAiChat.keywordItems) ? directAiChat.keywordItems : [];
+  const groups = sanitizeDirectAiKeywordGroups(directAiChat);
+  if (groups.length) {
+    return groups
+      .map(
+        (group) => `
+          <div class="direct-chat-suggestion-group">
+            <span>${escapeHtml(group.label || '추천 키워드')}</span>
+            <div>
+              ${group.items
+                .map((chip) => `<button type="button" data-direct-chat-keyword="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`)
+                .join('')}
+            </div>
+          </div>
+        `
+      )
+      .join('');
+  }
+  const chips = currentDirectAiKeywordItems();
   if (chips.length) {
     return chips.map((chip) => `<button type="button" data-direct-chat-keyword="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`).join('');
   }
@@ -3397,6 +3526,1543 @@ function receiptVerdictLabel(verdict) {
   }[verdict] || '판단 보류';
 }
 
+function compactReportList(values, limit = 5) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) => {
+      if (typeof value === 'string') return value;
+      if (value && typeof value === 'object') {
+        return (
+          value.title ||
+          value.label ||
+          value.name ||
+          value.summary ||
+          value.text ||
+          value.description ||
+          value.detail ||
+          value.issue ||
+          value.reason ||
+          value.checkPoint ||
+          value.recommendation ||
+          ''
+        );
+      }
+      return '';
+    })
+    .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function renderReportList(values, empty = '특이사항 없음') {
+  const items = compactReportList(values);
+  if (!items.length) return `<p class="muted">${escapeHtml(empty)}</p>`;
+  return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+}
+
+function expandReportPhotoSlider(slider, item) {
+  if (!slider) return;
+  let urls = Array.isArray(item?.imageUrls) ? item.imageUrls.filter(Boolean) : [];
+  if (!urls.length) {
+    const main = slider.querySelector('img.photo-main');
+    const raw = main?.getAttribute('data-lightbox-items');
+    if (raw) {
+      try {
+        urls = JSON.parse(raw).map((entry) => entry?.url || entry?.src || '').filter(Boolean);
+      } catch {
+        urls = [];
+      }
+    }
+    if (!urls.length && main?.src) urls = [main.src];
+  }
+  if (!urls.length) return;
+  const grid = document.createElement('div');
+  grid.className = 'report-photo-expand-grid';
+  grid.innerHTML = urls
+    .map(
+      (url, idx) => `
+        <figure class="report-expanded-photo">
+          <img src="${escapeAttr(url)}" alt="매물 사진 ${idx + 1}" loading="eager" />
+          <figcaption>${idx + 1}/${urls.length}</figcaption>
+        </figure>
+      `
+    )
+    .join('');
+  slider.replaceWith(grid);
+}
+
+function expandReportImageAnalysis(wrap, item) {
+  if (!wrap || !item) return;
+  const images = imageAnalysisEntries(item);
+  if (!images.length) return;
+  const container = document.createElement('div');
+  container.className = 'report-image-analysis-expand';
+  container.innerHTML = images
+    .map((image) => {
+      const label = imageAnalysisLabel(image);
+      return `
+        <div class="image-analysis-slide-wrap report-image-analysis-item">
+          <div class="annotated-photo-stage">
+            <div class="annotated-photo-box">
+              <img
+                class="photo-main image-analysis-main"
+                src="${escapeAttr(image.imageUrl)}"
+                alt=""
+                loading="eager"
+              />
+              <span class="image-analysis-badge risk-${escapeAttr(image.level || 'neutral')}">${escapeHtml(label)}</span>
+              ${renderImageDefectMarkers(image)}
+            </div>
+          </div>
+          <p class="image-analysis-comment risk-${escapeAttr(image.level || 'neutral')}">${escapeHtml(image.comment || '')}</p>
+        </div>
+      `;
+    })
+    .join('');
+  wrap.replaceWith(container);
+}
+
+function expandReportComparisonList(clone, item, comps) {
+  if (!clone || !item || !comps) return;
+  const list = clone.querySelector('.comparison-price-list .comp-list');
+  if (!list) return;
+  const allMatched = filteredComparisonItems(item, comps) || [];
+  if (!allMatched.length) return;
+  const parent = list.parentElement;
+  parent?.querySelectorAll('.meta').forEach((el) => {
+    if (/외\s+\d+건/.test(el.textContent || '')) el.remove();
+  });
+  list.outerHTML = renderComparisonList(allMatched, allMatched.length);
+}
+
+function prepareReportStageClone(clone, item, comps) {
+  if (!clone) return;
+  clone.classList.add('report-static-stage');
+  clone.querySelectorAll(
+    [
+      '.receipt-reprint-btn',
+      '.purchase-report-pdf-btn',
+      '[data-stage-three-refresh]',
+      '[data-stage-three-skip-comps]',
+      '[data-stage-two-youtube]',
+      '[data-stage-three-start]',
+      '.price-source-link',
+      '.wrong-product-btn',
+      '.retry-product-summary-btn',
+      '.image-refresh-btn',
+      '.product-image-btn',
+      '.listing-head .link',
+      '.seller-chat__listing-link',
+      '.stage-three-restored-search',
+      '.stage-three-status-pill',
+      '.stage-start-card',
+      '.photo-nav',
+      '.photo-dots',
+      '.photo-count',
+      '.image-analysis-nav',
+      '.stage-three-actions',
+      '.stage-three-empty-search__btn',
+      '.used-price-guide-btn',
+      '.is-loading',
+    ].join(', ')
+  ).forEach((el) => el.remove());
+  clone.querySelectorAll('button').forEach((btn) => {
+    if (
+      btn.classList.contains('photo-nav') ||
+      btn.classList.contains('image-analysis-nav') ||
+      btn.classList.contains('receipt-reprint-btn') ||
+      btn.classList.contains('purchase-report-pdf-btn') ||
+      btn.hasAttribute('data-stage-three-refresh') ||
+      btn.hasAttribute('data-stage-three-skip-comps') ||
+      btn.hasAttribute('data-used-price-guide') ||
+      btn.hasAttribute('data-photo-dir') ||
+      btn.hasAttribute('data-image-analysis-dir') ||
+      btn.hasAttribute('data-stage-three-start') ||
+      btn.hasAttribute('data-stage-two-start')
+    ) {
+      btn.remove();
+    }
+  });
+  clone.querySelectorAll('a').forEach((link) => {
+    const span = document.createElement('span');
+    span.className = `${link.className || ''} report-static-link`.trim();
+    span.textContent = link.textContent || link.getAttribute('href') || '';
+    link.replaceWith(span);
+  });
+  clone.querySelectorAll('*').forEach((el) => {
+    [...el.attributes].forEach((attr) => {
+      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+    });
+    el.removeAttribute('tabindex');
+    el.removeAttribute('role');
+    el.removeAttribute('data-full');
+    el.removeAttribute('data-lightbox-items');
+    el.removeAttribute('data-lightbox-index');
+    el.classList.remove('zoomable');
+    if (el.style?.cursor) el.style.cursor = '';
+  });
+  clone.querySelectorAll('.image-defect-marker').forEach((marker) => {
+    const div = document.createElement('div');
+    div.className = marker.className;
+    div.style.cssText = marker.style.cssText;
+    div.innerHTML = marker.innerHTML;
+    marker.replaceWith(div);
+  });
+  clone.querySelectorAll('.scroll-text').forEach((el) => {
+    el.classList.remove('is-scrollable');
+    el.style.maxHeight = 'none';
+    el.style.overflow = 'visible';
+  });
+  clone.querySelectorAll('.receipt-paper-reveal').forEach((el) => {
+    el.classList.remove('is-printing');
+    el.style.height = 'auto';
+    el.style.maxHeight = 'none';
+    el.style.minHeight = '0';
+  });
+  clone.querySelectorAll('[hidden]').forEach((el) => {
+    el.hidden = false;
+  });
+  expandReportPhotoSlider(clone.querySelector('[data-photo-slider]'), item);
+  expandReportImageAnalysis(clone.querySelector('[data-image-analysis-slide-wrap]'), item);
+  expandReportComparisonList(clone, item, comps);
+}
+
+function renderPurchaseReportDocument(item, comps) {
+  const stylesheetUrl = new URL('style.css?v=20260611-defect-grid-cells', location.href).href;
+  const logoUrl = new URL('/icons/icon128.png', location.href).href;
+  const reportIssuedAt = new Date().toLocaleString('ko-KR');
+  const reportTitle = item?.title || getProductSummaryState(item)?.summary?.productName || '중고 매물 구매 리포트';
+  const cloneStage = (label, selector) => {
+    const source = $current?.querySelector(selector);
+    if (!source) return '';
+    const clone = source.cloneNode(true);
+    prepareReportStageClone(clone, item, comps);
+    return `
+      <section class="report-page">
+        <header class="report-page-head">
+          <span>BUY OR BYE · ${escapeHtml(reportIssuedAt)}</span>
+          <h1>${escapeHtml(label)}</h1>
+        </header>
+        <div class="report-stage">${clone.outerHTML}</div>
+      </section>
+    `;
+  };
+  const pages = [
+    cloneStage('Step 1 매물 정리', '[data-stage-one-zone]'),
+    cloneStage('Step 2 리스크 판별', '[data-stage-two-panel]'),
+    cloneStage('Step 3 가격 참고자료', '[data-stage-three-panel]'),
+    cloneStage('Step 4 최종 판단', '[data-stage-four-panel]'),
+  ]
+    .filter(Boolean)
+    .join('');
+  return `<!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(reportTitle)} - 구매 리포트</title>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
+        />
+        <link rel="stylesheet" href="${escapeAttr(stylesheetUrl)}" />
+        <style>
+          @page { size: A4; margin: 0; }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          body {
+            margin: 0;
+            background: #eef2f7;
+            color: #111827;
+            font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          }
+          .print-actions {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid #e5e7eb;
+            backdrop-filter: blur(14px);
+          }
+          .print-actions button {
+            border: 0;
+            border-radius: 999px;
+            padding: 10px 14px;
+            background: #111827;
+            color: #fff;
+            font-weight: 900;
+            cursor: pointer;
+          }
+          .report-doc {
+            width: min(1120px, calc(100% - 32px));
+            margin: 18px auto 40px;
+          }
+          .report-cover {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 18px;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 22px 24px;
+            border-radius: 24px;
+            background:
+              linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(236, 253, 245, 0.92)),
+              #fff;
+            box-shadow: 0 16px 50px rgba(15, 23, 42, 0.12);
+          }
+          .report-logo {
+            display: grid;
+            place-items: center;
+            width: 96px;
+            height: 96px;
+            border-radius: 24px;
+            background: #fff;
+            box-shadow: 0 14px 36px rgba(255, 111, 15, 0.16);
+          }
+          .report-logo img {
+            display: block;
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
+          }
+          .report-cover-copy {
+            display: grid;
+            gap: 8px;
+          }
+          .report-cover span,
+          .report-page-head span {
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 900;
+          }
+          .report-cover h1 {
+            margin: 0;
+            font-size: 24px;
+            line-height: 1.25;
+          }
+          .report-page {
+            display: flow-root;
+            page-break-before: always;
+            break-before: page;
+            page-break-after: auto;
+            break-after: auto;
+            margin-bottom: 18px;
+            padding: 18px;
+            border-radius: 24px;
+            background: #fff;
+            box-shadow: 0 16px 50px rgba(15, 23, 42, 0.12);
+          }
+          .report-page-head {
+            display: grid;
+            gap: 4px;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #111827;
+          }
+          .report-page-head h1 {
+            margin: 0;
+            font-size: 20px;
+          }
+          .report-stage,
+          .report-stage * {
+            max-height: none !important;
+            animation: none !important;
+          }
+          .report-stage {
+            pointer-events: none !important;
+          }
+          .report-stage a,
+          .report-stage button,
+          .report-stage .zoomable {
+            cursor: default !important;
+            pointer-events: none !important;
+          }
+          .report-static-link {
+            color: inherit !important;
+            text-decoration: none !important;
+          }
+          .report-stage .photo-main.slide-next,
+          .report-stage .photo-main.slide-prev {
+            transform: none !important;
+          }
+          .report-stage .stage-one-zone {
+            display: block !important;
+            width: 100% !important;
+            min-height: 0 !important;
+            padding: 1rem !important;
+            border-radius: 20px !important;
+          }
+          .report-stage .stage-two-panel.is-active,
+          .report-stage .stage-three-panel,
+          .report-stage .stage-four-panel,
+          .report-stage .stage-zone.is-active {
+            display: grid !important;
+            width: 100% !important;
+            min-height: 0 !important;
+            padding: 1rem !important;
+            border-radius: 20px !important;
+          }
+          .report-stage .stage-zone::before,
+          .report-stage .stage-zone-label,
+          .report-stage .stage-start-card__cta {
+            display: none !important;
+          }
+          .report-stage .stage-zone-grid {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+            grid-auto-rows: auto !important;
+            grid-auto-flow: row !important;
+            gap: 0.8rem !important;
+            padding: 0 !important;
+          }
+          .report-stage .stage-zone-grid > *,
+          .report-stage .stage-two-zone-grid > *,
+          .report-stage .stage-three-zone-grid > *,
+          .report-stage .stage-four-zone-grid > *,
+          .report-stage .stage-five-zone-grid > * {
+            grid-column: 1 / -1 !important;
+            grid-row: auto !important;
+            min-width: 0 !important;
+          }
+          .report-stage .mini-card,
+          .report-stage .stage-three-card,
+          .report-stage .stage-two-card {
+            position: relative !important;
+            z-index: auto !important;
+            width: 100% !important;
+            min-height: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .report-stage .purchase-receipt-stage,
+          .report-stage .receipt-printer {
+            width: 100% !important;
+          }
+          .report-stage .receipt-slot {
+            display: none !important;
+          }
+          .report-stage .receipt-paper-reveal {
+            height: auto !important;
+            min-height: 0 !important;
+          }
+          .report-stage .stage-zone-grid:has(.stage-two-card--listing-text),
+          .report-stage .stage-two-zone-grid:has(.stage-two-card--listing-text) {
+            grid-template-columns: 1fr !important;
+          }
+          .report-stage .stage-two-card--image-analysis,
+          .report-stage .mini-card--photos,
+          .report-stage .mini-card--text,
+          .report-stage .stage-three-card[data-stage-three-search-card],
+          .report-stage .purchase-receipt-stage {
+            grid-column: 1 / -1 !important;
+          }
+          .report-stage .scroll-text,
+          .report-stage .body-text,
+          .report-stage .product-desc {
+            overflow: visible !important;
+            -webkit-line-clamp: unset !important;
+            display: block !important;
+            white-space: pre-wrap !important;
+          }
+          .report-stage .comp-list,
+          .report-stage .comp-list li {
+            overflow: visible !important;
+          }
+          .report-stage .comp-list a {
+            overflow: visible !important;
+            -webkit-line-clamp: unset !important;
+            display: block !important;
+          }
+          .report-stage .search-query-list,
+          .report-stage .direct-chat-suggestions {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 6px !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow: visible !important;
+          }
+          .report-stage .search-query-chip,
+          .report-stage .direct-chat-suggestions button,
+          .report-stage .seller-chat__chip,
+          .report-stage .seller-chat__tone,
+          .report-stage .seller-chat__mode {
+            max-width: 100% !important;
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+            word-break: break-word !important;
+            font-size: 0.72rem !important;
+            line-height: 1.3 !important;
+          }
+          .report-stage .image-defect-marker__label {
+            opacity: 1 !important;
+          }
+          .report-stage .material-symbols-rounded,
+          .report-stage .stage-two-risk-card__icon {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-family: "Material Symbols Rounded" !important;
+            font-weight: 600 !important;
+            font-style: normal !important;
+            font-size: 1.45rem !important;
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            text-transform: none !important;
+            white-space: nowrap !important;
+            word-wrap: normal !important;
+            direction: ltr !important;
+            -webkit-font-feature-settings: "liga" !important;
+            -webkit-font-smoothing: antialiased !important;
+            font-variation-settings: "FILL" 0, "wght" 700, "GRAD" 0, "opsz" 24 !important;
+          }
+          .report-stage .stage-two-risk-card__icon {
+            width: 2.45rem !important;
+            height: 2.45rem !important;
+            flex: 0 0 auto !important;
+            border-radius: 999px !important;
+          }
+          .report-stage .stage-two-risk-card.risk-risk .stage-two-risk-card__icon {
+            background: rgba(225, 29, 72, 0.1) !important;
+            color: #e11d48 !important;
+          }
+          .report-stage .stage-two-risk-card.risk-caution .stage-two-risk-card__icon,
+          .report-stage .stage-two-risk-card.risk-neutral .stage-two-risk-card__icon {
+            background: rgba(217, 119, 6, 0.12) !important;
+            color: #d97706 !important;
+          }
+          .report-stage .stage-two-risk-card.risk-safe .stage-two-risk-card__icon {
+            background: rgba(5, 150, 105, 0.12) !important;
+            color: #059669 !important;
+          }
+          .report-photo-expand-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            width: 100%;
+          }
+          .report-expanded-photo {
+            margin: 0;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            overflow: hidden !important;
+            background: #f8fafc;
+          }
+          .report-expanded-photo img {
+            display: block;
+            width: 100%;
+            height: min(24vw, 220px) !important;
+            max-height: none !important;
+            object-fit: contain !important;
+            background: #fff;
+          }
+          .report-expanded-photo figcaption {
+            padding: 6px 10px;
+            color: #64748b;
+            font-size: 12px;
+            font-weight: 800;
+          }
+          .report-image-analysis-expand {
+            display: grid;
+            gap: 16px;
+          }
+          .report-image-analysis-item .annotated-photo-stage {
+            position: relative !important;
+            inset: auto !important;
+            height: 280px !important;
+          }
+          .report-image-analysis-item .annotated-photo-box {
+            height: 100% !important;
+            min-height: 0 !important;
+          }
+          @media print {
+            body { background: #fff; }
+            .print-actions { display: none; }
+            .report-doc { width: 100%; margin: 0; }
+            .report-cover,
+            .report-page {
+              margin: 0;
+              padding: 10mm 14mm;
+              border-radius: 0;
+              box-shadow: none;
+            }
+            .report-cover { min-height: auto; margin-bottom: 0; }
+            .report-page {
+              min-height: 0;
+              padding-top: 10mm;
+              page-break-before: always;
+              break-before: page;
+              page-break-after: auto;
+              break-after: auto;
+            }
+            .report-stage .stage-zone-grid {
+              grid-template-columns: minmax(0, 1fr) !important;
+            }
+            .report-photo-expand-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+            .report-expanded-photo img {
+              height: 58mm !important;
+            }
+            .report-image-analysis-item .annotated-photo-stage {
+              height: 68mm !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-actions">
+          <button type="button" onclick="window.print()">전체 분석 PDF로 저장 / 인쇄</button>
+        </div>
+        <main class="report-doc">
+          <section class="report-cover">
+            <div class="report-logo">
+              <img src="${escapeAttr(logoUrl)}" alt="Buy or Bye" />
+            </div>
+            <div class="report-cover-copy">
+              <span>BUY OR BYE 구매 판단 리포트 · ${escapeHtml(reportIssuedAt)}</span>
+              <h1>${escapeHtml(reportTitle)}</h1>
+              <p>현재 분석 화면의 Step 1부터 Step 4까지 전체 내용을 페이지별로 정리했습니다.</p>
+            </div>
+          </section>
+          ${pages || '<section class="report-page"><p>출력할 분석 내용이 없습니다.</p></section>'}
+        </main>
+        <script>
+          function containImageFrame(cw, ch, iw, ih) {
+            if (!cw || !ch || !iw || !ih) return null;
+            const ir = iw / ih;
+            const wr = cw / ch;
+            let width = cw;
+            let height = ch;
+            if (wr > ir) {
+              height = ch;
+              width = height * ir;
+            } else {
+              width = cw;
+              height = width / ir;
+            }
+            return { width, height, left: (cw - width) / 2, top: (ch - height) / 2 };
+          }
+          function updateReportDefectMarkers(root) {
+            root.querySelectorAll('.annotated-photo-box').forEach((box) => {
+              const img = box.querySelector('img');
+              const markers = box.querySelector('.image-defect-markers');
+              if (!img || !markers || !img.complete || !img.naturalWidth || !img.naturalHeight) return;
+              const boxRect = box.getBoundingClientRect();
+              const frame = containImageFrame(boxRect.width, boxRect.height, img.naturalWidth, img.naturalHeight);
+              if (!frame) return;
+              markers.style.width = frame.width + 'px';
+              markers.style.height = frame.height + 'px';
+              markers.style.left = frame.left + 'px';
+              markers.style.top = frame.top + 'px';
+            });
+          }
+          function waitForReportImages() {
+            const imgs = [...document.images];
+            if (!imgs.length) return Promise.resolve();
+            return Promise.all(
+              imgs.map(
+                (img) =>
+                  img.complete
+                    ? Promise.resolve()
+                    : new Promise((resolve) => {
+                        img.addEventListener('load', resolve, { once: true });
+                        img.addEventListener('error', resolve, { once: true });
+                      })
+              )
+            );
+          }
+          Promise.all([waitForReportImages(), document.fonts?.ready || Promise.resolve()]).then(() => {
+            updateReportDefectMarkers(document);
+            requestAnimationFrame(() => {
+              updateReportDefectMarkers(document);
+              setTimeout(() => window.print(), 450);
+            });
+          });
+        </script>
+      </body>
+    </html>`;
+}
+
+function reportValue(value, fallback = '-') {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text || fallback;
+}
+
+function renderStaticReportList(values, fallback = '정리된 내용이 없습니다.') {
+  const items = compactReportList(values, 999);
+  if (!items.length) return `<p class="report-muted">${escapeHtml(fallback)}</p>`;
+  return `<ul class="report-list">${items.map((value) => `<li>${escapeHtml(value)}</li>`).join('')}</ul>`;
+}
+
+function renderStaticReportObjectList(
+  values,
+  keys = ['title', 'label', 'name', 'summary', 'description', 'detail', 'issue', 'risk', 'symptom', 'impact', 'reason', 'checkPoint', 'recommendation', 'evidence']
+) {
+  const items = (Array.isArray(values) ? values : [])
+    .map((value) => {
+      if (typeof value === 'string') return value;
+      if (!value || typeof value !== 'object') return '';
+      return keys.map((key) => value[key]).filter(Boolean).join(' - ');
+    })
+    .map((value) => reportValue(value, ''))
+    .filter(Boolean);
+  return renderStaticReportList(items);
+}
+
+function renderReportDefectMarkers(image) {
+  const markers = (Array.isArray(image?.defects) ? image.defects : [])
+    .map((defect) => {
+      const rawGridCell =
+        defect?.gridCell ||
+        defect?.gridRange ||
+        defect?.range ||
+        defect?.cell ||
+        (defect?.startCell && defect?.endCell ? `${defect.startCell}-${defect.endCell}` : '');
+      const rect =
+        defectBoxToRect(defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area) ||
+        gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
+      const marker = defectGridToCenterMarker(defect) || defectToCenterMarker(defect) || defectRectToCenterMarker(rect);
+      if (!marker) return '';
+      const label = reportValue(defect?.description || defect?.detail || '하자 의심', '하자 의심').slice(0, 42);
+      const severity = String(defect?.severity || 'caution').toLowerCase();
+      return `
+        <div
+          class="report-defect-marker report-defect-marker--${escapeAttr(severity)}"
+          style="left:${marker.centerX.toFixed(2)}%;top:${marker.centerY.toFixed(2)}%;width:${marker.width.toFixed(2)}%;height:${marker.height.toFixed(2)}%"
+        >
+          <b>${escapeHtml(label)}</b>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join('');
+  return markers ? `<div class="report-defect-layer">${markers}</div>` : '';
+}
+
+function chunkReportItems(items, size) {
+  const list = Array.isArray(items) ? items : [];
+  const chunkSize = Math.max(1, Number(size) || 1);
+  const chunks = [];
+  for (let i = 0; i < list.length; i += chunkSize) chunks.push(list.slice(i, i + chunkSize));
+  return chunks;
+}
+
+function renderReportPhotoGrid(images, { annotate = false, compact = false } = {}) {
+  const list = (Array.isArray(images) ? images : []).filter((image) => image?.imageUrl || image?.url);
+  if (!list.length) return '<p class="report-muted">사진이 없습니다.</p>';
+  return `
+    <div class="report-photo-grid${compact ? ' report-photo-grid--compact' : ''}${annotate ? ' report-photo-grid--annotated' : ''}">
+      ${list
+        .map((image, idx) => {
+          const src = image.imageUrl || image.url || '';
+          const defects = Array.isArray(image.defects) ? image.defects : [];
+          return `
+            <figure class="report-photo-card">
+              <div class="report-photo-frame">
+                <img src="${escapeAttr(src)}" alt="매물 사진 ${idx + 1}" loading="eager" />
+                ${annotate ? renderReportDefectMarkers(image) : ''}
+              </div>
+              <figcaption>
+                <b>${escapeHtml(image.label || `사진 ${image.index || idx + 1}`)}</b>
+                <span>${escapeHtml(image.comment || (annotate ? '사진 상태 코멘트 없음' : ''))}</span>
+                ${
+                  defects.length
+                    ? `<ul>${defects
+                        .map((defect) => `<li>${escapeHtml(reportValue(defect.description || defect.detail || '하자 의심'))}</li>`)
+                        .join('')}</ul>`
+                    : ''
+                }
+              </figcaption>
+            </figure>
+          `;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
+function renderReportReceiptPaper(item, receipt) {
+  const positives = Array.isArray(receipt?.positives) ? receipt.positives : [];
+  const cautions = Array.isArray(receipt?.cautions) ? receipt.cautions : [];
+  const issuedAt = new Date().toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return `
+    <div class="report-receipt receipt-${escapeAttr(receipt?.verdict || 'hold')}">
+      <header>
+        <h3>${escapeHtml(receipt?.headline || '최종 구매 판단')}</h3>
+        <span>${escapeHtml(receiptVerdictLabel(receipt?.verdict))}</span>
+      </header>
+      <div class="report-receipt-row"><small>발행</small><b>${escapeHtml(issuedAt)}</b></div>
+      <div class="report-receipt-row"><small>현재가</small><b>${escapeHtml(item?.priceLabel || '-')}</b></div>
+      ${shippingLine(item) ? `<div class="report-receipt-row"><small>택배 거래</small><b>${escapeHtml(shippingLine(item))}</b></div>` : ''}
+      <hr />
+      <section>
+        <b>최종 결론</b>
+        <p>${escapeHtml(reportValue(receipt?.summary, '최종 판단 요약 없음'))}</p>
+      </section>
+      <div class="report-receipt-prices">
+        <div><small>가격 참고 범위</small><b>${escapeHtml(reportValue(receipt?.fairPriceLabel, '판단 어려움'))}</b></div>
+        <div><small>네고 제안</small><b>${escapeHtml(reportValue(receipt?.negotiationPriceLabel, '판단 어려움'))}</b></div>
+        <div><small>구매 상한</small><b>${escapeHtml(reportValue(receipt?.maxBuyPriceLabel, '판단 어려움'))}</b></div>
+      </div>
+      <hr />
+      <section>
+        <b>가격 참고 의견</b>
+        <p>${escapeHtml(reportValue(receipt?.priceReason, '가격 참고 의견 없음'))}</p>
+      </section>
+      <section>
+        <b>리스크 반영</b>
+        <p>${escapeHtml(reportValue(receipt?.riskBalance, '리스크 반영 내용 없음'))}</p>
+      </section>
+      ${
+        positives.length || cautions.length
+          ? `<div class="report-receipt-two-col">
+              ${positives.length ? `<section><b>좋은 점</b>${renderStaticReportList(positives)}</section>` : ''}
+              ${cautions.length ? `<section><b>확인할 점</b>${renderStaticReportList(cautions)}</section>` : ''}
+            </div>`
+          : ''
+      }
+      <p class="report-receipt-disclaimer">${escapeHtml(reportValue(receipt?.disclaimer, '이 리포트는 중고거래 의사결정을 돕는 참고자료입니다.'))}</p>
+      <footer>THANK YOU / CHECK BEFORE BUY</footer>
+    </div>
+  `;
+}
+
+function renderPurchaseReportDocumentStatic(item, comps) {
+  const key = summaryKey(item);
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const summary = productSummaries.get(key)?.summary || {};
+  const risk = productRiskAnalyses.get(key)?.analysis || {};
+  const textAnalysis = listingTextAnalyses.get(key)?.analysis || {};
+  const reportTextAnalysis =
+    meaningfulListingTextAnalysis(textAnalysis) || fallbackListingTextAnalysis(item, summary, risk) || {};
+  const imageAnalysis = listingImageAnalyses.get(key)?.analysis || {};
+  const { state: guideState } = resolvedUsedPriceGuideState(item, stageComps);
+  const guide = guideState?.guide || {};
+  const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
+  const receipt = receiptKey ? purchaseReceipts.get(receiptKey)?.receipt || {} : {};
+  const listingImages = (Array.isArray(item?.imageUrls) ? item.imageUrls : []).map((url, idx) => ({
+    imageUrl: url,
+    index: idx + 1,
+    label: `매물 사진 ${idx + 1}`,
+  }));
+  const analyzedImages = imageAnalysisEntries(item);
+  const allComps = comparisonItems(stageComps);
+  const matchedComps = filteredComparisonItems(item, stageComps) || comparisonFilterCandidates(item, stageComps, allComps.length || 999) || [];
+  const issuedAt = new Date().toLocaleString('ko-KR');
+  const title = item?.title || summary.productName || '중고 매물 구매 리포트';
+  const productNameText = reportValue(summary.productName || fallbackSearchQuery(item), '식별된 제품 정보 없음');
+  const newPriceText = reportValue(summary.newPrice || summary.newPriceLabel || summary.estimatedNewPriceLabel, '신품가 확인 필요');
+  const makerText = reportValue(summary.makerOrSeller || summary.maker || summary.brand, '제조사/판매처 확인 필요');
+  const searchQueryText = reportValue(productSummaryQueries(summary, item).join(', '), '검색어 없음');
+  const chronicDefects = [
+    ...(Array.isArray(risk.chronicDefects) ? risk.chronicDefects : []),
+    ...(Array.isArray(risk.commonDefects) ? risk.commonDefects : []),
+  ];
+  const relatedIssues = [
+    ...(Array.isArray(risk.relatedIssues) ? risk.relatedIssues : []),
+    ...(Array.isArray(risk.marketRisks) ? risk.marketRisks : []),
+    ...(Array.isArray(risk.issueItems) ? risk.issueItems : []),
+  ];
+  const riskItems = [...chronicDefects, ...relatedIssues, ...(Array.isArray(risk.riskItems) ? risk.riskItems : []), ...(Array.isArray(risk.warnings) ? risk.warnings : [])];
+  const checklist = [
+    ...(Array.isArray(risk.purchaseChecklist) ? risk.purchaseChecklist : []),
+    ...(Array.isArray(textAnalysis.checklist) ? textAnalysis.checklist : []),
+    ...(Array.isArray(imageAnalysis.checklist) ? imageAnalysis.checklist : []),
+    ...(Array.isArray(receipt.cautions) ? receipt.cautions : []),
+  ];
+  const comparisonRows = matchedComps.map(
+    (candidate) => `
+      <tr>
+        <td>${escapeHtml(candidate.platformLabel || candidate.platform || '-')}</td>
+        <td>${escapeHtml(candidate.title || '-')}</td>
+        <td>${escapeHtml(candidate.priceLabel || '-')}</td>
+        <td>${escapeHtml(candidate.saleStatus || '-')}</td>
+      </tr>
+    `
+  );
+  const listingPhotoPages = chunkReportItems(listingImages, 6)
+    .map(
+      (images, idx) => `
+        <section class="report-page report-page--photos">
+          <h2>Step 1 매물 사진 ${idx + 1}/${Math.ceil((listingImages.length || 1) / 6)}</h2>
+          ${renderReportPhotoGrid(images, { compact: true })}
+        </section>
+      `
+    )
+    .join('');
+  const analysisImages = analyzedImages.length ? analyzedImages : listingImages;
+  const analysisPhotoPages = chunkReportItems(analysisImages, 4)
+    .map(
+      (images, idx) => `
+        <section class="report-page report-page--analysis-photos">
+          <h2>Step 2 사진별 상태 분석 ${idx + 1}/${Math.ceil((analysisImages.length || 1) / 4)}</h2>
+          ${renderReportPhotoGrid(images, { annotate: true, compact: true })}
+        </section>
+      `
+    )
+    .join('');
+  return `<!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(title)} - 구매 리포트</title>
+        <style>
+          @page { size: A4; margin: 0; }
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          :root { --bob-orange: #ff6f0f; --bob-orange-soft: #fff7ed; --bob-mint: #13b8a6; --bob-ink: #111827; --bob-line: #e8edf4; }
+          body {
+            margin: 0;
+            background:
+              radial-gradient(circle at 8% 0%, rgba(255, 111, 15, 0.12), transparent 34%),
+              radial-gradient(circle at 100% 8%, rgba(19, 184, 166, 0.12), transparent 30%),
+              #f6f8fb;
+            color: var(--bob-ink);
+            font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          }
+          .print-actions { position: sticky; top: 0; z-index: 20; display: flex; justify-content: flex-end; padding: 12px; background: rgba(255,255,255,.94); border-bottom: 1px solid #e5e7eb; }
+          .print-actions button { border: 0; border-radius: 999px; padding: 11px 18px; background: #111827; color: #fff; font-weight: 950; cursor: pointer; }
+          main { width: 210mm; margin: 18px auto 42px; }
+          .report-cover,
+          .report-page {
+            width: 210mm;
+            height: 297mm;
+            min-height: 297mm;
+            margin: 0 auto 18px;
+            padding: 14mm;
+            overflow: hidden;
+            border: 1px solid rgba(226, 232, 240, 0.94);
+            border-radius: 0;
+            background: rgba(255,255,255,.94);
+            box-shadow: 0 18px 55px rgba(15,23,42,.10);
+            page-break-after: always;
+            break-after: page;
+          }
+          .report-page:last-child { page-break-after: auto; break-after: auto; }
+          .report-cover {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 18px;
+            align-items: center;
+            background:
+              linear-gradient(135deg, rgba(255, 247, 237, 0.98), rgba(236, 253, 245, 0.92)),
+              #fff;
+            border-color: rgba(255, 111, 15, 0.18);
+          }
+          .report-logo {
+            display: grid;
+            place-items: center;
+            width: 112px;
+            height: 112px;
+            border-radius: 30px;
+            background: #fff;
+            box-shadow: 0 18px 42px rgba(255, 111, 15, 0.18);
+          }
+          .report-logo img {
+            display: block;
+            width: 88px;
+            height: 88px;
+            object-fit: contain;
+          }
+          .report-cover-copy {
+            display: grid;
+            gap: 9px;
+          }
+          .report-kicker { color: #ea580c; font-size: 12px; font-weight: 950; letter-spacing: .02em; }
+          h1, h2, h3 { margin: 0; }
+          h1 { font-size: 28px; line-height: 1.25; }
+          h2 { margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid rgba(255, 111, 15, 0.34); font-size: 21px; }
+          h3 { margin-bottom: 8px; font-size: 15px; }
+          p {
+            margin: 0;
+            line-height: 1.58;
+            overflow-wrap: anywhere;
+            word-break: keep-all;
+          }
+          .report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+          .report-block { padding: 15px; border: 1px solid var(--bob-line); border-radius: 20px; background: linear-gradient(180deg, #fff, #fbfcff); break-inside: avoid; box-shadow: 0 8px 20px rgba(15,23,42,.04); }
+          .report-block--wide { grid-column: 1 / -1; }
+          .report-muted { color: #94a3b8; font-weight: 800; }
+          dl { display: grid; grid-template-columns: 124px 1fr; gap: 8px 12px; margin: 0; }
+          dt { color: #64748b; font-size: 12px; font-weight: 950; }
+          dd { margin: 0; font-weight: 850; }
+          .verdict { display: inline-flex; width: fit-content; padding: 9px 13px; border-radius: 999px; background: #111827; color: #fff; font-weight: 950; box-shadow: 0 10px 20px rgba(17,24,39,.18); }
+          .report-list { margin: 0; padding-left: 18px; }
+          .report-list li { margin: 5px 0; line-height: 1.48; }
+          .report-photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+          .report-photo-grid--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .report-photo-card { margin: 0; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; background: #fff; break-inside: avoid; page-break-inside: avoid; }
+          .report-photo-frame { position: relative; display: grid; place-items: center; background: #f3f4f6; }
+          .report-photo-frame img { display: block; width: 100%; height: 78mm; object-fit: contain; }
+          .report-photo-grid--compact .report-photo-frame img { height: 57mm; }
+          .report-photo-grid--annotated .report-photo-frame img { height: 82mm; }
+          .report-photo-grid--compact.report-photo-grid--annotated .report-photo-frame img { height: 48mm; }
+          .report-photo-card figcaption { display: grid; gap: 5px; min-height: 12mm; padding: 6px 9px; font-size: 11px; line-height: 1.35; }
+          .report-photo-card figcaption b { font-size: 12px; }
+          .report-photo-card figcaption span { color: #475569; font-weight: 700; }
+          .report-photo-card figcaption ul { margin: 0; padding-left: 16px; color: #b91c1c; font-weight: 800; }
+          .report-defect-layer { position: absolute; inset: 0; pointer-events: none; }
+          .report-defect-marker {
+            position: absolute;
+            border: 3px solid rgba(239, 68, 68, 0.88);
+            border-radius: 52% 46% 49% 55% / 48% 56% 45% 52%;
+            background: rgba(239, 68, 68, 0.04);
+            box-shadow:
+              inset 0 0 0 2px rgba(248, 113, 113, 0.2),
+              0 0 0 2px rgba(239, 68, 68, 0.14),
+              0 5px 12px rgba(127, 29, 29, 0.16);
+            transform: translate(-50%, -50%) rotate(-2deg);
+          }
+          .report-defect-marker::after {
+            content: "";
+            position: absolute;
+            inset: -5px;
+            border: 2px solid rgba(244, 63, 94, 0.48);
+            border-radius: 45% 55% 50% 48% / 54% 44% 56% 46%;
+            transform: rotate(4deg);
+          }
+          .report-defect-marker b { position: absolute; left: 100%; top: 50%; min-width: 84px; max-width: 180px; margin-left: 8px; padding: 5px 7px; border-radius: 10px; background: rgba(127,29,29,.92); color: #fff; font-size: 10px; line-height: 1.25; transform: translateY(-50%) rotate(1deg); }
+          .report-receipt {
+            width: min(520px, 100%);
+            margin: 0 auto;
+            padding: 22px 20px 18px;
+            color: #1f2937;
+            background:
+              linear-gradient(90deg, rgba(0,0,0,.03) 1px, transparent 1px) 0 0 / 9px 9px,
+              linear-gradient(#fffdf7, #fffaf0);
+            border: 1px solid rgba(251, 191, 36, 0.34);
+            border-radius: 18px;
+            box-shadow: 0 18px 36px rgba(120, 53, 15, 0.14);
+            break-inside: avoid;
+          }
+          .report-receipt header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px dashed rgba(120, 53, 15, 0.22); }
+          .report-receipt header h3 { margin: 0; font-size: 18px; line-height: 1.3; }
+          .report-receipt header span { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; background: #111827; color: #fff; font-weight: 950; font-size: 12px; }
+          .report-receipt-row,
+          .report-receipt-prices div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(120, 53, 15, 0.08); }
+          .report-receipt small { color: #8a5a1f; font-size: 11px; font-weight: 950; }
+          .report-receipt b { font-weight: 950; }
+          .report-receipt hr { height: 1px; margin: 13px 0; border: 0; border-top: 1px dashed rgba(120, 53, 15, 0.28); }
+          .report-receipt section { margin: 12px 0; }
+          .report-receipt section > b { display: block; margin-bottom: 5px; color: #9a3412; }
+          .report-receipt-two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
+          .report-receipt-disclaimer { margin-top: 12px; color: #8a5a1f; font-size: 12px; font-weight: 800; }
+          .report-receipt footer { margin-top: 14px; padding-top: 10px; border-top: 1px dashed rgba(120, 53, 15, 0.22); text-align: center; color: #b45309; font-size: 11px; font-weight: 950; letter-spacing: .08em; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
+          th { color: #64748b; font-weight: 950; }
+          .report-text-analysis {
+            display: grid;
+            gap: 12px;
+          }
+          .report-text-analysis p,
+          .report-text-analysis dd,
+          .report-text-analysis li {
+            color: #1f2937;
+            font-size: 13px;
+            font-weight: 520;
+            line-height: 1.62;
+            overflow-wrap: anywhere;
+            word-break: keep-all;
+          }
+          .report-text-analysis dd {
+            font-size: 12.5px;
+          }
+          .report-text-analysis .report-list li {
+            margin: 4px 0;
+          }
+          @media print {
+            body { background: #fff; }
+            .print-actions { display: none; }
+            main { width: 210mm; margin: 0; }
+            .report-cover, .report-page {
+              width: 210mm;
+              height: 297mm;
+              min-height: 297mm;
+              margin: 0;
+              padding: 14mm;
+              border: 0;
+              border-radius: 0;
+              box-shadow: none;
+              page-break-after: always;
+              break-after: page;
+            }
+            .report-page:last-child { page-break-after: auto; break-after: auto; }
+            .report-block, .report-photo-card { break-inside: avoid; page-break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-actions"><button type="button" onclick="window.print()">전체 분석 PDF로 저장 / 인쇄</button></div>
+        <main>
+          <section class="report-cover">
+            <div class="report-logo">
+              <img src="/icons/icon128.png" alt="Buy or Bye" />
+            </div>
+            <div class="report-cover-copy">
+              <span class="report-kicker">BUY OR BYE 구매 판단 리포트 · ${escapeHtml(issuedAt)}</span>
+              <h1>${escapeHtml(title)}</h1>
+              <span class="verdict">${escapeHtml(receiptVerdictLabel(receipt.verdict))}</span>
+              <p>${escapeHtml(receipt.summary || summary.summary || '최종 판단 요약이 없습니다.')}</p>
+            </div>
+          </section>
+
+          <section class="report-page">
+            <h2>Step 1 매물 정리</h2>
+            <div class="report-grid">
+              <section class="report-block">
+                <h3>매물 정보</h3>
+                <dl>
+                  <dt>플랫폼</dt><dd>${escapeHtml(reportValue(item.platformLabel || item.platform))}</dd>
+                  <dt>현재가</dt><dd>${escapeHtml(reportValue(item.priceLabel))}</dd>
+                  <dt>택배</dt><dd>${escapeHtml(reportValue(shippingLine(item)))}</dd>
+                  <dt>식별 제품</dt><dd>${escapeHtml(productNameText)}</dd>
+                  <dt>추정 신품가</dt><dd>${escapeHtml(newPriceText)}</dd>
+                </dl>
+              </section>
+              <section class="report-block">
+                <h3>제품 식별 정보</h3>
+                <dl>
+                  <dt>제품명</dt><dd>${escapeHtml(productNameText)}</dd>
+                  <dt>제조/판매처</dt><dd>${escapeHtml(makerText)}</dd>
+                  <dt>검색어</dt><dd>${escapeHtml(searchQueryText)}</dd>
+                  <dt>신품가</dt><dd>${escapeHtml(newPriceText)}</dd>
+                </dl>
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>제품 설명</h3>
+                <p>${escapeHtml(productSummaryDescription(summary, item))}</p>
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>판매글 본문</h3>
+                <p>${escapeHtml(reportValue(item.body, '본문 없음'))}</p>
+              </section>
+            </div>
+          </section>
+          ${listingPhotoPages}
+
+          <section class="report-page">
+            <h2>Step 2 리스크 판별</h2>
+            <div class="report-grid">
+              <section class="report-block">
+                <h3>고질병</h3>
+                ${renderStaticReportObjectList(chronicDefects, undefined)}
+              </section>
+              <section class="report-block">
+                <h3>관련 이슈</h3>
+                ${renderStaticReportObjectList(relatedIssues, undefined)}
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>기타 리스크 / 경고</h3>
+                ${renderStaticReportObjectList(riskItems, undefined)}
+              </section>
+              <section class="report-block">
+                <h3>구매 전 체크리스트</h3>
+                ${renderStaticReportList(checklist)}
+              </section>
+              <section class="report-block">
+                <h3>판매자 이미지 분석</h3>
+                <p>${escapeHtml(reportValue(imageAnalysis.overall || imageAnalysis.summary || imageAnalysis.comment, '이미지 분석 없음'))}</p>
+              </section>
+            </div>
+          </section>
+
+          <section class="report-page">
+            <h2>Step 2 판매글 분석</h2>
+            <div class="report-grid report-text-analysis">
+              <section class="report-block report-block--wide">
+                <h3>종합 분석</h3>
+                <p>${escapeHtml(reportValue(reportTextAnalysis.overall || reportTextAnalysis.summary || reportTextAnalysis.comment, '판매글 분석 없음'))}</p>
+              </section>
+              <section class="report-block">
+                <h3>판매자 판단</h3>
+                <p>${escapeHtml(reportValue(reportTextAnalysis.sellerVerdict, '판매자 판단 정보 없음'))}</p>
+              </section>
+              <section class="report-block">
+                <h3>본문 판단</h3>
+                <p>${escapeHtml(reportValue(reportTextAnalysis.bodyVerdict, '본문 판단 정보 없음'))}</p>
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>주의 문구 / 누락 정보</h3>
+                ${renderStaticReportObjectList([
+                  ...(Array.isArray(reportTextAnalysis.redFlags) ? reportTextAnalysis.redFlags : []),
+                  ...(Array.isArray(textAnalysis.issues) ? textAnalysis.issues : []),
+                  ...(Array.isArray(textAnalysis.missingInfo) ? textAnalysis.missingInfo : []),
+                  ...(Array.isArray(textAnalysis.warnings) ? textAnalysis.warnings : []),
+                ])}
+              </section>
+            </div>
+          </section>
+          ${analysisPhotoPages}
+
+          <section class="report-page">
+            <h2>Step 3 가격 참고자료</h2>
+            <div class="report-grid">
+              <section class="report-block">
+                <h3>가격 참고 의견</h3>
+                <p>${escapeHtml(reportValue(guide.summary || guide.priceReason || receipt.priceReason, '가격 참고 의견 없음'))}</p>
+              </section>
+              <section class="report-block">
+                <h3>가격 범위</h3>
+                <dl>
+                  <dt>참고 범위</dt><dd>${escapeHtml(reportValue(guide.fairPriceLabel || receipt.fairPriceLabel))}</dd>
+                  <dt>네고 제안</dt><dd>${escapeHtml(reportValue(receipt.negotiationPriceLabel))}</dd>
+                  <dt>구매 상한</dt><dd>${escapeHtml(reportValue(receipt.maxBuyPriceLabel))}</dd>
+                  <dt>비교 매물</dt><dd>${escapeHtml(`${matchedComps.length || allComps.length}건`)}</dd>
+                </dl>
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>비교 매물 목록</h3>
+                ${
+                  comparisonRows.length
+                    ? `<table><thead><tr><th>플랫폼</th><th>제목</th><th>가격</th><th>상태</th></tr></thead><tbody>${comparisonRows.join('')}</tbody></table>`
+                    : '<p class="report-muted">비교 매물이 없습니다.</p>'
+                }
+              </section>
+            </div>
+          </section>
+
+          <section class="report-page">
+            <h2>Step 4 최종 판단</h2>
+            <div class="report-grid">
+              <section class="report-block report-block--wide">
+                <h3>최종 판단 영수증</h3>
+                ${renderReportReceiptPaper(item, receipt)}
+              </section>
+            </div>
+          </section>
+        </main>
+        <script>
+          Promise.all(Array.from(document.images).map((img) => img.complete ? Promise.resolve() : new Promise((resolve) => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+          }))).then(() => setTimeout(() => window.print(), 350));
+        </script>
+      </body>
+    </html>`;
+}
+
+let html2CanvasLoaderPromise = null;
+
+function loadHtml2Canvas() {
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  if (html2CanvasLoaderPromise) return html2CanvasLoaderPromise;
+  html2CanvasLoaderPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    script.async = true;
+    script.onload = () => (window.html2canvas ? resolve(window.html2canvas) : reject(new Error('html2canvas 로드 실패')));
+    script.onerror = () => reject(new Error('html2canvas 로드 실패'));
+    document.head.appendChild(script);
+  });
+  return html2CanvasLoaderPromise;
+}
+
+function waitForImagesIn(root) {
+  const images = Array.from(root?.querySelectorAll?.('img') || []);
+  if (!images.length) return Promise.resolve();
+  return Promise.all(
+    images.map((img) =>
+      img.complete
+        ? Promise.resolve()
+        : new Promise((resolve) => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+          })
+    )
+  );
+}
+
+function captureStageDescriptors() {
+  return [
+    { label: 'Step 1 매물 정리', selector: '[data-stage-one-zone]', index: 0 },
+    { label: 'Step 2 리스크 판별', selector: '[data-stage-two-panel]', index: 1 },
+    { label: 'Step 3 가격 참고자료', selector: '[data-stage-three-panel]', index: 2 },
+    { label: 'Step 4 최종 판단', selector: '[data-stage-four-panel]', index: 3 },
+  ];
+}
+
+function shouldIgnoreReportCaptureElement(el) {
+  if (!el?.matches) return false;
+  return el.matches(
+    [
+      '.price-source-link',
+      '.wrong-product-btn',
+      '.retry-product-summary-btn',
+      '.listing-head .link',
+      '.seller-chat__listing-link',
+      '.receipt-reprint-btn',
+      '.purchase-report-pdf-btn',
+      '[data-stage-three-refresh]',
+      '[data-stage-three-skip-comps]',
+      '[data-stage-three-start]',
+      '[data-stage-two-youtube]',
+      '.stage-start-card',
+      '.photo-nav',
+      '.photo-dots',
+      '.photo-count',
+      '.image-analysis-nav',
+      '.stage-three-actions',
+      '.used-price-guide-btn',
+    ].join(', ')
+  );
+}
+
+async function capturePurchaseReportPages(item) {
+  const html2canvas = await loadHtml2Canvas();
+  const originalSlideIndex = stageSlideIndex;
+  const originalScroll = window.scrollY;
+  const wasDirectAiOpen = directAiChat.open;
+  const pages = [];
+  const wasSliding = $appShell?.classList.contains('is-stage-sliding');
+  $appShell?.classList.remove('is-stage-sliding');
+  if (wasDirectAiOpen) {
+    directAiChat.open = false;
+    renderDirectAiPanel();
+  }
+  $btnDirectAi?.classList.remove('is-active');
+  for (const stage of captureStageDescriptors()) {
+    const source = $current?.querySelector(stage.selector);
+    if (!source) continue;
+    if ($appShell?.classList.contains('app-shell--slide')) {
+      stageSlideIndex = stage.index;
+      updateStageSlide();
+      await new Promise((resolve) => setTimeout(resolve, 280));
+    } else {
+      source.classList.remove('is-locked');
+      source.hidden = false;
+    }
+    source.classList.add('report-capture-target');
+    source.scrollIntoView({ block: 'start', behavior: 'auto' });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await waitForImagesIn(source);
+    updateDefectMarkerFrames(source);
+    const rect = source.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      source.classList.remove('report-capture-target');
+      continue;
+    }
+    const captureHeight = Math.ceil(Math.max(source.scrollHeight, rect.height, source.offsetHeight));
+    const canvas = await html2canvas(source, {
+      backgroundColor: '#f6f8fb',
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      imageTimeout: 8000,
+      width: Math.ceil(rect.width),
+      height: captureHeight,
+      windowWidth: Math.ceil(Math.max(document.documentElement.clientWidth, rect.width)),
+      windowHeight: Math.ceil(Math.max(window.innerHeight, captureHeight)),
+      ignoreElements: shouldIgnoreReportCaptureElement,
+      onclone: (clonedDoc) => {
+        const head = clonedDoc.head;
+        if (head && !head.querySelector('link[data-report-material-icons]')) {
+          const link = clonedDoc.createElement('link');
+          link.rel = 'stylesheet';
+          link.setAttribute('data-report-material-icons', '1');
+          link.href =
+            'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0';
+          head.appendChild(link);
+        }
+        clonedDoc.querySelectorAll('.material-symbols-rounded').forEach((icon) => {
+          icon.style.fontFamily = 'Material Symbols Rounded';
+          icon.style.fontWeight = '600';
+          icon.style.fontStyle = 'normal';
+          icon.style.lineHeight = '1';
+          icon.style.fontVariationSettings = '"FILL" 0, "wght" 700, "GRAD" 0, "opsz" 24';
+        });
+      },
+    });
+    source.classList.remove('report-capture-target');
+    pages.push({
+      label: stage.label,
+      image: canvas.toDataURL('image/png'),
+      width: canvas.width,
+      height: canvas.height,
+    });
+  }
+  stageSlideIndex = originalSlideIndex;
+  updateStageSlide();
+  if (wasSliding) $appShell?.classList.add('is-stage-sliding');
+  if (wasDirectAiOpen) {
+    directAiChat.open = true;
+    renderDirectAiPanel();
+  }
+  window.scrollTo({ top: originalScroll, behavior: 'auto' });
+  return pages;
+}
+
+function renderCapturedPurchaseReportDocument(item, pages) {
+  const reportIssuedAt = new Date().toLocaleString('ko-KR');
+  const reportTitle = item?.title || getProductSummaryState(item)?.summary?.productName || '중고 매물 구매 리포트';
+  const logoUrl = new URL('/icons/icon128.png', location.href).href;
+  return `<!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(reportTitle)} - 구매 리포트</title>
+        <style>
+          @page { size: A4; margin: 10mm; }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            background: #eef2f7;
+            color: #111827;
+            font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          }
+          .print-actions {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            justify-content: flex-end;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.94);
+            border-bottom: 1px solid #e5e7eb;
+          }
+          .print-actions button {
+            border: 0;
+            border-radius: 999px;
+            padding: 10px 14px;
+            background: #111827;
+            color: #fff;
+            font-weight: 900;
+            cursor: pointer;
+          }
+          main { width: min(1040px, calc(100% - 28px)); margin: 18px auto 44px; }
+          .report-cover,
+          .capture-page {
+            margin-bottom: 18px;
+            padding: 18px;
+            border-radius: 24px;
+            background: #fff;
+            box-shadow: 0 16px 50px rgba(15, 23, 42, 0.12);
+          }
+          .report-cover {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 16px;
+            align-items: center;
+            background: linear-gradient(135deg, #fff7ed, #ecfdf5);
+          }
+          .report-logo {
+            display: grid;
+            place-items: center;
+            width: 84px;
+            height: 84px;
+            border-radius: 22px;
+            background: #fff;
+          }
+          .report-logo img { width: 64px; height: 64px; object-fit: contain; }
+          .report-kicker { color: #ea580c; font-size: 12px; font-weight: 950; }
+          h1, h2, p { margin: 0; }
+          h1 { font-size: 24px; line-height: 1.25; }
+          .report-cover p { margin-top: 8px; color: #4b5563; font-weight: 700; line-height: 1.45; }
+          .capture-page {
+            page-break-after: always;
+            break-after: page;
+          }
+          .capture-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
+          }
+          .capture-page h2 {
+            margin: 0 0 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #111827;
+            font-size: 18px;
+          }
+          .capture-page img {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 18px;
+            background: #f8fafc;
+          }
+          @media print {
+            body { background: #fff; }
+            .print-actions { display: none; }
+            main { width: 100%; margin: 0; }
+            .report-cover,
+            .capture-page {
+              margin: 0;
+              padding: 0;
+              border-radius: 0;
+              box-shadow: none;
+            }
+            .report-cover { margin-bottom: 8mm; }
+            .capture-page h2 { margin-bottom: 4mm; }
+            .capture-page img { border-radius: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-actions">
+          <button type="button" onclick="window.print()">전체 분석 PDF로 저장 / 인쇄</button>
+        </div>
+        <main>
+          <section class="report-cover">
+            <div class="report-logo"><img src="${escapeAttr(logoUrl)}" alt="Buy or Bye" /></div>
+            <div>
+              <span class="report-kicker">BUY OR BYE 구매 판단 리포트 · ${escapeHtml(reportIssuedAt)}</span>
+              <h1>${escapeHtml(reportTitle)}</h1>
+              <p>Step 1부터 Step 4까지의 분석 화면을 캡처해 그대로 정리했습니다.</p>
+            </div>
+          </section>
+          ${
+            pages.length
+              ? pages
+                  .map(
+                    (page) => `
+                      <section class="capture-page">
+                        <h2>${escapeHtml(page.label)}</h2>
+                        <img src="${escapeAttr(page.image)}" alt="${escapeAttr(page.label)}" />
+                      </section>
+                    `
+                  )
+                  .join('')
+              : '<section class="capture-page"><p>출력할 분석 화면이 없습니다.</p></section>'
+          }
+        </main>
+        <script>
+          Promise.all(Array.from(document.images).map((img) => img.complete ? Promise.resolve() : new Promise((resolve) => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+          }))).then(() => setTimeout(() => window.print(), 250));
+        </script>
+      </body>
+    </html>`;
+}
+
+async function openPurchaseReportPdf(item, comps) {
+  const hasLiveStages = Boolean($current?.querySelector('[data-stage-one-zone]'));
+  if (hasLiveStages) updateDefectMarkerFrames($current);
+  const html = renderPurchaseReportDocumentStatic(item, comps);
+  const win = window.open('', '_blank', 'width=980,height=900');
+  if (!win) {
+    alert('팝업이 차단되어 리포트를 열지 못했습니다. 팝업 허용 후 다시 시도해 주세요.');
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}
+
 function renderPurchaseReceiptBlock(item, comps) {
   if (!item || !comps || !isCompsCollected(comps)) return '';
   const { state: filterState } = resolvedComparisonFilterState(item, comps);
@@ -3430,6 +5096,7 @@ function renderPurchaseReceiptBlock(item, comps) {
     const positives = Array.isArray(r.positives) ? r.positives : [];
     const cautions = Array.isArray(r.cautions) ? r.cautions : [];
     const now = new Date().toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const isPrinted = key ? purchaseReceiptPrintedKeys.has(key) : false;
     return `
       <article class="stage-three-card purchase-receipt-stage receipt-${escapeAttr(r.verdict || 'hold')}">
         <div class="receipt-printer">
@@ -3478,6 +5145,9 @@ function renderPurchaseReceiptBlock(item, comps) {
           </div>
           <button type="button" class="chip-btn purchase-receipt-btn receipt-reprint-btn" data-purchase-receipt-regenerate="${escapeAttr(key)}" aria-label="영수증 다시 출력">
             <span class="material-symbols-rounded" aria-hidden="true">sync</span>
+          </button>
+          <button type="button" class="chip-btn purchase-report-pdf-btn" data-purchase-report-pdf="${escapeAttr(key)}"${isPrinted ? '' : ' hidden'}>
+            Step 1-4 전체 분석 PDF 저장
           </button>
         </div>
       </article>
@@ -3932,9 +5602,79 @@ function defectBoxToRect(raw) {
   };
 }
 
-function gridCellToRect(cell, gridCols = 12, gridRows = 18) {
-  const cols = Math.max(1, Math.min(52, Number(gridCols) || 12));
-  const rows = Math.max(1, Math.min(99, Number(gridRows) || 18));
+function defectRectToCenterMarker(rect) {
+  if (!rect) return null;
+  const width = Math.max(1, Math.min(100, Number(rect.width) || 0));
+  const height = Math.max(1, Math.min(100, Number(rect.height) || 0));
+  const centerX = Number(rect.left) + width / 2;
+  const centerY = Number(rect.top) + height / 2;
+  if (![centerX, centerY, width, height].every(Number.isFinite)) return null;
+  return {
+    centerX: Math.max(0, Math.min(100, centerX)),
+    centerY: Math.max(0, Math.min(100, centerY)),
+    width,
+    height,
+  };
+}
+
+function gridCellToPoint(cell, gridCols = 32, gridRows = 32) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 32));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 32));
+  const match = String(cell || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
+  if (!match) return null;
+  const col = gridColumnIndex(match[1]);
+  const row = Number(match[2]) - 1;
+  if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
+  return {
+    centerX: ((col + 0.5) / cols) * 100,
+    centerY: ((row + 0.5) / rows) * 100,
+    cols,
+    rows,
+  };
+}
+
+function defectGridToCenterMarker(defect) {
+  const gridCenter = defect?.gridCenter || defect?.centerCell || defect?.centerGrid || defect?.centerGridCell;
+  const point = gridCellToPoint(gridCenter, defect?.gridCols, defect?.gridRows);
+  if (!point) return null;
+  const rawSize = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
+  const rawCols = Number(rawSize.cols ?? rawSize.columns ?? rawSize.width ?? rawSize.w);
+  const rawRows = Number(rawSize.rows ?? rawSize.height ?? rawSize.h);
+  const cellCols = Math.max(1, Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 2)));
+  const cellRows = Math.max(1, Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols)));
+  return {
+    centerX: point.centerX,
+    centerY: point.centerY,
+    width: Math.max(2.6, Math.min(80, (cellCols / point.cols) * 100)),
+    height: Math.max(2.6, Math.min(80, (cellRows / point.rows) * 100)),
+  };
+}
+
+function defectToCenterMarker(defect) {
+  const centerRaw = defect?.center || defect?.centerPercent || defect?.point || defect?.position;
+  const sizeRaw = defect?.size || defect?.markerSize || defect?.extent;
+  const centerX = Number(centerRaw?.x ?? centerRaw?.cx ?? centerRaw?.left ?? defect?.centerX ?? defect?.cx);
+  const centerY = Number(centerRaw?.y ?? centerRaw?.cy ?? centerRaw?.top ?? defect?.centerY ?? defect?.cy);
+  const radius = Number(sizeRaw?.radius ?? defect?.radius ?? defect?.r);
+  const diameter = Number(sizeRaw?.diameter ?? defect?.diameter);
+  const width = Number(sizeRaw?.width ?? sizeRaw?.w ?? defect?.markerWidth ?? defect?.width ?? (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN));
+  const height = Number(sizeRaw?.height ?? sizeRaw?.h ?? defect?.markerHeight ?? defect?.height ?? (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN));
+  if ([centerX, centerY].every(Number.isFinite)) {
+    const markerWidth = Number.isFinite(width) ? width : 6;
+    const markerHeight = Number.isFinite(height) ? height : markerWidth;
+    return {
+      centerX: Math.max(0, Math.min(100, centerX)),
+      centerY: Math.max(0, Math.min(100, centerY)),
+      width: Math.max(1.5, Math.min(80, markerWidth)),
+      height: Math.max(1.5, Math.min(80, markerHeight)),
+    };
+  }
+  return null;
+}
+
+function gridCellToRect(cell, gridCols = 32, gridRows = 32) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 32));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 32));
   const parseCell = (value) => {
     const match = String(value || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
     if (!match) return null;
@@ -3978,7 +5718,8 @@ function renderImageDefectMarkers(image) {
         (defect?.startCell && defect?.endCell ? `${defect.startCell}-${defect.endCell}` : '');
       const bboxRect = defectBoxToRect(defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area);
       const rect = bboxRect || gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
-      if (!rect) return '';
+      const marker = defectGridToCenterMarker(defect) || defectToCenterMarker(defect) || defectRectToCenterMarker(rect);
+      if (!marker) return '';
       const description = String(defect?.description || defect?.detail || '하자 의심')
         .replace(/\s+/g, ' ')
         .trim()
@@ -3987,20 +5728,20 @@ function renderImageDefectMarkers(image) {
       const label = size ? `${description} · ${size}` : description;
       const severity = String(defect?.severity || 'caution').toLowerCase();
       const labelSide =
-        rect.left + rect.width > 66
+        marker.centerX + marker.width / 2 > 66
           ? 'left'
-          : rect.left < 12
+          : marker.centerX - marker.width / 2 < 12
             ? 'right'
-            : rect.top < 16
+            : marker.centerY - marker.height / 2 < 16
               ? 'bottom'
-              : rect.top + rect.height > 82
+              : marker.centerY + marker.height / 2 > 82
                 ? 'top'
                 : 'right';
       return `
         <button
           type="button"
           class="image-defect-marker image-defect-marker--label-${labelSide} risk-${escapeAttr(severity)}"
-          style="left:${rect.left.toFixed(2)}%;top:${rect.top.toFixed(2)}%;width:${rect.width.toFixed(2)}%;height:${rect.height.toFixed(2)}%"
+          style="left:${marker.centerX.toFixed(2)}%;top:${marker.centerY.toFixed(2)}%;width:${marker.width.toFixed(2)}%;height:${marker.height.toFixed(2)}%"
           title="${escapeAttr(label)}"
           aria-label="${escapeAttr(label)}"
         >
@@ -4835,6 +6576,32 @@ function bindPurchaseReceipt(root, item) {
       void ensurePurchaseReceipt(item, { regenerate: true });
     });
   });
+  root?.querySelectorAll('[data-purchase-report-pdf]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const stageComps = effectiveStageThreeComps(item, comps);
+      const label = btn.textContent || 'Step 1-4 전체 분석 PDF 저장';
+      btn.disabled = true;
+      btn.textContent = 'PDF 준비 중...';
+      try {
+        await openPurchaseReportPdf(item, stageComps);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
+  });
+}
+
+function revealPurchaseReportPdfButton(root = $current) {
+  root?.querySelectorAll('[data-purchase-report-pdf]').forEach((btn) => {
+    const wasHidden = btn.hidden;
+    btn.hidden = false;
+    if (wasHidden) {
+      btn.classList.remove('is-revealing');
+      void btn.offsetWidth;
+      btn.classList.add('is-revealing');
+    }
+  });
 }
 
 function followPurchaseReceiptPrint(root = $current) {
@@ -4856,6 +6623,7 @@ function followPurchaseReceiptPrint(root = $current) {
     reveal.style.height = 'auto';
     reveal.style.minHeight = `${printHeight}px`;
     if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
+    revealPurchaseReportPdfButton(root);
     if (item) refreshStageFiveSection(item);
     if (!$appShell?.classList.contains('app-shell--slide')) {
       reveal.scrollIntoView({ block: 'end', behavior: 'auto' });
@@ -4870,6 +6638,7 @@ function followPurchaseReceiptPrint(root = $current) {
       reveal.style.minHeight = `${printHeight}px`;
       reveal.classList.remove('is-printing');
       if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
+      revealPurchaseReportPdfButton(root);
       if (item) refreshStageFiveSection(item);
     },
     { once: true }

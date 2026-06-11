@@ -16,6 +16,7 @@ const LISTING_HOST_PATTERNS = [
   { id: 'daangn', hostRe: /(^|\.)daangn\.com$/i },
   { id: 'joongna', hostRe: /(^|\.)joongna\.com$/i },
 ];
+const SEARCH_TAB_TIMEOUT_MS = 45_000;
 
 function allSearchPlatformsDone(flags) {
   return SEARCH_PLATFORMS.every((id) => !flags?.[id]);
@@ -29,17 +30,44 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (comps?.status === 'collected') void closeSearchCollectionTabsIfAny();
 });
 
+async function isSearchCollectionFinished() {
+  const { marketScrapeAutoCollect, marketScrapeComps } = await chrome.storage.local.get([
+    'marketScrapeAutoCollect',
+    'marketScrapeComps',
+  ]);
+  return Boolean(marketScrapeAutoCollect && allSearchPlatformsDone(marketScrapeAutoCollect)) || marketScrapeComps?.status === 'collected';
+}
+
 async function closeSearchCollectionTabsIfAny() {
-  const { marketScrapeCloseTabs } = await chrome.storage.local.get('marketScrapeCloseTabs');
-  if (!Array.isArray(marketScrapeCloseTabs) || !marketScrapeCloseTabs.length) return;
-  for (const id of marketScrapeCloseTabs) {
+  const { marketScrapeCloseTabs, marketScrapeCloseTabsMeta } = await chrome.storage.local.get([
+    'marketScrapeCloseTabs',
+    'marketScrapeCloseTabsMeta',
+  ]);
+  const closeIds = new Set((Array.isArray(marketScrapeCloseTabs) ? marketScrapeCloseTabs : []).filter((id) => typeof id === 'number'));
+  const meta = marketScrapeCloseTabsMeta && typeof marketScrapeCloseTabsMeta === 'object' ? marketScrapeCloseTabsMeta : null;
+  if (meta?.query) {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.id == null) continue;
+      if (isSearchCollectionTab(tab.url, meta.query)) closeIds.add(tab.id);
+    }
+  }
+  if (!closeIds.size) {
+    await chrome.storage.local.remove(['marketScrapeCloseTabs', 'marketScrapeCloseTabsMeta']);
+    return;
+  }
+  for (const id of closeIds) {
     try {
       await chrome.tabs.remove(id);
     } catch {
       /* 이미 닫힘 */
     }
   }
-  await chrome.storage.local.remove(['marketScrapeCloseTabs']);
+  await chrome.storage.local.remove(['marketScrapeCloseTabs', 'marketScrapeCloseTabsMeta']);
+}
+
+async function closeSearchCollectionTabsIfFinished() {
+  if (await isSearchCollectionFinished()) await closeSearchCollectionTabsIfAny();
 }
 
 function scheduleCloseSearchCollectionTabs() {
@@ -59,7 +87,30 @@ function scheduleCloseSearchCollectionTabs() {
       }
       await closeSearchCollectionTabsIfAny();
     })();
-  }, 45_000);
+  }, SEARCH_TAB_TIMEOUT_MS);
+}
+
+function isSearchCollectionTab(rawUrl, query) {
+  const normalizedQuery = String(query || '').replace(/\s+/g, ' ').trim();
+  if (!normalizedQuery) return false;
+  try {
+    const url = new URL(String(rawUrl || ''));
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname;
+    if (host.endsWith('bunjang.co.kr') && path.includes('/search/products')) {
+      return (url.searchParams.get('q') || '').trim() === normalizedQuery;
+    }
+    if (host.endsWith('daangn.com') && /\/kr\/buy-sell\/?$/i.test(path)) {
+      return (url.searchParams.get('search') || '').trim() === normalizedQuery;
+    }
+    if (host.endsWith('joongna.com') && /^\/search(?:\/|$)/i.test(path)) {
+      const encoded = path.replace(/^\/search\/?/i, '').split('/')[0] || '';
+      return decodeURIComponent(encoded).trim() === normalizedQuery;
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 function classifyListingUrl(rawUrl) {
@@ -155,6 +206,35 @@ async function injectAnalyzerBridge(tabId) {
   } catch {
     /* bridge may already be present or the analyzer tab may still be loading */
   }
+}
+
+async function collectSearchTab(tabId, platform) {
+  await waitForTabComplete(tabId, platform === 'daangn' ? 16_000 : 12_000).catch(() => {});
+  await injectSearchScripts(tabId);
+  const res = await sendMessageToTab(tabId, { type: 'COLLECT_SEARCH' }, platform === 'daangn' ? 16_000 : 12_000);
+  return res?.ok ? res : { ok: false, platform, error: res?.error || '검색 탭 수집 실패' };
+}
+
+async function collectSearchTabsAndClose(tabsByPlatform) {
+  const entries = Object.entries(tabsByPlatform || {}).filter(([, tabId]) => typeof tabId === 'number');
+  if (!entries.length) return;
+  await Promise.allSettled(entries.map(([platform, tabId]) => collectSearchTab(tabId, platform)));
+  const { marketScrapeAutoCollect, marketScrapeComps } = await chrome.storage.local.get([
+    'marketScrapeAutoCollect',
+    'marketScrapeComps',
+  ]);
+  if (marketScrapeAutoCollect && !allSearchPlatformsDone(marketScrapeAutoCollect)) {
+    await chrome.storage.local.set({
+      marketScrapeAutoCollect: { ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, false])), at: Date.now() },
+      marketScrapeComps: {
+        ...(marketScrapeComps || {}),
+        status: 'collected',
+        collectedAt: new Date().toISOString(),
+        timedOut: true,
+      },
+    });
+  }
+  await closeSearchCollectionTabsIfFinished();
 }
 
 async function importListingUrl(rawUrl) {
@@ -282,6 +362,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       if (msg.type === 'OPEN_SEARCH_TABS') {
+        await closeSearchCollectionTabsIfAny();
         const rawQueries = Array.isArray(msg.queries) ? msg.queries : [msg.query];
         const queries = [];
         const seen = new Set();
@@ -316,7 +397,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const dangTab = await chrome.tabs.create({ url: daangnUrl, active: false });
         const joongTab = await chrome.tabs.create({ url: joongnaUrl, active: false });
         const closeIds = [bunTab?.id, dangTab?.id, joongTab?.id].filter((id) => typeof id === 'number');
-        if (closeIds.length) await chrome.storage.local.set({ marketScrapeCloseTabs: closeIds });
+        if (closeIds.length) {
+          await chrome.storage.local.set({
+            marketScrapeCloseTabs: closeIds,
+            marketScrapeCloseTabsMeta: {
+              query,
+              startedAt: Date.now(),
+              timeoutAt: Date.now() + SEARCH_TAB_TIMEOUT_MS,
+            },
+          });
+        }
+        await collectSearchTabsAndClose({
+          bunjang: bunTab?.id,
+          daangn: dangTab?.id,
+          joongna: joongTab?.id,
+        });
+        await closeSearchCollectionTabsIfFinished();
         scheduleCloseSearchCollectionTabs();
         sendResponse({ ok: true, query, queries: [query], tabIds: closeIds });
         return;

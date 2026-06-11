@@ -1084,16 +1084,69 @@ function normalizeImageLabel(raw, level = 'neutral') {
   return '사진 근거';
 }
 
+function normalizeGridSizeCells(raw) {
+  const value = raw && typeof raw === 'object' ? raw : {};
+  const cols = Number(value.cols ?? value.columns ?? value.width ?? value.w);
+  const rows = Number(value.rows ?? value.height ?? value.h);
+  if (!Number.isFinite(cols) && !Number.isFinite(rows)) return null;
+  return {
+    cols: Math.max(1, Math.min(32, Math.round(Number.isFinite(cols) ? cols : rows))),
+    rows: Math.max(1, Math.min(32, Math.round(Number.isFinite(rows) ? rows : cols))),
+  };
+}
+
+function gridColumnIndex(label) {
+  const value = String(label || '').trim().toUpperCase();
+  if (!/^[A-Z]{1,2}$/.test(value)) return -1;
+  let n = 0;
+  for (const ch of value) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+function gridCenterToMarker(gridCenter, gridSizeCells, gridCols = 32, gridRows = 32) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 32));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 32));
+  const match = String(gridCenter || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
+  if (!match) return null;
+  const col = gridColumnIndex(match[1]);
+  const row = Number(match[2]) - 1;
+  if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
+  const size = gridSizeCells || { cols: 2, rows: 2 };
+  const cellCols = Math.max(1, Math.min(cols, Number(size.cols) || 2));
+  const cellRows = Math.max(1, Math.min(rows, Number(size.rows) || cellCols));
+  const width = Math.max(2.6, Math.min(80, (cellCols / cols) * 100));
+  const height = Math.max(2.6, Math.min(80, (cellRows / rows) * 100));
+  const center = {
+    x: ((col + 0.5) / cols) * 100,
+    y: ((row + 0.5) / rows) * 100,
+  };
+  return {
+    center,
+    size: { width, height },
+    bbox: {
+      x: Math.max(0, center.x - width / 2),
+      y: Math.max(0, center.y - height / 2),
+      width,
+      height,
+    },
+  };
+}
+
 function normalizeImageDefects(items) {
   return (Array.isArray(items) ? items : [])
     .map((defect) => {
       if (!defect || typeof defect !== 'object') return null;
       const bbox = defect.bbox || defect.bboxPercent || defect.box || defect.rect || defect.area || null;
+      const gridCenter = String(defect.gridCenter || defect.centerCell || defect.centerGrid || defect.centerGridCell || '')
+        .replace(/\s+/g, '')
+        .trim();
+      const gridSizeCells = normalizeGridSizeCells(defect.gridSizeCells || defect.gridSize || defect.sizeCells || defect.cellSize);
       const gridCell = String(
         defect.gridCell ||
           defect.gridRange ||
           defect.range ||
           defect.cell ||
+          gridCenter ||
           (defect.startCell && defect.endCell ? `${defect.startCell}-${defect.endCell}` : '')
       )
         .replace(/\s+/g, '')
@@ -1102,13 +1155,24 @@ function normalizeImageDefects(items) {
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 80);
-      if (!bbox && !gridCell) return null;
+      if (!bbox && !gridCell && !gridCenter) return null;
       const severity = normalizeImageLevel(defect.severity || defect.level || 'caution');
+      const marker = gridCenterToMarker(gridCenter, gridSizeCells, defect.gridCols, defect.gridRows);
+      const approximateSize =
+        typeof defect.approximateSize === 'string'
+          ? defect.approximateSize
+          : typeof defect.size === 'string'
+            ? defect.size
+            : '';
       return {
+        gridCenter,
+        gridSizeCells,
         gridCell,
-        bbox,
+        bbox: marker?.bbox || bbox,
+        center: marker?.center || defect.center || defect.centerPercent || null,
+        size: marker?.size || (defect.size && typeof defect.size === 'object' ? defect.size : null),
         description,
-        approximateSize: String(defect.approximateSize || defect.size || '')
+        approximateSize: String(approximateSize)
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 40),
