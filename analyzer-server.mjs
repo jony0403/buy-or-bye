@@ -201,6 +201,30 @@ function normalizeQueryCandidate(raw) {
   return s;
 }
 
+/** JSON {"query":"..."} 또는 레거시 한 줄 — 형식 파싱만 (의미 보정 없음) */
+function parseSearchQuerySingle(text, fallbackTitle = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+
+  let jsonText = raw
+    .replace(/^\s*```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+  const objMatch = jsonText.match(/\{[\s\S]*\}/);
+  if (objMatch) jsonText = objMatch[0];
+  try {
+    const parsed = JSON.parse(jsonText);
+    const q = normalizeQueryCandidate(parsed?.query || parsed?.searchQuery || '');
+    if (q) return q;
+  } catch {
+    /* fall through */
+  }
+
+  const fromCandidates = parseQueryCandidates(raw, fallbackTitle, 1);
+  if (fromCandidates[0]) return fromCandidates[0];
+  return normalizeQueryCandidate(raw);
+}
+
 function parseQueryCandidates(text, _title, maxQueries = 3) {
   const max = Math.min(Math.max(Number(maxQueries) || 3, 1), 3);
   const raw = String(text || '').trim();
@@ -1630,22 +1654,39 @@ async function runWebGroundedSearchQuery(apiKey, model, title, body, inlineParts
 
   try {
     const fastText = await geminiGenerateFromParts(apiKey, model, parts, {
-      temperature: 0.2,
-      maxOutputTokens: 160,
+      temperature: 0.1,
+      maxOutputTokens: 120,
+      responseMimeType: 'application/json',
       timeoutMs: GEMINI_FAST_TIMEOUT_MS,
     });
-    if (normalizeQueryCandidate(fastText)) return { text: fastText, pipeline: 'multimodal_fast' };
+    if (parseSearchQuerySingle(fastText, title)) return { text: fastText, pipeline: 'multimodal_fast_json' };
   } catch (e) {
     console.warn('[search-query] 빠른 멀티모달 실패, Google Search 재시도:', e instanceof Error ? e.message : e);
   }
 
+  try {
+    const text = await geminiGenerateFromParts(apiKey, model, parts, {
+      useGoogleSearch: true,
+      temperature: 0.1,
+      maxOutputTokens: 200,
+      responseMimeType: 'application/json',
+      timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+    });
+    if (parseSearchQuerySingle(text, title)) return { text, pipeline: 'google_search_json' };
+  } catch (e) {
+    console.warn(
+      '[search-query] Google Search+JSON 실패, JSON 멀티모달 재시도:',
+      e instanceof Error ? e.message : e
+    );
+  }
+
   const text = await geminiGenerateFromParts(apiKey, model, parts, {
-    useGoogleSearch: true,
-    temperature: 0.2,
-    maxOutputTokens: 256,
+    temperature: 0.1,
+    maxOutputTokens: 200,
+    responseMimeType: 'application/json',
     timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
   });
-  return { text, pipeline: 'google_search_fallback' };
+  return { text, pipeline: 'multimodal_json_fallback' };
 }
 
 async function runWebGroundedSearchCandidates(apiKey, model, title, body, inlineParts, maxQueries = 3) {
@@ -1655,12 +1696,13 @@ async function runWebGroundedSearchCandidates(apiKey, model, title, body, inline
 
   try {
     const fastText = await geminiGenerateFromParts(apiKey, model, parts, {
-      temperature: 0.25,
-      maxOutputTokens: 220,
+      temperature: 0.1,
+      maxOutputTokens: 180,
+      responseMimeType: 'application/json',
       timeoutMs: GEMINI_FAST_TIMEOUT_MS,
     });
     if (parseQueryCandidates(fastText, title, maxQueries).length) {
-      return { text: fastText, pipeline: 'multimodal_candidates_fast' };
+      return { text: fastText, pipeline: 'multimodal_candidates_fast_json' };
     }
   } catch (e) {
     console.warn(
@@ -1669,13 +1711,31 @@ async function runWebGroundedSearchCandidates(apiKey, model, title, body, inline
     );
   }
 
+  try {
+    const text = await geminiGenerateFromParts(apiKey, model, parts, {
+      useGoogleSearch: true,
+      temperature: 0.1,
+      maxOutputTokens: 260,
+      responseMimeType: 'application/json',
+      timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+    });
+    if (parseQueryCandidates(text, title, maxQueries).length) {
+      return { text, pipeline: 'google_search_candidates_json' };
+    }
+  } catch (e) {
+    console.warn(
+      '[search-query] Google Search+JSON 후보 실패, JSON 멀티모달 재시도:',
+      e instanceof Error ? e.message : e
+    );
+  }
+
   const text = await geminiGenerateFromParts(apiKey, model, parts, {
-    useGoogleSearch: true,
-    temperature: 0.25,
-    maxOutputTokens: 320,
+    temperature: 0.1,
+    maxOutputTokens: 260,
+    responseMimeType: 'application/json',
     timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
   });
-  return { text, pipeline: 'google_search_candidates_fallback' };
+  return { text, pipeline: 'multimodal_candidates_json_fallback' };
 }
 
 async function runProductSummary(apiKey, model, title, body, inlineParts) {
@@ -1698,6 +1758,7 @@ async function runProductIdentify(apiKey, model, title, body, inlineParts) {
   return geminiGenerateFromParts(apiKey, model, parts, {
     useGoogleSearch: true,
     temperature: 0.05,
+    responseMimeType: 'application/json',
     timeoutMs: GEMINI_PRODUCT_TIMEOUT_MS,
   });
 }
@@ -2143,6 +2204,7 @@ const server = http.createServer(async (req, res) => {
           model,
           usedImages: inlineParts.length,
           pipeline,
+          rawText: rawCandidates,
         });
         return;
       }
@@ -2154,13 +2216,14 @@ const server = http.createServer(async (req, res) => {
         body.body || '',
         inlineParts
       );
-      const query = normalizeQueryCandidate(rawOut);
+      const query = parseSearchQuerySingle(rawOut, body.title);
 
       json(res, 200, {
         query,
         model,
         usedImages: inlineParts.length,
         pipeline,
+        rawText: rawOut,
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });
