@@ -69,6 +69,7 @@ const usedPriceGuideProgresses = new Map();
 const directAiChat = {
   open: false,
   status: 'idle',
+  commandStatus: 'idle',
   messages: [],
   keywordStatus: 'idle',
   keywordItems: [],
@@ -105,6 +106,7 @@ const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 0;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 24_000;
 const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v15';
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
+const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v3',
   'ulsa_ai_analysis_cache_v4',
@@ -353,6 +355,34 @@ function setLayoutMode(mode, opts = {}) {
   requestAnimationFrame(() => bindScrollText($current));
 }
 
+function storedThemeMode() {
+  try {
+    return localStorage.getItem(THEME_MODE_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+function isDarkModeEnabled() {
+  return document.documentElement.classList.contains('theme-dark') || document.body.classList.contains('theme-dark');
+}
+
+function setThemeMode(mode, opts = {}) {
+  const normalized = mode === 'dark' ? 'dark' : 'light';
+  const isDark = normalized === 'dark';
+  document.documentElement.classList.toggle('theme-dark', isDark);
+  document.body.classList.toggle('theme-dark', isDark);
+  document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+  if (opts.persist !== false) {
+    try {
+      localStorage.setItem(THEME_MODE_STORAGE_KEY, normalized);
+    } catch {
+      /* localStorage may be unavailable */
+    }
+  }
+  updateRailThemeToggle();
+}
+
 function updateRailLayoutToggle() {
   const btn = globalThis.document?.querySelector?.('[data-rail-action="layout"]');
   if (!btn) return;
@@ -362,6 +392,19 @@ function updateRailLayoutToggle() {
   if (icon) icon.textContent = isSlide ? 'view_carousel' : 'view_agenda';
   if (label) label.textContent = isSlide ? '슬라이드' : '스크롤';
   btn.setAttribute('aria-label', isSlide ? '현재 슬라이드식 보기, 누르면 스크롤식 전환' : '현재 스크롤식 보기, 누르면 슬라이드식 전환');
+}
+
+function updateRailThemeToggle() {
+  const btn = globalThis.document?.querySelector?.('[data-rail-action="theme"]');
+  if (!btn) return;
+  const isDark = isDarkModeEnabled();
+  const icon = btn.querySelector('.material-symbols-rounded');
+  const label = btn.querySelector('small');
+  btn.classList.toggle('is-on', isDark);
+  btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
+  btn.setAttribute('aria-label', isDark ? '다크모드 켜짐, 누르면 라이트모드 전환' : '다크모드 꺼짐, 누르면 다크모드 전환');
+  if (icon) icon.textContent = isDark ? 'light_mode' : 'dark_mode';
+  if (label) label.textContent = isDark ? '라이트' : '다크';
 }
 
 function stageSlideCount() {
@@ -1964,6 +2007,1108 @@ function directAiStatusText(item = currentRenderedItem()) {
   return `${directAiStepLabel(item)} 상태입니다. 생소한 키워드를 누르거나 직접 질문해보세요.`;
 }
 
+function invalidatePurchaseReceiptCaches(item) {
+  const key = summaryKey(item);
+  if (!key) return;
+  for (const cacheKey of [...purchaseReceipts.keys()]) {
+    if (listingKeyFromStageCacheKey(cacheKey) === key || cacheKey.startsWith(`${key}::`)) {
+      purchaseReceipts.delete(cacheKey);
+      purchaseReceiptPrintedKeys.delete(cacheKey);
+    }
+  }
+  clearPurchaseReceiptPrintedForListing(key);
+}
+
+function invalidateStepThreeCaches(item, { guide = true, comparison = true, receipt = true } = {}) {
+  const key = summaryKey(item);
+  if (!key) return;
+  for (const filterKey of [...comparisonFilters.keys()]) {
+    if (!filterKey.startsWith(`${key}::`)) continue;
+    if (comparison) comparisonFilters.delete(filterKey);
+    if (guide) {
+      usedPriceGuides.delete(filterKey);
+      usedPriceGuideProgresses.delete(key);
+    }
+    if (receipt) {
+      purchaseReceipts.delete(filterKey);
+      purchaseReceiptPrintedKeys.delete(filterKey);
+    }
+  }
+  if (receipt) clearPurchaseReceiptPrintedForListing(key);
+  searchQueryRegenerations.delete(key);
+  stageThreeComparisonSkippedKeys.delete(key);
+}
+
+function invalidateStepTwoCaches(key) {
+  if (!key) return;
+  productRiskAnalyses.delete(key);
+  productRiskYoutubeAnalyses.delete(key);
+  listingTextAnalyses.delete(key);
+  listingImageAnalyses.delete(key);
+  stageTwoCompletedKeys.delete(key);
+}
+
+function resetDownstreamStageActivation(key, item) {
+  if (!key) return;
+  stageTwoActiveKeys.delete(key);
+  stageThreeActiveKeys.delete(key);
+  relatedRequestedKeys.delete(key);
+  stageThreeIsolatedRefreshKeys.delete(key);
+  if (item && selectedKey === key) {
+    comps = null;
+    lastStageThreeCompsRenderKey = '';
+  }
+}
+
+function invalidateAnalysisPart(item, target) {
+  const key = summaryKey(item);
+  if (!key) return;
+  switch (target) {
+    case 'productSummary':
+      productSummaries.delete(key);
+      productImageSearches.delete(key);
+      invalidateStepTwoCaches(key);
+      invalidateStepThreeCaches(item);
+      resetDownstreamStageActivation(key, item);
+      break;
+    case 'productRisk':
+      productRiskAnalyses.delete(key);
+      productRiskYoutubeAnalyses.delete(key);
+      invalidatePurchaseReceiptCaches(item);
+      break;
+    case 'productRiskYoutube':
+      productRiskYoutubeAnalyses.delete(key);
+      break;
+    case 'listingText':
+      listingTextAnalyses.delete(key);
+      invalidatePurchaseReceiptCaches(item);
+      break;
+    case 'listingImage':
+      listingImageAnalyses.delete(key);
+      imageAnalysisPreviewedKeys.delete(key);
+      invalidatePurchaseReceiptCaches(item);
+      break;
+    case 'searchQuery':
+      searchQueryRegenerations.delete(key);
+      break;
+    case 'usedPriceGuide':
+      invalidateStepThreeCaches(item, { guide: true, comparison: false, receipt: true });
+      break;
+    case 'purchaseReceipt':
+      invalidatePurchaseReceiptCaches(item);
+      break;
+    default:
+      break;
+  }
+  persistAiCaches();
+}
+
+function isDirectAiPartLoading(item, target) {
+  const key = summaryKey(item);
+  if (!key) return false;
+  switch (target) {
+    case 'productSummary':
+      return productSummaries.get(key)?.status === 'loading';
+    case 'productRisk':
+      return productRiskAnalyses.get(key)?.status === 'loading';
+    case 'productRiskYoutube':
+      return productRiskYoutubeAnalyses.get(key)?.status === 'loading';
+    case 'listingText':
+      return listingTextAnalyses.get(key)?.status === 'loading';
+    case 'listingImage':
+      return listingImageAnalyses.get(key)?.status === 'loading';
+    case 'searchQuery':
+      return searchQueryRegenerations.get(key)?.status === 'loading';
+    case 'usedPriceGuide': {
+      const stageComps = effectiveStageThreeComps(item);
+      const guideKey = stageComps ? usedPriceGuideKey(item, stageComps) : '';
+      return guideKey ? usedPriceGuides.get(guideKey)?.status === 'loading' : false;
+    }
+    case 'purchaseReceipt': {
+      const stageComps = effectiveStageThreeComps(item);
+      const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
+      return receiptKey ? purchaseReceipts.get(receiptKey)?.status === 'loading' : false;
+    }
+    case 'comparisonSearch':
+      return comps?.status === 'collecting';
+    default:
+      return false;
+  }
+}
+
+function directAiEarlierStageBlock(item, requiredStep) {
+  const key = summaryKey(item);
+  if (!key) return '먼저 분석할 매물을 불러와 주세요.';
+  if (requiredStep >= 2 && !isStepOneDone(item)) {
+    return productSummaries.get(key)?.status === 'loading'
+      ? 'Step 1 매물 정리가 진행 중입니다. 이 단계가 마무리된 뒤 다시 실행할 수 있습니다.'
+      : 'Step 1 매물 정리가 끝난 뒤 실행할 수 있습니다.';
+  }
+  if (requiredStep === 2 && isStepOneDone(item) && !isStepTwoStarted(item)) {
+    return '지금은 Step 2 리스크 판별 시작 전입니다. 먼저 화면의 다음 단계 대기 카드에서 Step 2로 넘어가야 실행할 수 있습니다.';
+  }
+  if (requiredStep >= 3 && !isStepTwoDone(item)) {
+    if (isStepOneDone(item) && !isStepTwoStarted(item)) {
+      return '지금은 Step 2 리스크 판별 시작 전입니다. 먼저 화면의 다음 단계 대기 카드에서 Step 2로 넘어가야 실행할 수 있습니다.';
+    }
+    const loading =
+      productRiskAnalyses.get(key)?.status === 'loading' ||
+      productRiskYoutubeAnalyses.get(key)?.status === 'loading' ||
+      listingTextAnalyses.get(key)?.status === 'loading' ||
+      listingImageAnalyses.get(key)?.status === 'loading';
+    return loading
+      ? 'Step 2 리스크 판별이 진행 중입니다. 이전 단계가 마무리된 뒤 다시 실행할 수 있습니다.'
+      : 'Step 2 리스크 판별이 끝난 뒤 실행할 수 있습니다.';
+  }
+  if (requiredStep === 3 && isStepTwoDone(item) && !isStepThreeUnlocked(item)) {
+    return '지금은 Step 3 가격 참고 시작 전입니다. 먼저 화면의 다음 단계 대기 카드에서 Step 3로 넘어가야 실행할 수 있습니다.';
+  }
+  if (requiredStep >= 4 && !isStepThreeDone(item)) {
+    if (isStepTwoDone(item) && !isStepThreeUnlocked(item)) {
+      return '지금은 Step 3 가격 참고 시작 전입니다. 먼저 화면의 다음 단계 대기 카드에서 Step 3로 넘어가야 실행할 수 있습니다.';
+    }
+    const stageComps = effectiveStageThreeComps(item);
+    const guideKey = stageComps ? usedPriceGuideKey(item, stageComps) : '';
+    const loading =
+      comps?.status === 'collecting' ||
+      searchQueryRegenerations.get(key)?.status === 'loading' ||
+      comparisonFilters.get(guideKey)?.status === 'loading' ||
+      usedPriceGuides.get(guideKey)?.status === 'loading';
+    return loading
+      ? 'Step 3 가격 참고자료가 진행 중입니다. 이전 단계가 마무리된 뒤 최종 판단을 다시 만들 수 있습니다.'
+      : 'Step 3 가격 참고자료가 끝난 뒤 최종 판단을 다시 만들 수 있습니다.';
+  }
+  if (requiredStep === 4 && isStepThreeDone(item) && !isStepFourDone(item) && !isDirectAiPartLoading(item, 'purchaseReceipt')) {
+    return '지금은 Step 4 최종 판단 영수증 시작 전입니다. 먼저 화면의 다음 단계 대기 카드에서 Step 4로 넘어가야 실행할 수 있습니다.';
+  }
+  return '';
+}
+
+function extractSupportedListingUrlFromText(text) {
+  const matches = String(text || '').match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  for (const raw of matches) {
+    const clean = raw.replace(/[)\].,，。]+$/g, '');
+    const url = supportedListingUrl(clean);
+    if (url) return url;
+  }
+  return '';
+}
+
+function listingPageUrl(item) {
+  const candidates = [item?.pageUrl, item?.url, item?.listingUrl, item?.sourceUrl, item?.originalUrl];
+  for (const value of candidates) {
+    const url = supportedListingUrl(value);
+    if (url) return url;
+  }
+  return '';
+}
+
+function openDirectAiMarket(url, label) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return `${label} 열기를 요청했습니다. 새 탭이 보이지 않으면 브라우저 팝업 허용 상태를 확인해 주세요.`;
+}
+
+function directAiPdfCompletionWarning(item) {
+  if (!item) return '';
+  if (isStepFourDone(item)) return '';
+  const key = summaryKey(item);
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const stageThreeKey = stageComps ? comparisonFilterKey(item, stageComps) : '';
+  const comparisonState = stageThreeKey ? comparisonFilters.get(stageThreeKey) : null;
+  const guideState = stageThreeKey ? usedPriceGuides.get(stageThreeKey) : null;
+  const stepThreeComplete =
+    isStepThreeDone(item) &&
+    stageThreeActiveKeys.has(key) &&
+    isStageThreeCacheSettled(comparisonState?.status) &&
+    isStageThreeCacheSettled(guideState?.status);
+  const pending = [];
+  if (!isStepTwoDone(item)) pending.push('Step 2 리스크 판별');
+  if (!stepThreeComplete) pending.push('Step 3 가격 참고자료');
+  if (!isStepFourDone(item)) pending.push('Step 4 최종 판단 영수증');
+  if (!pending.length) return '';
+  const detail = [
+    !isStepTwoDone(item) ? '하자·본문·이미지 분석' : '',
+    !stepThreeComplete ? '비교 매물·시세' : '',
+    !isStepFourDone(item) ? '최종 구매 판단' : '',
+  ].filter(Boolean);
+  return `아직 ${pending.join(', ')}이 마무리되지 않았습니다. PDF 저장은 진행하지만, ${detail.join(', ')} 내용이 미완성으로 들어갈 수 있습니다.`;
+}
+
+function startStageTwoFromAssistant(item) {
+  const key = summaryKey(item);
+  if (!key) return '먼저 분석할 매물을 불러와 주세요.';
+  stageTwoActiveKeys.add(key);
+  playStageStartMotion();
+  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
+  void ensureProductRisk(item);
+  return 'Step 2 리스크 판별을 시작했습니다.';
+}
+
+function startStageThreeFromAssistant(item) {
+  const key = summaryKey(item);
+  if (!key) return '먼저 분석할 매물을 불러와 주세요.';
+  stageThreeActiveKeys.add(key);
+  relatedRequestedKeys.add(key);
+  persistAiCaches();
+  playStageStartMotion();
+  openRelatedSearchForItem(item, stageThreeSearchQueries(item), null);
+  return 'Step 3 가격 참고자료 수집을 시작했습니다.';
+}
+
+function startStageFourFromAssistant(item) {
+  void ensurePurchaseReceipt(item);
+  return 'Step 4 최종 판단 영수증 생성을 시작했습니다.';
+}
+
+async function startRequestedStageFromAssistant(item, stage) {
+  if (!item) return { message: '먼저 분석할 매물을 불러와 주세요.' };
+  const targetStage =
+    stage ||
+    (!isStepOneDone(item) ? 1 : !isStepTwoStarted(item) ? 2 : !isStepThreeUnlocked(item) ? 3 : !isStepFourDone(item) ? 4 : 0);
+  if (targetStage === 1) return { message: 'Step 1 매물 정리는 이미 자동으로 진행됩니다. 잠시만 기다려 주세요.' };
+  if (targetStage === 2) {
+    const block = directAiEarlierStageBlock(item, 2);
+    if (block && !block.includes('Step 2 리스크 판별 시작 전')) return { message: block };
+    return { message: startStageTwoFromAssistant(item) };
+  }
+  if (targetStage === 3) {
+    const block = directAiEarlierStageBlock(item, 3);
+    if (block && !block.includes('Step 3 가격 참고 시작 전')) return { message: block };
+    return { message: startStageThreeFromAssistant(item) };
+  }
+  if (targetStage === 4) {
+    const block = directAiEarlierStageBlock(item, 4);
+    if (block && !block.includes('Step 4 최종 판단 영수증 시작 전')) return { message: block };
+    return { message: startStageFourFromAssistant(item) };
+  }
+  return { message: '이미 Step 4 최종 판단까지 완료된 상태입니다.' };
+}
+
+const DIRECT_AI_ACTIONS = [
+  {
+    id: 'regen.productSummary',
+    label: '매물 정리 다시 생성',
+    risk: 'safe',
+    chipLabel: '매물 정리 다시',
+    aliases: ['매물 정리', '제품 정리', 'step1', 'step 1'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      if (isDirectAiPartLoading(item, 'productSummary')) return { ok: false, message: '매물 정리가 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      cancelActiveAiWork();
+      invalidateAnalysisPart(item, 'productSummary');
+      if (selectedKey === summaryKey(item)) refreshProductSummaryBlock(item);
+      await ensureProductSummary(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: 'Step 1 매물 정리를 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'stage.next',
+    label: '다음 단계 실행',
+    risk: 'safe',
+    chipLabel: '다음 단계 실행',
+    aliases: ['다음 단계', '다음단계', '다음 스텝', '다음step'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      return { ok: true };
+    },
+    async run(item) {
+      return startRequestedStageFromAssistant(item, 0);
+    },
+  },
+  {
+    id: 'stage.step2',
+    label: 'Step 2 실행',
+    risk: 'safe',
+    chipLabel: 'Step 2 실행',
+    aliases: ['step2', 'step 2', '2단계', '스텝2', '리스크 판별 실행'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      return { ok: true };
+    },
+    async run(item) {
+      return startRequestedStageFromAssistant(item, 2);
+    },
+  },
+  {
+    id: 'stage.step3',
+    label: 'Step 3 실행',
+    risk: 'safe',
+    chipLabel: 'Step 3 실행',
+    aliases: ['step3', 'step 3', '3단계', '스텝3', '가격 참고 실행'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      return { ok: true };
+    },
+    async run(item) {
+      return startRequestedStageFromAssistant(item, 3);
+    },
+  },
+  {
+    id: 'stage.step4',
+    label: 'Step 4 실행',
+    risk: 'safe',
+    chipLabel: 'Step 4 실행',
+    aliases: ['step4', 'step 4', '4단계', '스텝4', '최종 판단 실행', '영수증 실행'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      return { ok: true };
+    },
+    async run(item) {
+      return startRequestedStageFromAssistant(item, 4);
+    },
+  },
+  {
+    id: 'regen.productRisk',
+    label: '리스크 판별 다시 생성',
+    risk: 'safe',
+    chipLabel: '리스크 다시',
+    aliases: ['리스크', '고질병', '제품 리스크'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 2);
+      if (block) return { ok: false, message: block };
+      if (isDirectAiPartLoading(item, 'productRisk')) return { ok: false, message: '리스크 판별이 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      invalidateAnalysisPart(item, 'productRisk');
+      if (selectedKey === summaryKey(item)) refreshProductSummaryBlock(item, { refreshProductSummary: false });
+      await ensureProductRisk(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: 'Step 2 리스크 판별을 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.productRiskYoutube',
+    label: '유튜브 참고 다시 생성',
+    risk: 'safe',
+    chipLabel: '유튜브 다시',
+    aliases: ['유튜브', 'youtube'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 2);
+      if (block) return { ok: false, message: block };
+      if (isDirectAiPartLoading(item, 'productRiskYoutube')) return { ok: false, message: '유튜브 참고가 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      invalidateAnalysisPart(item, 'productRiskYoutube');
+      if (selectedKey === summaryKey(item)) refreshProductRiskYoutubeCard(item);
+      await ensureProductRiskYoutube(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: '유튜브 참고 자료를 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.listingText',
+    label: '판매글 분석 다시 생성',
+    risk: 'safe',
+    chipLabel: '본문 분석 다시',
+    aliases: ['본문', '판매글', '텍스트 분석', '글 분석'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 2);
+      if (block) return { ok: false, message: block };
+      if (isDirectAiPartLoading(item, 'listingText')) return { ok: false, message: '판매글 분석이 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      invalidateAnalysisPart(item, 'listingText');
+      if (selectedKey === summaryKey(item)) refreshListingTextAnalysisCard(item);
+      await ensureListingTextAnalysis(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: '판매글 분석을 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.listingImage',
+    label: '이미지 분석 다시 생성',
+    risk: 'safe',
+    chipLabel: '이미지 분석 다시',
+    aliases: ['이미지', '사진', '사진 분석', '이미지 분석'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 2);
+      if (block) return { ok: false, message: block };
+      if (isDirectAiPartLoading(item, 'listingImage')) return { ok: false, message: '이미지 분석이 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      invalidateAnalysisPart(item, 'listingImage');
+      if (selectedKey === summaryKey(item)) refreshListingImageAnalysisCard(item);
+      await ensureListingImageAnalysis(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: '판매자 이미지 분석을 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.searchQuery',
+    label: '검색어 다시 생성',
+    risk: 'safe',
+    chipLabel: '검색어 다시',
+    aliases: ['검색어', '검색어 재생성'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 3);
+      if (block) return { ok: false, message: block };
+      if (isDirectAiPartLoading(item, 'searchQuery')) return { ok: false, message: '검색어가 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      await regenerateStageThreeSearchQueries(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: '가격 참고용 검색어를 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.comparisonSearch',
+    label: '비교 매물 다시 검색',
+    risk: 'safe',
+    chipLabel: '매물 검색 다시',
+    aliases: ['비교 매물', '매물 검색', '번장', '당근', '중고나라 검색'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 3);
+      if (block) return { ok: false, message: block };
+      if (isDirectAiPartLoading(item, 'comparisonSearch')) return { ok: false, message: '비교 매물 검색이 이미 진행 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      const key = summaryKey(item);
+      stageThreeActiveKeys.add(key);
+      relatedRequestedKeys.add(key);
+      openRelatedSearchForItem(item, stageThreeSearchQueries(item), null, { isolated: true });
+      refreshDirectAiPanelIfOpen();
+      return { message: '번개·당근·중고나라 비교 매물 검색을 다시 시작합니다.' };
+    },
+  },
+  {
+    id: 'regen.usedPriceGuide',
+    label: '가격 참고자료 다시 생성',
+    risk: 'safe',
+    chipLabel: '가격 참고 다시',
+    aliases: ['가격 참고', '시세', '중고 시세', '가격 가이드'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 3);
+      if (block) return { ok: false, message: block };
+      if (!isStepThreeUnlocked(item)) return { ok: false, message: 'Step 3 가격 참고를 시작한 뒤에 다시 생성할 수 있습니다.' };
+      if (isDirectAiPartLoading(item, 'usedPriceGuide')) return { ok: false, message: '가격 참고자료가 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      await ensureUsedPriceGuide(item, { regenerate: true });
+      refreshDirectAiPanelIfOpen();
+      return { message: '중고 시세 가이드를 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.skipComparison',
+    label: '비교 매물 스킵',
+    risk: 'safe',
+    chipLabel: '비교 매물 스킵',
+    aliases: ['비교 스킵', '매물 스킵', '스킵'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 3);
+      if (block) return { ok: false, message: block };
+      return { ok: true };
+    },
+    async run(item) {
+      skipStageThreeComparison(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: '비교 매물 수집을 건너뛰고 가격 참고 정리로 넘어갑니다.' };
+    },
+  },
+  {
+    id: 'regen.purchaseReceipt',
+    label: '최종 판단 다시 생성',
+    risk: 'safe',
+    chipLabel: '최종 판단 다시',
+    aliases: ['최종 판단', '영수증', '구매 판단', 'step4', 'step 4'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 4);
+      if (block) return { ok: false, message: block };
+      if (!isStepThreeUnlocked(item)) return { ok: false, message: 'Step 3 가격 참고가 준비된 뒤에 다시 생성할 수 있습니다.' };
+      if (isDirectAiPartLoading(item, 'purchaseReceipt')) return { ok: false, message: '최종 판단이 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      await ensurePurchaseReceipt(item, { regenerate: true });
+      refreshDirectAiPanelIfOpen();
+      return { message: '최종 구매 판단을 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'ui.pdf',
+    label: 'PDF 리포트 저장',
+    risk: 'safe',
+    chipLabel: 'PDF 저장',
+    aliases: ['pdf', '리포트', '보고서', '출력'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      if (!isStepOneDone(item)) return { ok: false, message: '분석 결과가 조금이라도 준비된 뒤에 PDF를 저장할 수 있습니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      await openPurchaseReportPdf(item, comps);
+      const warning = directAiPdfCompletionWarning(item);
+      return {
+        message: warning
+          ? `PDF 리포트 창을 열었습니다. ${warning}`
+          : 'PDF 리포트 창을 열었습니다. 인쇄 또는 PDF 저장을 진행해 주세요.',
+      };
+    },
+  },
+  {
+    id: 'ui.openHistory',
+    label: '최근 매물 열기',
+    risk: 'safe',
+    chipLabel: '최근 매물',
+    aliases: ['최근', '히스토리', '기록'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      $btnHistory?.click();
+      return { message: '최근 매물 목록을 열었습니다.' };
+    },
+  },
+  {
+    id: 'ui.openSettings',
+    label: 'AI 설정 열기',
+    risk: 'safe',
+    chipLabel: 'AI 설정',
+    aliases: ['설정', 'ai 설정', 'ai설정', 'api 설정', 'api설정', '키 설정', '키설정', 'api 키', 'apikey', 'gemini'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      document.getElementById('btnAiSettings')?.click();
+      return { message: 'AI 설정 창을 열었습니다.' };
+    },
+  },
+  {
+    id: 'ui.openListing',
+    label: '판매글 열기',
+    risk: 'safe',
+    chipLabel: '판매글 열기',
+    aliases: ['판매글', '원본 글', '원본 매물', '매물 페이지'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      if (!listingPageUrl(item)) return { ok: false, message: '이 매물의 원본 판매글 URL을 찾지 못했습니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      window.open(listingPageUrl(item), '_blank', 'noopener,noreferrer');
+      return { message: '원본 판매글 열기를 요청했습니다. 새 탭이 보이지 않으면 브라우저 팝업 허용 상태를 확인해 주세요.' };
+    },
+  },
+  {
+    id: 'ui.openDanawa',
+    label: '다나와 검색',
+    risk: 'safe',
+    chipLabel: '다나와 검색',
+    aliases: ['다나와', '다나와 검색', '신품가 검색', '새상품 검색'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const summary = getProductSummaryState(item)?.summary || null;
+      if (!danawaPriceUrl(summary)) return { ok: false, message: 'Step 1 매물 정리 후 제품명이 잡히면 다나와 검색을 열 수 있습니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      const summary = getProductSummaryState(item)?.summary || null;
+      window.open(danawaPriceUrl(summary), '_blank', 'noopener,noreferrer');
+      return { message: '다나와 검색 열기를 요청했습니다. 새 탭이 보이지 않으면 브라우저 팝업 허용 상태를 확인해 주세요.' };
+    },
+  },
+  {
+    id: 'ui.openLayout',
+    label: '보기 모드 전환',
+    risk: 'safe',
+    chipLabel: '보기 전환',
+    aliases: ['보기', '레이아웃', '스크롤', '슬라이드'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      $btnLayoutMode?.click();
+      updateRailLayoutToggle();
+      return { message: '레이아웃 보기 모드를 전환했습니다.' };
+    },
+  },
+  {
+    id: 'ui.darkModeOn',
+    label: '다크모드 켜기',
+    risk: 'safe',
+    chipLabel: '다크모드 켜기',
+    aliases: ['다크모드', '다크 모드', '다크모드 실행', '다크 모드 실행', '다크모드 켜기', '다크 모드 켜기', '어두운 모드', 'dark mode', 'dark mode on'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      setThemeMode('dark');
+      return { message: '다크모드를 켰습니다.' };
+    },
+  },
+  {
+    id: 'ui.darkModeOff',
+    label: '다크모드 끄기',
+    risk: 'safe',
+    chipLabel: '다크모드 끄기',
+    aliases: ['다크모드 끄기', '다크 모드 끄기', '라이트모드', '밝은 모드', 'dark mode off'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      setThemeMode('light');
+      return { message: '다크모드를 껐습니다.' };
+    },
+  },
+  {
+    id: 'ui.openDaangn',
+    label: '당근마켓 열기',
+    risk: 'safe',
+    chipLabel: '당근마켓',
+    aliases: ['당근', '당근마켓', 'daangn', 'karrot'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      return { message: openDirectAiMarket('https://www.daangn.com/', '당근마켓') };
+    },
+  },
+  {
+    id: 'ui.openBunjang',
+    label: '번개장터 열기',
+    risk: 'safe',
+    chipLabel: '번개장터',
+    aliases: ['번개', '번장', '번개장터', 'bunjang'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      return { message: openDirectAiMarket('https://m.bunjang.co.kr/', '번개장터') };
+    },
+  },
+  {
+    id: 'ui.openJoongna',
+    label: '중고나라 열기',
+    risk: 'safe',
+    chipLabel: '중고나라',
+    aliases: ['중나', '중고나라', 'joongna'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      return { message: openDirectAiMarket('https://web.joongna.com/', '중고나라') };
+    },
+  },
+  {
+    id: 'ui.openImport',
+    label: 'URL 불러오기 열기',
+    risk: 'safe',
+    chipLabel: 'URL 불러오기',
+    aliases: ['url', '링크', '불러오기'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      openRailPanel('import');
+      return { message: '매물 URL 불러오기 패널을 열었습니다.' };
+    },
+  },
+  {
+    id: 'ui.importUrl',
+    label: 'URL 바로 분석',
+    risk: 'safe',
+    chipLabel: 'URL 바로 분석',
+    aliases: ['url 분석', '링크 분석', '바로 분석'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run(item, ctx = {}) {
+      const url = ctx.url || extractSupportedListingUrlFromText(ctx.prompt || '');
+      if (!url) return { message: '분석할 중고나라·번개장터·당근마켓 URL을 같이 보내주세요.' };
+      requestListingUrlImport(url);
+      return { message: 'URL을 열어 분석을 시작합니다.' };
+    },
+  },
+  {
+    id: 'danger.refreshAll',
+    label: '현재 매물 전체 다시 분석',
+    risk: 'confirm',
+    chipLabel: '전체 다시 분석',
+    aliases: ['전체 다시', '처음부터', '전체 재생성', '다시 분석', '재실행', '다시 실행', '재분석'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      return { ok: true };
+    },
+    async run(item) {
+      cancelActiveAiWork();
+      clearCurrentAnalysisState();
+      if (selectedKey === summaryKey(item)) {
+        renderItem(item, null);
+        void ensureProductSummary(item);
+      }
+      window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
+      refreshDirectAiPanelIfOpen();
+      return { message: '현재 매물 분석을 처음부터 다시 시작합니다.' };
+    },
+  },
+  {
+    id: 'danger.newAnalysis',
+    label: '새 분석 시작',
+    risk: 'confirm',
+    chipLabel: '새 분석',
+    aliases: ['새 분석', '새로 시작', '초기화'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      startNewAnalysis();
+      return { message: '새 분석 화면으로 전환했습니다.' };
+    },
+  },
+  {
+    id: 'danger.clearHistory',
+    label: '전체 기록 삭제',
+    risk: 'confirm',
+    chipLabel: '기록 전체 삭제',
+    aliases: ['전체 기록 삭제', '기록 삭제', '히스토리 삭제', '최근 매물 삭제'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      $btnHistoryClear?.click();
+      return { message: '전체 기록과 분석 캐시를 삭제했습니다.' };
+    },
+  },
+];
+
+function getDirectAiAction(actionId) {
+  return DIRECT_AI_ACTIONS.find((action) => action.id === actionId) || null;
+}
+
+function getDirectAiAvailableActions(item = currentRenderedItem()) {
+  return DIRECT_AI_ACTIONS.filter((action) => {
+    const pre = action.preconditions?.(item);
+    return pre?.ok;
+  });
+}
+
+function getDirectAiSuggestedCommands(item = currentRenderedItem()) {
+  const preferred = [
+    'stage.next',
+    'regen.listingImage',
+    'regen.usedPriceGuide',
+    'regen.purchaseReceipt',
+    'ui.pdf',
+    'ui.openListing',
+    'ui.openDanawa',
+    'regen.comparisonSearch',
+    'regen.productSummary',
+    'ui.openHistory',
+  ];
+  const available = new Set(getDirectAiAvailableActions(item).map((action) => action.id));
+  return preferred
+    .map((id) => getDirectAiAction(id))
+    .filter((action) => action && available.has(action.id))
+    .slice(0, 5);
+}
+
+const DIRECT_AI_COMMAND_VERBS =
+  /(?:다시\s*(?:만들|생성|해|분석|검색|정리|실행|돌려)?|재생성|refresh|regenerate|만들(?:어|기)?|생성|실행|시작|출력|저장|해\s*줘|실행해|저장해|열어|열어줘|켜줘|켜|보여줘|스킵|skip)/i;
+
+function normalizeDirectAiCommandText(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function isLikelyDirectAiExplanationQuestion(message) {
+  const text = String(message || '');
+  if (!/(?:뭐야|무엇|설명|알려|뜻|의미|궁금|어떤|왜|무슨)/i.test(text)) return false;
+  return !/(?:다시\s*(?:생성|만들|분석|검색|실행|돌려)|재생성)/i.test(text);
+}
+
+function directAiActionIdFromAlias(text) {
+  const normalized = normalizeDirectAiCommandText(text);
+  for (const action of DIRECT_AI_ACTIONS) {
+    if (action.id.endsWith(normalized.replace(/\./g, ''))) return action.id;
+    for (const alias of action.aliases || []) {
+      const aliasNorm = normalizeDirectAiCommandText(alias);
+      if (!aliasNorm) continue;
+      if (normalized.includes(aliasNorm)) return action.id;
+    }
+  }
+  return '';
+}
+
+function matchDirectAiCommandRules(message) {
+  const raw = String(message || '').trim();
+  const text = normalizeDirectAiCommandText(raw);
+  if (!text) return null;
+  if (isLikelyDirectAiExplanationQuestion(raw)) return null;
+  const url = extractSupportedListingUrlFromText(raw);
+  if (url) return { actionId: 'ui.importUrl', confidence: 0.98, source: 'url', url };
+
+  const ruleMatches = [
+    { pattern: /^(?:재실행|재분석)$/, actionId: 'danger.refreshAll', confidence: 0.99 },
+    { pattern: /^다시\s*(?:실행|분석)$/, actionId: 'danger.refreshAll', confidence: 0.99 },
+    {
+      pattern:
+        /(?:재실행|다시\s*실행|처음부터\s*다시|새로\s*분석)(?!.*(?:이미지|사진|본문|판매글|텍스트|리스크|고질병|유튜브|검색어|비교|시세|가격|영수증|매물\s*정리|제품\s*정리|step\s*[234]))/,
+      actionId: 'danger.refreshAll',
+      confidence: 0.98,
+    },
+    { pattern: /다음\s*(단계|스텝|step).*(실행|시작|넘어|진행|해)|다음단계/, actionId: 'stage.next', confidence: 0.96 },
+    { pattern: /(step\s*2|step2|2단계|스텝\s*2).*(실행|시작|넘어|진행|해)/, actionId: 'stage.step2', confidence: 0.95 },
+    { pattern: /(step\s*3|step3|3단계|스텝\s*3).*(실행|시작|넘어|진행|해)/, actionId: 'stage.step3', confidence: 0.95 },
+    { pattern: /(step\s*4|step4|4단계|스텝\s*4).*(실행|시작|넘어|진행|해)/, actionId: 'stage.step4', confidence: 0.95 },
+    { pattern: /(전체|처음부터).*(다시|재|새로)|다시\s*분석|전체\s*재생성/, actionId: 'danger.refreshAll', confidence: 0.96 },
+    { pattern: /새\s*분석\s*(시작|해)|새로\s*시작/, actionId: 'danger.newAnalysis', confidence: 0.95 },
+    { pattern: /(전체\s*)?(기록|히스토리|최근\s*매물).*(삭제|지워|초기화)|전체\s*기록\s*삭제/, actionId: 'danger.clearHistory', confidence: 0.96 },
+    { pattern: /(pdf|리포트|보고서).*(저장|출력|만들|열)|^pdf\s*저장/, actionId: 'ui.pdf', confidence: 0.94 },
+    { pattern: /(?!(?:.*(?:분석|재분석|체크|검토)))(판매글|원본\s*(글|매물)|매물\s*페이지).*(열|켜|실행|보여|이동|가줘)/, actionId: 'ui.openListing', confidence: 0.95 },
+    { pattern: /다나와|신품가\s*검색|새상품\s*검색/, actionId: 'ui.openDanawa', confidence: 0.94 },
+    { pattern: /당근(?:마켓)?\s*(?:켜|열|보여|가줘|이동)/, actionId: 'ui.openDaangn', confidence: 0.96 },
+    { pattern: /번개(?:장터)?|번장/, actionId: 'ui.openBunjang', confidence: 0.9 },
+    { pattern: /중고나라|중나/, actionId: 'ui.openJoongna', confidence: 0.9 },
+    { pattern: /최근\s*매물|히스토리/, actionId: 'ui.openHistory', confidence: 0.9 },
+    { pattern: /ai\s*설정|api\s*설정|키\s*설정|api\s*키|gemini|제미나이/, actionId: 'ui.openSettings', confidence: 0.92 },
+    { pattern: /보기\s*전환|레이아웃|스크롤(?:식)?|슬라이드(?:식)?/, actionId: 'ui.openLayout', confidence: 0.88 },
+    { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode).*(꺼|꺼줘|off|해제|비활성)|라이트\s*모드|밝은\s*모드/, actionId: 'ui.darkModeOff', confidence: 0.96 },
+    { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode)(?:\s*(?:실행|켜|켜줘|on|적용|활성|해줘|해|전환|바꿔)?)?$/, actionId: 'ui.darkModeOn', confidence: 0.96 },
+    { pattern: /url\s*불러|링크\s*불러|매물\s*url/, actionId: 'ui.openImport', confidence: 0.88 },
+    { pattern: /(이미지|사진)\s*분석/, actionId: 'regen.listingImage', confidence: 0.93 },
+    { pattern: /(본문|판매글|텍스트|글)\s*(다시\s*)?(분석|재분석|체크|검토)/, actionId: 'regen.listingText', confidence: 0.95 },
+    { pattern: /유튜브/, actionId: 'regen.productRiskYoutube', confidence: 0.9 },
+    { pattern: /(리스크|고질병)/, actionId: 'regen.productRisk', confidence: 0.9 },
+    { pattern: /검색어/, actionId: 'regen.searchQuery', confidence: 0.9 },
+    { pattern: /(비교\s*매물|매물)\s*스킵|비교\s*스킵/, actionId: 'regen.skipComparison', confidence: 0.92 },
+    { pattern: /(비교\s*매물|매물)\s*(다시\s*)?검색/, actionId: 'regen.comparisonSearch', confidence: 0.91 },
+    { pattern: /(가격\s*참고|시세|중고\s*시세)/, actionId: 'regen.usedPriceGuide', confidence: 0.92 },
+    { pattern: /(최종\s*판단|구매\s*판단|영수증)/, actionId: 'regen.purchaseReceipt', confidence: 0.92 },
+    { pattern: /(매물\s*정리|제품\s*정리)/, actionId: 'regen.productSummary', confidence: 0.9 },
+  ];
+
+  const hasCommandVerb = DIRECT_AI_COMMAND_VERBS.test(raw);
+  for (const rule of ruleMatches) {
+    if (rule.pattern.test(text) && (hasCommandVerb || rule.actionId.startsWith('ui.') || rule.actionId.startsWith('danger.'))) {
+      return { actionId: rule.actionId, confidence: rule.confidence, source: 'rule' };
+    }
+  }
+
+  if (!hasCommandVerb) return null;
+
+  const aliasId = directAiActionIdFromAlias(raw);
+  if (aliasId) return { actionId: aliasId, confidence: 0.78, source: 'alias' };
+  return null;
+}
+
+function parseDirectAiCommandClassification(answer) {
+  const raw = String(answer || '').trim();
+  if (!raw) return null;
+  const parse = (text) => {
+    try {
+      const data = JSON.parse(text);
+      const actionId = String(data?.actionId || data?.target || '').trim();
+      const confidence = Number(data?.confidence);
+      if (!actionId) return null;
+      return {
+        actionId,
+        confidence: Number.isFinite(confidence) ? confidence : 0.75,
+        source: 'llm',
+      };
+    } catch {
+      return null;
+    }
+  };
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1] || '';
+  return parse(fenced) || parse(raw.match(/\{[\s\S]*\}/)?.[0] || '');
+}
+
+function directAiCommandClassificationPrompt(message, item = currentRenderedItem()) {
+  const allowed = DIRECT_AI_ACTIONS.map((action) => `${action.id}: ${action.label}`).join('\n');
+  return [
+    '사용자 메시지가 중고 매물 분석 앱의 실행 명령인지 분류하세요.',
+    '명령이 아니면 {"actionId":"","confidence":0} 만 출력하세요.',
+    '명령이면 아래 actionId 중 하나만 고르세요.',
+    allowed,
+    '',
+    `현재 단계: ${directAiStepLabel(item)}`,
+    `사용자 메시지: ${message}`,
+    '반드시 JSON만 출력: {"actionId":"regen.listingImage","confidence":0.92}',
+  ].join('\n');
+}
+
+async function classifyDirectAiCommandWithLlm(message, item, apiKey) {
+  if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') return null;
+  const data = await globalThis.UlsaAi.askDirect({
+    prompt: directAiCommandClassificationPrompt(message, item),
+    apiKey,
+  });
+  const parsed = parseDirectAiCommandClassification(data.answer || '');
+  if (!parsed?.actionId) return null;
+  if (!getDirectAiAction(parsed.actionId)) return null;
+  return parsed;
+}
+
+async function resolveDirectAiCommand(message, item = currentRenderedItem(), apiKey = getAiApiKey()) {
+  if (isLikelyDirectAiExplanationQuestion(message)) return null;
+  const ruled = matchDirectAiCommandRules(message);
+  if (ruled?.actionId && ruled.confidence >= 0.75) return ruled;
+
+  const maybeCommand =
+    DIRECT_AI_COMMAND_VERBS.test(String(message || '')) ||
+    /^(pdf|저장|열어|켜|최근|설정|api|키|url|당근|번개|번장|중고나라|중나|슬라이드|스크롤|판매글|원본|다나와|기록|히스토리|새\s*분석|다음|step|스텝|\d단계)/i.test(String(message || '').trim()) ||
+    Boolean(extractSupportedListingUrlFromText(message));
+  if (!maybeCommand) return null;
+
+  try {
+    const llm = await classifyDirectAiCommandWithLlm(message, item, apiKey);
+    if (llm?.actionId && llm.confidence >= 0.7) return llm;
+  } catch {
+    return ruled;
+  }
+  return ruled;
+}
+
+async function executeDirectAiAction(actionId, item = currentRenderedItem(), ctx = {}) {
+  const action = getDirectAiAction(actionId);
+  if (!action) return { ok: false, message: '알 수 없는 명령입니다.' };
+  if (directAiChat.commandStatus === 'loading') {
+    return { ok: false, message: '이미 다른 명령을 실행 중입니다. 잠시만 기다려 주세요.' };
+  }
+  const pre = action.preconditions?.(item);
+  if (pre && !pre.ok) return { ok: false, message: pre.message || '지금은 실행할 수 없습니다.' };
+
+  directAiChat.commandStatus = 'loading';
+  try {
+    const result = await action.run(item, ctx);
+    return { ok: true, message: result?.message || `${action.label}을(를) 실행했습니다.` };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  } finally {
+    directAiChat.commandStatus = 'idle';
+  }
+}
+
+function queueDirectAiCommandConfirm(actionId) {
+  const action = getDirectAiAction(actionId);
+  if (!action) return;
+  directAiChat.messages.push({
+    role: 'ai',
+    text: `"${action.label}"을(를) 실행할까요? 되돌릴 수 없는 작업일 수 있습니다.`,
+    meta: { confirmActionId: actionId },
+  });
+  directAiChat.status = 'done';
+}
+
+async function handleDirectAiUserMessage(prompt, item = currentRenderedItem()) {
+  const apiKey = getAiApiKey();
+  const resolved = await resolveDirectAiCommand(prompt, item, apiKey);
+  if (!resolved?.actionId) return false;
+
+  const action = getDirectAiAction(resolved.actionId);
+  if (!action) return false;
+
+  if (action.risk === 'confirm') {
+    queueDirectAiCommandConfirm(action.id);
+    return true;
+  }
+
+  const result = await executeDirectAiAction(action.id, item, {
+    prompt,
+    url: resolved.url || extractSupportedListingUrlFromText(prompt),
+  });
+  directAiChat.messages.push({
+    role: 'ai',
+    text: result.ok ? result.message : result.message,
+  });
+  directAiChat.status = result.ok ? 'done' : 'error';
+  return true;
+}
+
+function renderDirectAiCommandChipsHtml(item = currentRenderedItem()) {
+  const chips = getDirectAiSuggestedCommands(item);
+  if (!chips.length) return '';
+  return `
+    <div class="direct-chat-commands" aria-label="명령 바로가기">
+      <span>명령</span>
+      <div>
+        ${chips
+          .map(
+            (chip) =>
+              `<button type="button" class="direct-chat-command-chip" data-direct-chat-command="${escapeAttr(chip.id)}">${escapeHtml(chip.chipLabel || chip.label)}</button>`
+          )
+          .join('')}
+      </div>
+    </div>
+  `;
+}
+
+function bindDirectAiCommandButtons(root = $directAiPanel) {
+  root?.querySelectorAll('[data-direct-chat-command]').forEach((btn) => {
+    if (btn.dataset.directChatCommandBound === '1') return;
+    btn.dataset.directChatCommandBound = '1';
+    btn.addEventListener('click', async () => {
+      const actionId = btn.getAttribute('data-direct-chat-command') || '';
+      const action = getDirectAiAction(actionId);
+      if (!action) return;
+      const item = currentRenderedItem();
+      directAiChat.messages.push({ role: 'user', text: action.chipLabel || action.label });
+      saveDirectAiChatState();
+      if (action.risk === 'confirm') {
+        queueDirectAiCommandConfirm(actionId);
+        saveDirectAiChatState();
+        renderDirectAiPanel();
+        return;
+      }
+      directAiChat.status = 'loading';
+      renderDirectAiPanel();
+      const result = await executeDirectAiAction(actionId, item);
+      directAiChat.messages.push({ role: 'ai', text: result.message });
+      directAiChat.status = result.ok ? 'done' : 'error';
+      saveDirectAiChatState();
+      renderDirectAiPanel();
+    });
+  });
+
+  root?.querySelectorAll('[data-direct-chat-confirm]').forEach((btn) => {
+    if (btn.dataset.directChatConfirmBound === '1') return;
+    btn.dataset.directChatConfirmBound = '1';
+    btn.addEventListener('click', async () => {
+      const actionId = btn.getAttribute('data-direct-chat-confirm') || '';
+      directAiChat.status = 'loading';
+      renderDirectAiPanel();
+      const result = await executeDirectAiAction(actionId, currentRenderedItem());
+      directAiChat.messages.push({ role: 'ai', text: result.message });
+      directAiChat.status = result.ok ? 'done' : 'error';
+      saveDirectAiChatState();
+      renderDirectAiPanel();
+    });
+  });
+
+  root?.querySelectorAll('[data-direct-chat-confirm-cancel]').forEach((btn) => {
+    if (btn.dataset.directChatConfirmCancelBound === '1') return;
+    btn.dataset.directChatConfirmCancelBound = '1';
+    btn.addEventListener('click', () => {
+      directAiChat.messages.push({ role: 'ai', text: '명령 실행을 취소했습니다.' });
+      directAiChat.status = 'done';
+      saveDirectAiChatState();
+      renderDirectAiPanel();
+    });
+  });
+}
+
 function directAiKeywordStages(item = currentRenderedItem()) {
   if (!item) return [];
   const stages = [];
@@ -2099,6 +3244,7 @@ function directAiContext(item = currentRenderedItem(), opts = {}) {
 function resetDirectAiChat({ close = false } = {}) {
   if (close) directAiChat.open = false;
   directAiChat.status = 'idle';
+  directAiChat.commandStatus = 'idle';
   directAiChat.messages = [];
   directAiChat.keywordStatus = 'idle';
   directAiChat.keywordItems = [];
@@ -2251,7 +3397,7 @@ async function ensureDirectAiKeywords(item = currentRenderedItem()) {
 function directAiPrompt(question, item = currentRenderedItem()) {
   const context = directAiContext(item);
   return [
-    '너는 중고 매물 분석 도우미 챗봇입니다.',
+    '너는 중고 매물 분석 화면에서 제품 용어를 설명하고 사용자의 요청을 실행하는 AI 비서입니다.',
     '중고거래 일반 용어는 웬만하면 설명하지 말고, 제품/브랜드/장르/기기 구조/펌웨어/부품/캐릭터/제조사처럼 해당 제품을 모르면 생소할 수 있는 정보만 중심으로 설명하세요.',
     '현재 완료된 단계까지만 확정적으로 말하고, 아직 나오지 않은 분석은 추측하지 마세요.',
     '답변은 한국어 일반 텍스트로 짧고 친절하게 작성하세요. 용어가 무엇인지 먼저 설명하고, 중고로 살 때 확인할 점이 있으면 1~2문장으로만 덧붙이세요.',
@@ -2284,7 +3430,7 @@ function renderDirectAiSuggestionsHtml() {
   if (chips.length) {
     return chips.map((chip) => `<button type="button" data-direct-chat-keyword="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`).join('');
   }
-  return `<p>${directAiChat.keywordStatus === 'loading' ? 'AI가 제품 관련 키워드를 고르는 중...' : '도우미를 열면 AI가 제품 관련 키워드를 골라줍니다.'}</p>`;
+  return `<p>${directAiChat.keywordStatus === 'loading' ? 'AI가 제품 관련 키워드를 고르는 중...' : 'AI 비서가 제품 관련 질문과 분석 요청을 도와줍니다.'}</p>`;
 }
 
 function bindDirectAiKeywordButtons(root = $directAiPanel) {
@@ -2313,14 +3459,22 @@ function renderDirectAiPanel() {
   const messages = Array.isArray(directAiChat.messages) ? directAiChat.messages : [];
   const item = currentRenderedItem();
   const productName = item ? stepTwoProductName(item) : '이 매물';
-  const defaultPrompt = `${productName}에서 궁금한 용어나 구매 판단 포인트를 물어보세요.`;
+  const defaultPrompt = `${productName}에 대해 물어보거나, 이미지 분석 다시·PDF 저장처럼 요청해보세요.`;
   const rows = messages.length
     ? messages
         .map(
           (msg) => `
             <div class="direct-chat-msg direct-chat-msg--${escapeAttr(msg.role || 'ai')}">
-              <span>${msg.role === 'user' ? '나' : '도우미'}</span>
+              <span>${msg.role === 'user' ? '나' : 'AI 비서'}</span>
               <p>${escapeHtml(msg.text || '')}</p>
+              ${
+                msg.meta?.confirmActionId
+                  ? `<div class="direct-chat-confirm">
+                      <button type="button" data-direct-chat-confirm="${escapeAttr(msg.meta.confirmActionId)}">실행</button>
+                      <button type="button" data-direct-chat-confirm-cancel>취소</button>
+                    </div>`
+                  : ''
+              }
             </div>
           `
         )
@@ -2331,7 +3485,7 @@ function renderDirectAiPanel() {
       </div>`;
   const loadingRow =
     directAiChat.status === 'loading'
-      ? `<div class="direct-chat-msg direct-chat-msg--ai direct-chat-msg--loading"><span>도우미</span><p>분석 맥락을 읽고 답변 중...</p></div>`
+      ? `<div class="direct-chat-msg direct-chat-msg--ai direct-chat-msg--loading"><span>AI 비서</span><p>분석 맥락을 읽고 답변 중...</p></div>`
       : '';
   $directAiPanel.hidden = !directAiChat.open;
   $directAiPanel.setAttribute('aria-hidden', directAiChat.open ? 'false' : 'true');
@@ -2341,22 +3495,25 @@ function renderDirectAiPanel() {
     <article class="direct-chat-card">
       <div class="direct-chat-head">
         <div>
-          <p class="stage-two-card-label">분석 도우미</p>
-          <h3>모르는 용어를 쉽게 풀어드려요</h3>
+          <p class="stage-two-card-label">AI 비서</p>
+          <h3>모르는 용어 설명부터 분석 요청까지 도와드려요</h3>
           <span data-direct-chat-stage>${escapeHtml(directAiStepLabel(item))}</span>
         </div>
         <div class="direct-chat-actions">
           <button type="button" class="chip-btn direct-chat-clear">지우기</button>
-          <button type="button" class="chip-btn direct-chat-close" aria-label="도우미 닫기">×</button>
+          <button type="button" class="chip-btn direct-chat-close" aria-label="AI 비서 닫기">×</button>
         </div>
       </div>
+      ${renderDirectAiCommandChipsHtml(item)}
       <div class="direct-chat-suggestions" aria-label="추천 질문">
         ${renderDirectAiSuggestionsHtml()}
       </div>
       <div class="direct-chat-log">${rows}${loadingRow}</div>
       <form class="direct-chat-form">
         <textarea name="prompt" rows="2" placeholder="${escapeAttr(defaultPrompt)}"${directAiChat.status === 'loading' ? ' disabled' : ''}></textarea>
-        <button type="submit" class="btn btn-small"${directAiChat.status === 'loading' ? ' disabled' : ''}>${directAiChat.status === 'loading' ? '...' : '질문'}</button>
+        <button type="submit" class="btn btn-small direct-chat-submit" aria-label="AI 비서에게 보내기"${directAiChat.status === 'loading' ? ' disabled' : ''}>
+          <span class="material-symbols-rounded" aria-hidden="true">${directAiChat.status === 'loading' ? 'more_horiz' : 'auto_awesome'}</span>
+        </button>
       </form>
     </article>
   `;
@@ -2381,6 +3538,9 @@ function refreshDirectAiPanelIfOpen() {
   if (stage) stage.textContent = directAiStepLabel(item);
   const emptyStatus = $directAiPanel?.querySelector('[data-direct-chat-empty-status]');
   if (emptyStatus) emptyStatus.textContent = directAiStatusText(item);
+  const commands = $directAiPanel?.querySelector('.direct-chat-commands');
+  if (commands) commands.outerHTML = renderDirectAiCommandChipsHtml(item);
+  bindDirectAiCommandButtons($directAiPanel);
   updateDirectAiSuggestions();
   void ensureDirectAiKeywords();
 }
@@ -6736,19 +7896,10 @@ function bindDirectAiChat() {
   directForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const textarea = e.currentTarget.querySelector('textarea[name="prompt"]');
-    const prompt = String(textarea?.value || textarea?.getAttribute('placeholder') || '').trim();
+    const prompt = String(textarea?.value || '').trim();
     if (!prompt) return;
+    const item = currentRenderedItem();
     const apiKey = getAiApiKey();
-    if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') {
-      directAiChat.messages.push({
-        role: 'ai',
-        text: 'AI 설정이 필요합니다. AI 설정에서 Gemini API 키를 저장한 뒤 다시 시도하세요.',
-      });
-      directAiChat.status = 'error';
-      saveDirectAiChatState();
-      renderDirectAiPanel();
-      return;
-    }
 
     directAiChat.messages.push({ role: 'user', text: prompt });
     directAiChat.status = 'loading';
@@ -6756,9 +7907,28 @@ function bindDirectAiChat() {
     if (textarea) textarea.value = '';
     renderDirectAiPanel();
 
-    const requestKey = selectedKey || (currentRenderedItem() ? summaryKey(currentRenderedItem()) : '');
+    const requestKey = selectedKey || (item ? summaryKey(item) : '');
     try {
-      const data = await globalThis.UlsaAi.askDirect({ prompt: directAiPrompt(prompt), apiKey });
+      const handled = await handleDirectAiUserMessage(prompt, item);
+      if (requestKey && selectedKey !== requestKey && requestKey) return;
+      if (handled) {
+        saveDirectAiChatState(requestKey);
+        renderDirectAiPanel();
+        return;
+      }
+
+      if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') {
+        directAiChat.messages.push({
+          role: 'ai',
+          text: 'AI 설정이 필요합니다. AI 설정에서 Gemini API 키를 저장한 뒤 다시 시도하세요.',
+        });
+        directAiChat.status = 'error';
+        saveDirectAiChatState(requestKey);
+        renderDirectAiPanel();
+        return;
+      }
+
+      const data = await globalThis.UlsaAi.askDirect({ prompt: directAiPrompt(prompt, item), apiKey });
       if (requestKey && selectedKey !== requestKey) return;
       directAiChat.messages.push({ role: 'ai', text: stripChatMarkdown(data.answer || '(빈 응답)') });
       directAiChat.status = 'done';
@@ -6770,6 +7940,8 @@ function bindDirectAiChat() {
     saveDirectAiChatState(requestKey);
     renderDirectAiPanel();
   });
+
+  bindDirectAiCommandButtons();
 }
 
 async function submitSellerChat(item, opts = {}) {
@@ -7023,6 +8195,7 @@ function bindDashboardRail() {
   if (!$dashboardRail || $dashboardRail.dataset.bound === '1') return;
   $dashboardRail.dataset.bound = '1';
   updateRailLayoutToggle();
+  updateRailThemeToggle();
   $dashboardRail.addEventListener('click', (e) => {
     const target = e.target.closest('[data-rail-action], [data-rail-close]');
     if (!target || !$dashboardRail.contains(target)) return;
@@ -7033,6 +8206,7 @@ function bindDashboardRail() {
     const action = target.getAttribute('data-rail-action') || '';
     closeRailPanel();
     if (action === 'layout') $btnLayoutMode?.click();
+    if (action === 'theme') setThemeMode(isDarkModeEnabled() ? 'light' : 'dark');
     if (action === 'import') openRailPanel('import');
     if (action === 'history') $btnHistory?.click();
     if (action === 'settings') document.getElementById('btnAiSettings')?.click();
@@ -7053,6 +8227,7 @@ function bindDashboardRail() {
   }
 }
 
+setThemeMode(storedThemeMode(), { persist: false });
 bindDashboardRail();
 
 window.addEventListener('resize', () => {

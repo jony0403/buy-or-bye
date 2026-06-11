@@ -8424,6 +8424,20 @@ body .app-shell .stage-three-zone .search-query-chip,
   background: #e94f00;
   box-shadow: 0 24px 56px rgba(255, 90, 0, 0.48), 0 11px 24px rgba(17, 24, 39, 0.22);
 }
+.direct-chat-fab.is-active {
+  transform: translateY(2px) scale(0.96);
+  background: #d94800;
+  border-color: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    inset 0 5px 12px rgba(94, 35, 0, 0.38),
+    inset 0 -2px 5px rgba(255, 255, 255, 0.18),
+    0 10px 22px rgba(255, 90, 0, 0.26) !important;
+}
+.direct-chat-fab.is-active::after {
+  animation: none;
+  opacity: 0.18;
+  transform: scale(0.98);
+}
 .direct-chat-fab .material-symbols-rounded {
   display: block;
   margin-top: -0.08rem;
@@ -8474,9 +8488,9 @@ body .app-shell .stage-three-zone .search-query-chip,
 }
 .direct-chat-card {
   display: grid !important;
-  gap: 0.5rem !important;
-  max-height: min(820px, calc(100svh - 7.2rem)) !important;
-  min-height: min(700px, calc(100svh - 7.2rem)) !important;
+  gap: 0.36rem !important;
+  max-height: min(900px, calc(100svh - 6.4rem)) !important;
+  min-height: min(760px, calc(100svh - 6.4rem)) !important;
   padding: 0 !important;
   overflow: hidden !important;
   border-radius: 28px !important;
@@ -8506,9 +8520,11 @@ body .app-shell .stage-three-zone .search-query-chip,
 .direct-chat-actions .chip-btn {
   min-height: 1.9rem;
   padding: 0 0.58rem;
+  border: 0 !important;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 4px 12px rgba(17, 24, 39, 0.06);
+  background: #14b8a6 !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.24);
 }
 .direct-chat-close {
   width: 1.95rem;
@@ -8517,6 +8533,64 @@ body .app-shell .stage-three-zone .search-query-chip,
   color: #111827;
   font-size: 1.05rem;
   line-height: 1;
+}
+.direct-chat-commands {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.2rem 1rem 0;
+  overflow: visible;
+}
+.direct-chat-commands > span {
+  color: #9aa3b2;
+  font-size: 0.62rem;
+  font-weight: 950;
+}
+.direct-chat-commands > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.34rem;
+}
+.direct-chat-command-chip {
+  flex: 0 1 auto;
+  width: auto;
+  max-width: 100%;
+  min-height: 1.9rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.68rem;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 5px 14px rgba(59, 130, 246, 0.08);
+}
+.direct-chat-command-chip:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+.direct-chat-confirm {
+  display: flex;
+  gap: 0.42rem;
+  margin-top: 0.42rem;
+}
+.direct-chat-confirm button {
+  min-height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.82rem;
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.direct-chat-confirm button[data-direct-chat-confirm] {
+  background: #ff6f0f;
+  color: #fff;
+}
+.direct-chat-confirm button[data-direct-chat-confirm-cancel] {
+  background: #64748b;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(100, 116, 139, 0.22);
 }
 .direct-chat-suggestions {
   display: grid;
@@ -8543,11 +8617,11 @@ body .app-shell .stage-three-zone .search-query-chip,
   width: auto;
   max-width: 100%;
   min-height: 2rem;
-  border: 1px solid rgba(255, 111, 15, 0.16);
+  border: 0;
   border-radius: 999px;
   padding: 0 0.72rem;
-  background: #fff;
-  color: #b74f00;
+  background: #f97316;
+  color: #fff;
   font-size: 0.72rem;
   font-weight: 950;
   cursor: pointer;
@@ -8563,15 +8637,16 @@ body .app-shell .stage-three-zone .search-query-chip,
   font-weight: 850;
 }
 .direct-chat-suggestions button:hover {
-  background: #fff7ed;
+  background: #ea580c;
   transform: translateY(-1px);
 }
 .direct-chat-log {
   display: grid !important;
-  gap: 0.58rem !important;
-  max-height: min(520px, calc(100svh - 20rem)) !important;
+  align-content: start !important;
+  gap: 0.34rem !important;
+  max-height: min(620px, calc(100svh - 18rem)) !important;
   min-height: 17rem;
-  padding: 0.7rem 1rem !important;
+  padding: 0.54rem 1rem !important;
   overflow: auto !important;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.25), rgba(255, 247, 237, 0.34));
 }
@@ -8596,7 +8671,7 @@ body .app-shell .stage-three-zone .search-query-chip,
 .direct-chat-msg {
   display: flex !important;
   flex-direction: column;
-  gap: 0.18rem !important;
+  gap: 0.1rem !important;
   max-width: 86%;
 }
 .direct-chat-msg--user {
@@ -8616,10 +8691,10 @@ body .app-shell .stage-three-zone .search-query-chip,
 .direct-chat-msg p {
   margin: 0 !important;
   border-radius: 20px;
-  padding: 0.72rem 0.82rem;
+  padding: 0.58rem 0.76rem;
   white-space: pre-wrap;
   font-size: 0.82rem !important;
-  line-height: 1.58 !important;
+  line-height: 1.45 !important;
   box-shadow: 0 5px 14px rgba(17, 24, 39, 0.06);
 }
 .direct-chat-msg--user p {
@@ -8659,13 +8734,28 @@ body .app-shell .stage-three-zone .search-query-chip,
   box-shadow: inset 0 0 0 1px rgba(255, 111, 15, 0.45), 0 0 0 4px rgba(255, 111, 15, 0.08) !important;
 }
 .direct-chat-form .btn {
-  min-height: 2.55rem;
+  display: inline-grid;
+  place-items: center;
+  width: 2.8rem;
+  min-width: 2.8rem;
+  min-height: 2.8rem;
   border: 0;
-  border-radius: 17px;
-  padding: 0 0.82rem;
-  background: #151922;
+  border-radius: 999px;
+  padding: 0;
+  background: #7c3aed;
   color: #fff;
-  box-shadow: none;
+  box-shadow: 0 10px 22px rgba(124, 58, 237, 0.3);
+}
+.direct-chat-submit .material-symbols-rounded {
+  display: block;
+  color: #fff;
+  font-size: 1.32rem;
+  line-height: 1;
+  font-variation-settings: "FILL" 1, "wght" 700, "GRAD" 0, "opsz" 24;
+}
+.direct-chat-form .btn:hover:not(:disabled) {
+  background: #6d28d9;
+  transform: translateY(-1px);
 }
 @media (max-width: 720px) {
   .direct-chat-fab {
@@ -11209,10 +11299,40 @@ body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini span
 /* Keep the floating helper usable even when all step keyword groups are present. */
 body .app-shell .direct-chat-card {
   display: grid !important;
-  grid-template-rows: auto auto minmax(0, 1fr) auto !important;
-  height: min(940px, calc(100svh - 2.2rem)) !important;
-  min-height: min(700px, calc(100svh - 2.2rem)) !important;
-  max-height: min(940px, calc(100svh - 2.2rem)) !important;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto !important;
+  gap: 0.34rem !important;
+  height: min(980px, calc(100svh - 1.4rem)) !important;
+  min-height: min(760px, calc(100svh - 1.4rem)) !important;
+  max-height: min(980px, calc(100svh - 1.4rem)) !important;
+}
+body .app-shell .direct-chat-commands {
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  padding-bottom: 0.08rem !important;
+}
+body .app-shell .direct-chat-commands > div {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0.3rem !important;
+}
+body .app-shell .direct-chat-command-chip {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 9rem !important;
+  min-height: 1.82rem !important;
+  height: auto !important;
+  border: 0 !important;
+  padding: 0 0.62rem !important;
+  background: #2563eb !important;
+  color: #fff !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
 }
 body .app-shell .direct-chat-suggestions {
   max-height: none !important;
@@ -11225,12 +11345,25 @@ body .app-shell .direct-chat-suggestion-group {
   gap: 0.2rem !important;
 }
 body .app-shell .direct-chat-suggestion-group > div {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
   gap: 0.28rem !important;
 }
 body .app-shell .direct-chat-suggestions button {
-  max-width: min(9.4rem, 45%) !important;
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 9.4rem !important;
   min-height: 1.74rem !important;
+  height: auto !important;
+  border: 0 !important;
   padding: 0 0.56rem !important;
+  background: #f97316 !important;
+  color: #fff !important;
   overflow: hidden !important;
   font-size: 0.68rem !important;
   line-height: 1.2 !important;
@@ -11238,8 +11371,42 @@ body .app-shell .direct-chat-suggestions button {
   white-space: nowrap !important;
 }
 body .app-shell .direct-chat-log {
+  align-content: start !important;
+  gap: 0.34rem !important;
   min-height: 0 !important;
   max-height: none !important;
+  padding-top: 0.52rem !important;
+  padding-bottom: 0.52rem !important;
+}
+body .app-shell .direct-chat-msg {
+  gap: 0.1rem !important;
+}
+body .app-shell .direct-chat-msg p {
+  padding: 0.58rem 0.76rem !important;
+  line-height: 1.45 !important;
+}
+body .app-shell .direct-chat-actions .chip-btn {
+  border: 0 !important;
+  background: #14b8a6 !important;
+  color: #fff !important;
+}
+body .app-shell .direct-chat-form .btn {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 2.8rem !important;
+  min-width: 2.8rem !important;
+  min-height: 2.8rem !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  background: #7c3aed !important;
+  color: #fff !important;
+  box-shadow: 0 10px 22px rgba(124, 58, 237, 0.3) !important;
+}
+body .app-shell .direct-chat-submit .material-symbols-rounded {
+  color: #fff !important;
+  font-size: 1.32rem !important;
+  line-height: 1 !important;
 }
 body .app-shell .direct-chat-form {
   position: relative !important;
@@ -11256,6 +11423,20 @@ body .app-shell #btnDirectAi.direct-chat-fab {
   gap: 0.02rem !important;
   padding-top: 0.08rem !important;
   color: #fff !important;
+}
+body .app-shell #btnDirectAi.direct-chat-fab.is-active {
+  transform: translateY(2px) scale(0.96) !important;
+  background: #d94800 !important;
+  border-color: rgba(255, 255, 255, 0.86) !important;
+  box-shadow:
+    inset 0 5px 12px rgba(94, 35, 0, 0.38),
+    inset 0 -2px 5px rgba(255, 255, 255, 0.18),
+    0 10px 22px rgba(255, 90, 0, 0.26) !important;
+}
+body .app-shell #btnDirectAi.direct-chat-fab.is-active::after {
+  animation: none !important;
+  opacity: 0.18 !important;
+  transform: scale(0.98) !important;
 }
 body .app-shell #btnDirectAi.direct-chat-fab .material-symbols-rounded {
   display: block !important;
@@ -11285,4 +11466,1020 @@ body .app-shell #btnDirectAi.direct-chat-fab .direct-chat-fab-svg {
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
   opacity: 1 !important;
+}
+
+/* Dark mode: keep contrast high while reusing the existing layout. */
+body.theme-dark {
+  --modern-bg: #0d1117;
+  --modern-surface: rgba(22, 27, 34, 0.96);
+  --modern-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
+  --modern-shadow-hover: 0 20px 54px rgba(0, 0, 0, 0.44);
+  --clean-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
+  --clean-shadow-hover: 0 20px 54px rgba(0, 0, 0, 0.44);
+  background: #0d1117 !important;
+  color: #e6edf3 !important;
+}
+body.theme-dark .top {
+  background: rgba(13, 17, 23, 0.82) !important;
+}
+body.theme-dark .brand,
+body.theme-dark .top-actions,
+body.theme-dark .stage-slide-controls,
+body.theme-dark .ai-gate__panel,
+body.theme-dark .direct-chat-card,
+body.theme-dark .recent-drawer,
+body.theme-dark .url-import,
+body.theme-dark .mini-card,
+body.theme-dark .stage-two-card,
+body.theme-dark .stage-two-risk-card,
+body.theme-dark .stage-three-card,
+body.theme-dark .stage-two-mini,
+body.theme-dark .used-price-guide-card,
+body.theme-dark .comparison-price-table-wrap,
+body.theme-dark .comparison-filter-result,
+body.theme-dark .current-price-card,
+body.theme-dark .seller-chat__phone,
+body.theme-dark .purchase-receipt-card {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+  background: rgba(22, 27, 34, 0.96) !important;
+  color: #e6edf3 !important;
+  box-shadow: var(--modern-shadow) !important;
+}
+body.theme-dark .stage-zone::before {
+  background: rgba(16, 21, 29, 0.92) !important;
+  box-shadow: var(--modern-shadow) !important;
+}
+body.theme-dark .stage-zone-label {
+  background: rgba(31, 38, 50, 0.94) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important;
+}
+body.theme-dark h1,
+body.theme-dark h2,
+body.theme-dark h3,
+body.theme-dark .item-title,
+body.theme-dark .price,
+body.theme-dark .mini-value,
+body.theme-dark .direct-chat-head h3,
+body.theme-dark .history button,
+body.theme-dark .dashboard-rail-panel__head strong {
+  color: #f0f6fc !important;
+}
+body.theme-dark .sub,
+body.theme-dark .empty,
+body.theme-dark .empty-sub,
+body.theme-dark .mini-muted,
+body.theme-dark .listing-mini-meta,
+body.theme-dark .listing-footer,
+body.theme-dark .stage-two-verdict,
+body.theme-dark .direct-chat-empty,
+body.theme-dark .direct-chat-msg span,
+body.theme-dark .recent-drawer h2,
+body.theme-dark .drawer-clear,
+body.theme-dark .stage-slide-label,
+body.theme-dark .ai-gate__desc,
+body.theme-dark .dashboard-rail-import p,
+body.theme-dark .dashboard-rail-import label {
+  color: #9da7b5 !important;
+}
+body.theme-dark .direct-chat-msg p,
+body.theme-dark .product-desc,
+body.theme-dark .stage-two-ready p:not(.stage-two-card-label) {
+  color: #d1d7e0 !important;
+}
+body.theme-dark .direct-chat-msg--user p {
+  color: #f8fafc !important;
+}
+body.theme-dark .btn-secondary,
+body.theme-dark .drawer-clear,
+body.theme-dark .drawer-close,
+body.theme-dark .history button,
+body.theme-dark .direct-chat-form textarea,
+body.theme-dark .ai-gate__input,
+body.theme-dark .ai-gate__select,
+body.theme-dark .dashboard-rail-import input {
+  border-color: rgba(139, 148, 158, 0.28) !important;
+  background: #111827 !important;
+  color: #f0f6fc !important;
+}
+body.theme-dark .btn-secondary:hover,
+body.theme-dark .history button:hover,
+body.theme-dark .history button.active {
+  border-color: rgba(255, 111, 15, 0.38) !important;
+  background: #1f2937 !important;
+  color: #fff !important;
+}
+body.theme-dark .url-import__label,
+body.theme-dark .mode-toggle[aria-pressed="true"] {
+  background: rgba(255, 111, 15, 0.16) !important;
+  color: #ffb36b !important;
+}
+body.theme-dark .url-import__input {
+  color: #f0f6fc !important;
+}
+body.theme-dark .url-import__input::placeholder,
+body.theme-dark .direct-chat-form textarea::placeholder,
+body.theme-dark .dashboard-rail-import input::placeholder {
+  color: #737f8f !important;
+}
+body.theme-dark .dashboard-rail {
+  background: linear-gradient(180deg, #202938 0%, #151b25 52%, #0f141d 100%) !important;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.42) !important;
+}
+body.theme-dark .dashboard-rail__logo,
+body.theme-dark .dashboard-rail__market-links {
+  background: rgba(246, 248, 250, 0.92) !important;
+}
+body.theme-dark .dashboard-rail__btn {
+  color: rgba(230, 237, 243, 0.9) !important;
+}
+body.theme-dark .dashboard-rail__btn:hover,
+body.theme-dark .dashboard-rail__btn:focus-visible,
+body.theme-dark .dashboard-rail__btn.is-active,
+body.theme-dark .dashboard-rail__btn.is-on {
+  background: #f0f6fc !important;
+  color: #111827 !important;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.26) !important;
+}
+body.theme-dark .dashboard-rail__market-link,
+body.theme-dark .dashboard-rail__market-link small {
+  color: #161b22 !important;
+}
+body.theme-dark .dashboard-rail__market-link:hover,
+body.theme-dark .dashboard-rail__market-link:focus-visible {
+  background: #e6edf3 !important;
+  color: #0f172a !important;
+}
+body.theme-dark .dashboard-rail-panel {
+  border-color: rgba(139, 148, 158, 0.26) !important;
+  background: #161b22 !important;
+  color: #e6edf3 !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42) !important;
+}
+body.theme-dark .dashboard-rail-panel__close {
+  background: #1f2937 !important;
+  color: #ffb36b !important;
+}
+body.theme-dark .chip-btn:not(.direct-chat-command-chip),
+body.theme-dark .image-refresh-btn,
+body.theme-dark .wrong-product-btn,
+body.theme-dark .icon-btn {
+  border-color: rgba(255, 111, 15, 0.26) !important;
+  background: rgba(255, 111, 15, 0.16) !important;
+  color: #ffd0ad !important;
+}
+body.theme-dark .chip-btn:not(.direct-chat-command-chip):hover,
+body.theme-dark .image-refresh-btn:hover,
+body.theme-dark .wrong-product-btn:hover,
+body.theme-dark .icon-btn:hover {
+  background: rgba(255, 111, 15, 0.24) !important;
+  color: #fff !important;
+}
+body.theme-dark .direct-chat-form textarea:focus {
+  border-color: rgba(255, 111, 15, 0.54) !important;
+  box-shadow: 0 0 0 3px rgba(255, 111, 15, 0.16) !important;
+}
+body.theme-dark .lightbox-content {
+  background: #0f141d !important;
+  color: #e6edf3 !important;
+}
+
+/* Dark mode coverage for nested cards/tables that use hard-coded light surfaces. */
+body.theme-dark .mini-card--accent,
+body.theme-dark .mini-card--empty,
+body.theme-dark .mini-card--hero,
+body.theme-dark .mini-card--product.mini-card--loading,
+body.theme-dark .used-price-guide-card,
+body.theme-dark .stage-two-card--listing-text .stage-two-mini,
+body.theme-dark .stage-two-card[data-listing-text-analysis] .stage-two-mini,
+body.theme-dark .stage-two-card--listing-text .stage-two-mini--body,
+body.theme-dark .stage-two-card--listing-text .stage-two-mini--alert,
+body.theme-dark .image-analysis-group,
+body.theme-dark .comparison-price-table-wrap,
+body.theme-dark .comparison-filter-result,
+body.theme-dark .comparison-caution,
+body.theme-dark .purchase-receipt-card:not(.stage-start-card),
+body.theme-dark .seller-chat__thread,
+body.theme-dark .seller-chat__bubble--seller,
+body.theme-dark .seller-chat__bubble--assistant,
+body.theme-dark .seller-chat__bubble--me {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+  background: #111827 !important;
+  background-image: none !important;
+  color: #e6edf3 !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26) !important;
+}
+body.theme-dark .image-analysis-group.risk-safe {
+  border-color: rgba(16, 185, 129, 0.34) !important;
+}
+body.theme-dark .image-analysis-group.risk-caution,
+body.theme-dark .stage-two-card--listing-text .stage-two-mini--alert {
+  border-color: rgba(245, 158, 11, 0.36) !important;
+}
+body.theme-dark .image-analysis-group.risk-risk {
+  border-color: rgba(248, 81, 73, 0.38) !important;
+}
+body.theme-dark .stage-two-card--listing-text .stage-two-mini strong,
+body.theme-dark .stage-two-card[data-listing-text-analysis] .stage-two-mini strong,
+body.theme-dark .image-analysis-group__label,
+body.theme-dark .used-price-guide-card h4,
+body.theme-dark .purchase-receipt-card h4,
+body.theme-dark .seller-chat__empty strong,
+body.theme-dark .stage-two-youtube-title,
+body.theme-dark .stage-two-youtube-insight b,
+body.theme-dark .comparison-price-table td:nth-child(2),
+body.theme-dark .comp-title,
+body.theme-dark .comp-list a {
+  color: #f0f6fc !important;
+}
+body.theme-dark .stage-two-card--listing-text .stage-two-mini span,
+body.theme-dark .stage-two-card[data-listing-text-analysis] .stage-two-mini span,
+body.theme-dark .purchase-receipt-card p,
+body.theme-dark .seller-chat__empty,
+body.theme-dark .stage-two-youtube-insight p,
+body.theme-dark .comparison-price-table td,
+body.theme-dark .comparison-caution,
+body.theme-dark .comp-meta,
+body.theme-dark .comp-price {
+  color: #b8c2cf !important;
+}
+body.theme-dark .image-analysis-group__count {
+  background: #1f2937 !important;
+  color: #c9d1d9 !important;
+}
+body.theme-dark .image-analysis-group__thumb {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+  background: #0d1117 !important;
+}
+body.theme-dark .comparison-price-table th,
+body.theme-dark .comparison-price-table td {
+  border-bottom-color: rgba(139, 148, 158, 0.2) !important;
+}
+body.theme-dark .comparison-price-table th {
+  background: #1f2937 !important;
+  color: #d1d7e0 !important;
+}
+body.theme-dark .comparison-price-table tr:last-child td {
+  border-bottom: 0 !important;
+}
+body.theme-dark .direct-chat-card {
+  background: #111827 !important;
+}
+body.theme-dark .direct-chat-log {
+  background: transparent !important;
+}
+body.theme-dark .direct-chat-msg p {
+  background: #1f2937 !important;
+  color: #dbe4ee !important;
+}
+body.theme-dark .direct-chat-msg--user p {
+  background: #263449 !important;
+  color: #fff !important;
+}
+body.theme-dark .direct-chat-msg--loading p,
+body.theme-dark .direct-chat-empty {
+  background: #161b22 !important;
+  color: #b8c2cf !important;
+}
+body.theme-dark .direct-chat-confirm {
+  color: #e6edf3 !important;
+}
+body.theme-dark .direct-chat-confirm button {
+  border-color: rgba(139, 148, 158, 0.28) !important;
+  background: #1f2937 !important;
+  color: #f0f6fc !important;
+}
+body.theme-dark .seller-chat__tone,
+body.theme-dark .seller-chat__mode,
+body.theme-dark .seller-chat__chip,
+body.theme-dark .seller-chat__note-input,
+body.theme-dark .seller-chat__composer {
+  border-color: rgba(139, 148, 158, 0.28) !important;
+  background: #111827 !important;
+  color: #e6edf3 !important;
+}
+body.theme-dark .seller-chat__tone.is-active,
+body.theme-dark .seller-chat__mode.is-active,
+body.theme-dark .seller-chat__chip:hover,
+body.theme-dark .seller-chat__note {
+  border-color: rgba(20, 184, 166, 0.34) !important;
+  background: rgba(20, 184, 166, 0.16) !important;
+  color: #8ff3e8 !important;
+}
+body.theme-dark .seller-chat__copy {
+  background: rgba(31, 41, 55, 0.94) !important;
+  color: #9ee8ff !important;
+}
+body.theme-dark .photo-count,
+body.theme-dark .image-analysis-badge,
+body.theme-dark .lightbox-count {
+  background: rgba(15, 23, 42, 0.86) !important;
+  color: #f8fafc !important;
+}
+
+/* Highest-priority dark chat fixes for the assistant panel. */
+body.theme-dark .app-shell .direct-chat-card,
+body.theme-dark .app-shell .direct-chat-log,
+body.theme-dark .app-shell .direct-chat-empty {
+  background: #111827 !important;
+  color: #c9d1d9 !important;
+}
+body.theme-dark .app-shell .direct-chat-msg p,
+body.theme-dark .app-shell .direct-chat-empty p {
+  border: 1px solid rgba(139, 148, 158, 0.18) !important;
+  background: #1f2937 !important;
+  color: #dbe4ee !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .direct-chat-msg--user p {
+  border-color: rgba(255, 111, 15, 0.28) !important;
+  background: #ff6f0f !important;
+  color: #fff !important;
+}
+body.theme-dark .app-shell .direct-chat-msg--ai p,
+body.theme-dark .app-shell .direct-chat-msg--loading p {
+  border-color: rgba(139, 148, 158, 0.22) !important;
+  background: #1f2937 !important;
+  color: #dbe4ee !important;
+}
+body.theme-dark .app-shell .direct-chat-msg span,
+body.theme-dark .app-shell .direct-chat-empty strong {
+  color: #9da7b5 !important;
+}
+body.theme-dark .app-shell .direct-chat-form textarea {
+  border-color: rgba(139, 148, 158, 0.28) !important;
+  background: #0d1117 !important;
+  color: #f0f6fc !important;
+}
+body.theme-dark .app-shell .direct-chat-form textarea::placeholder {
+  color: #7d8592 !important;
+}
+
+/* Dark mode hard stop: prevent the page canvas and common app surfaces from falling back to light mode. */
+html.theme-dark,
+html.theme-dark body,
+body.theme-dark,
+body.theme-dark .app-shell,
+body.theme-dark .analysis-board,
+body.theme-dark .listing-cluster,
+body.theme-dark #current {
+  min-height: 100%;
+  background: #0d1117 !important;
+  background-image: none !important;
+  color: #e6edf3 !important;
+}
+html.theme-dark {
+  min-height: 100%;
+}
+html.theme-dark body {
+  min-height: 100vh;
+}
+body.theme-dark .app-shell {
+  min-height: 100vh !important;
+}
+body.theme-dark .app-shell .stage-zone,
+body.theme-dark .app-shell .stage-zone-grid,
+body.theme-dark .app-shell .stage-two-zone,
+body.theme-dark .app-shell .stage-three-zone,
+body.theme-dark .app-shell .stage-four-zone,
+body.theme-dark .app-shell .stage-five-zone,
+body.theme-dark .app-shell .purchase-receipt-stage,
+body.theme-dark .app-shell .comparison-price-layout {
+  background: transparent !important;
+  background-image: none !important;
+}
+body.theme-dark .app-shell .stage-zone::before {
+  background: #111827 !important;
+  background-image: none !important;
+  border: 1px solid rgba(139, 148, 158, 0.22) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32) !important;
+}
+body.theme-dark .app-shell .mini-card,
+body.theme-dark .app-shell .card,
+body.theme-dark .app-shell .stage-two-card,
+body.theme-dark .app-shell .stage-two-risk-card,
+body.theme-dark .app-shell .stage-three-card,
+body.theme-dark .app-shell .stage-two-mini,
+body.theme-dark .app-shell .used-price-guide-card,
+body.theme-dark .app-shell .comparison-price-table-wrap,
+body.theme-dark .app-shell .comparison-filter-result,
+body.theme-dark .app-shell .current-price-card,
+body.theme-dark .app-shell .purchase-receipt-card:not(.stage-start-card),
+body.theme-dark .app-shell .purchase-receipt-paper,
+body.theme-dark .app-shell .seller-chat__phone,
+body.theme-dark .app-shell .seller-chat__thread,
+body.theme-dark .app-shell .seller-chat__suggestion-card,
+body.theme-dark .app-shell .seller-chat__form,
+body.theme-dark .app-shell .seller-chat__reply-form,
+body.theme-dark .app-shell .direct-chat-card,
+body.theme-dark .recent-drawer,
+body.theme-dark .dashboard-rail-panel {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+  background: #161b22 !important;
+  background-image: none !important;
+  color: #e6edf3 !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.3) !important;
+}
+body.theme-dark .app-shell .product-summary-img,
+body.theme-dark .app-shell .photo-main,
+body.theme-dark .app-shell .image-analysis-group__thumb,
+body.theme-dark .app-shell .thumb {
+  background-color: #0d1117 !important;
+}
+body.theme-dark .app-shell input,
+body.theme-dark .app-shell textarea,
+body.theme-dark .app-shell select {
+  border-color: rgba(139, 148, 158, 0.3) !important;
+  background: #0d1117 !important;
+  color: #f0f6fc !important;
+}
+body.theme-dark .app-shell p,
+body.theme-dark .app-shell li,
+body.theme-dark .app-shell td,
+body.theme-dark .app-shell label,
+body.theme-dark .app-shell .mini-muted,
+body.theme-dark .app-shell .meta,
+body.theme-dark .app-shell .empty,
+body.theme-dark .app-shell .stage-note,
+body.theme-dark .app-shell .hist-meta {
+  color: #b8c2cf !important;
+}
+body.theme-dark .app-shell h1,
+body.theme-dark .app-shell h2,
+body.theme-dark .app-shell h3,
+body.theme-dark .app-shell h4,
+body.theme-dark .app-shell strong,
+body.theme-dark .app-shell .item-title,
+body.theme-dark .app-shell .price,
+body.theme-dark .app-shell .mini-value,
+body.theme-dark .app-shell .block-label {
+  color: #f0f6fc !important;
+}
+body.theme-dark .app-shell .stage-start-card,
+body.theme-dark .app-shell .stage-start-card *,
+body.theme-dark .app-shell .btn,
+body.theme-dark .app-shell .btn *,
+body.theme-dark .app-shell .chip-btn,
+body.theme-dark .app-shell .chip-btn * {
+  color: #fff !important;
+}
+
+/* Dark mode fixes for Step 2/3 search, loading and media detail surfaces. */
+body.theme-dark .app-shell .stage-three-card[data-stage-three-search-card],
+body.theme-dark .app-shell .stage-three-card.used-price-guide-card,
+body.theme-dark .app-shell .stage-three-head,
+body.theme-dark .app-shell .stage-three-card .search-query-list,
+body.theme-dark .app-shell .comparison-price-list,
+body.theme-dark .app-shell .current-price-card,
+body.theme-dark .app-shell .comp-list li,
+body.theme-dark .app-shell .stage-two-youtube-insight,
+body.theme-dark .app-shell .image-analysis-comment,
+body.theme-dark .app-shell .scroll-text.is-scrollable,
+body.theme-dark .app-shell .summary-loading,
+body.theme-dark .app-shell .summary-loading--skeleton,
+body.theme-dark .app-shell .comparison-loading {
+  border-color: rgba(139, 148, 158, 0.22) !important;
+  background: #111827 !important;
+  background-image: none !important;
+  color: #e6edf3 !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-three-head {
+  border: 1px solid rgba(139, 148, 158, 0.18) !important;
+}
+body.theme-dark .app-shell .stage-three-head h3,
+body.theme-dark .app-shell .stage-three-head .stage-two-card-label,
+body.theme-dark .app-shell .stage-three-status-pill,
+body.theme-dark .app-shell .stage-two-youtube-title,
+body.theme-dark .app-shell .stage-two-youtube-insight b,
+body.theme-dark .app-shell .image-analysis-comment b {
+  color: #f0f6fc !important;
+}
+body.theme-dark .app-shell .stage-three-head p:not(.stage-two-card-label),
+body.theme-dark .app-shell .stage-two-youtube-insight,
+body.theme-dark .app-shell .stage-two-youtube-insight p,
+body.theme-dark .app-shell .image-analysis-comment,
+body.theme-dark .app-shell .image-analysis-comment p,
+body.theme-dark .app-shell .ai-loading-copy,
+body.theme-dark .app-shell .body-text {
+  color: #b8c2cf !important;
+}
+body.theme-dark .app-shell .stage-three-zone .search-query-chip,
+body.theme-dark .app-shell .search-query-chip {
+  border: 1px solid rgba(255, 111, 15, 0.24) !important;
+  background: rgba(255, 111, 15, 0.14) !important;
+  color: #ffd0ad !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-three-actions .chip-btn--ghost,
+body.theme-dark .app-shell .stage-three-zone .chip-btn--ghost {
+  border: 1px solid rgba(139, 148, 158, 0.26) !important;
+  background: #1f2937 !important;
+  color: #e6edf3 !important;
+}
+body.theme-dark .app-shell .stage-three-status-pill {
+  border: 1px solid rgba(139, 148, 158, 0.22) !important;
+  background: #1f2937 !important;
+}
+body.theme-dark .app-shell .ai-loading-progress__bar {
+  background: #253042 !important;
+  box-shadow: inset 0 0 0 1px rgba(139, 148, 158, 0.18) !important;
+}
+body.theme-dark .app-shell .ai-loading-progress__bar i {
+  background: linear-gradient(90deg, #ff6f0f 0%, #f59e0b 48%, #fb7185 100%) !important;
+  box-shadow: 0 0 12px rgba(255, 111, 15, 0.28) !important;
+}
+body.theme-dark .app-shell .ai-loading-progress__text {
+  color: #c9d1d9 !important;
+}
+body.theme-dark .app-shell .skeleton-line,
+body.theme-dark .app-shell [class*="skeleton"]::before,
+body.theme-dark .app-shell [class*="skeleton"]::after {
+  background: linear-gradient(90deg, #1f2937 0%, #2b3648 50%, #1f2937 100%) !important;
+}
+body.theme-dark .app-shell .stage-lock-card,
+body.theme-dark .app-shell .stage-two-card--empty,
+body.theme-dark .app-shell .stage-two-card--error {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+  background: #111827 !important;
+  color: #d1d7e0 !important;
+}
+body.theme-dark .app-shell .image-analysis-comment.risk-safe {
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+body.theme-dark .app-shell .image-analysis-comment.risk-caution {
+  border-color: rgba(245, 158, 11, 0.34) !important;
+}
+body.theme-dark .app-shell .image-analysis-comment.risk-risk {
+  border-color: rgba(248, 81, 73, 0.36) !important;
+}
+
+/* Step 5 dark mode final override: seller message assistant. */
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card),
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card):hover,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card):focus-within {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__phone,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__phone-head,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__context,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__empty-reply,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+  background: #111827 !important;
+  background-image: none !important;
+  color: #e6edf3 !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__phone {
+  border: 1px solid rgba(139, 148, 158, 0.24) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.34) !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__phone-head,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__toolbar,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__context,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__reply-form {
+  border-bottom-color: rgba(139, 148, 158, 0.18) !important;
+  border-top-color: rgba(139, 148, 158, 0.18) !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__title strong,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions-head strong,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__form-label,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__seller strong,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card p,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__bubble p {
+  color: #f0f6fc !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__title span,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__seller span,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions-head span,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-label,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__empty,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__label {
+  color: #9da7b5 !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__checklist {
+  border-color: rgba(20, 184, 166, 0.22) !important;
+  background: rgba(20, 184, 166, 0.1) !important;
+  color: #8ff3e8 !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__checklist strong,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__checklist .material-symbols-rounded {
+  color: #99f6e4 !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__checklist span:not(.material-symbols-rounded),
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__mode,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chip {
+  border-color: rgba(139, 148, 158, 0.26) !important;
+  background: #1f2937 !important;
+  background-image: none !important;
+  color: #dbe4ee !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__mode.is-active,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone.is-active,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chip:hover {
+  border-color: rgba(20, 184, 166, 0.38) !important;
+  background: #14b8a6 !important;
+  color: #fff !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer--reply {
+  border: 1px solid rgba(139, 148, 158, 0.3) !important;
+  background: #0d1117 !important;
+  color: #f0f6fc !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input::placeholder,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer::placeholder {
+  color: #7d8592 !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__bubble,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__bubble--assistant,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__bubble--seller {
+  border: 1px solid rgba(139, 148, 158, 0.22) !important;
+  background: #1f2937 !important;
+  color: #e6edf3 !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__bubble--me {
+  border-color: rgba(255, 111, 15, 0.28) !important;
+  background: #ff6f0f !important;
+  color: #fff !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card--skeleton,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__result,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__result-main,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__result-alt {
+  border-color: rgba(139, 148, 158, 0.22) !important;
+  background: #161b22 !important;
+  background-image: none !important;
+  color: #e6edf3 !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__copy,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__copy--icon,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-use,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__regen,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__reset-icon,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__listing-link {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+  background: #1f2937 !important;
+  color: #99f6e4 !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__send,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__send--reply {
+  border: 0 !important;
+  background: #14b8a6 !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.22) !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__error {
+  border: 1px solid rgba(248, 81, 73, 0.3) !important;
+  background: rgba(248, 81, 73, 0.12) !important;
+  color: #ffb4ad !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__skeleton-line {
+  background: linear-gradient(90deg, #1f2937 0%, #2b3648 50%, #1f2937 100%) !important;
+}
+
+/* Dark mode final polish: white step labels and no pale price-guide strips. */
+body.theme-dark .app-shell .stage-zone-label,
+body.theme-dark .app-shell .stage-zone-label b,
+body.theme-dark .app-shell .stage-zone-label span,
+body.theme-dark .app-shell .stage-one-zone .stage-zone-label b,
+body.theme-dark .app-shell .stage-two-zone .stage-zone-label b,
+body.theme-dark .app-shell .stage-three-zone .stage-zone-label b,
+body.theme-dark .app-shell .stage-four-zone .stage-zone-label b,
+body.theme-dark .app-shell .stage-five-zone .stage-zone-label b {
+  color: #fff !important;
+  text-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-zone-label {
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: #111827 !important;
+}
+body.theme-dark .app-shell .used-price-guide-card .mini-card-head,
+body.theme-dark .app-shell .used-price-guide-card .search-query-list,
+body.theme-dark .app-shell .used-price-guide-card .comparison-caution,
+body.theme-dark .app-shell .used-price-guide-card .hist-meta,
+body.theme-dark .app-shell .stage-three-card.used-price-guide-card > .hist-meta,
+body.theme-dark .app-shell .stage-three-card.used-price-guide-card > p:not(.stage-two-card-label),
+body.theme-dark .app-shell .comparison-price-table-wrap,
+body.theme-dark .app-shell .comparison-price-table,
+body.theme-dark .app-shell .comparison-price-table thead,
+body.theme-dark .app-shell .comparison-price-table tbody,
+body.theme-dark .app-shell .comparison-price-table tr,
+body.theme-dark .app-shell .comparison-price-table th,
+body.theme-dark .app-shell .comparison-price-table td {
+  background: #111827 !important;
+  background-image: none !important;
+  color: #e6edf3 !important;
+}
+body.theme-dark .app-shell .used-price-guide-card .comparison-caution,
+body.theme-dark .app-shell .used-price-guide-card .hist-meta,
+body.theme-dark .app-shell .stage-three-card.used-price-guide-card > .hist-meta {
+  border: 1px solid rgba(139, 148, 158, 0.22) !important;
+  border-radius: 12px !important;
+  padding: 0.56rem 0.65rem !important;
+}
+body.theme-dark .app-shell .comparison-price-table-wrap,
+body.theme-dark .app-shell .comparison-price-table th,
+body.theme-dark .app-shell .comparison-price-table td {
+  border-color: rgba(139, 148, 158, 0.24) !important;
+}
+body.theme-dark .app-shell .comparison-price-table td:first-child,
+body.theme-dark .app-shell .comparison-price-table td:nth-child(2) {
+  color: #f0f6fc !important;
+}
+
+/* Receipt paper intentionally stays receipt-like even in dark mode. */
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card:not(.stage-start-card),
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-paper,
+body.theme-dark .app-shell .stage-four-zone .receipt-two-col section,
+body.theme-dark .app-shell .stage-four-zone .receipt-price-lines,
+body.theme-dark .app-shell .stage-four-zone .receipt-final-section {
+  background: #fffdf8 !important;
+  background-image: none !important;
+  color: #1f2937 !important;
+}
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-paper p,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-paper li,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-paper span,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-paper b,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-paper h4,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-paper strong {
+  color: #1f2937 !important;
+}
+
+/* Dark mode cleanup: visible skeleton shimmer, no boxed helper text/step labels. */
+body.theme-dark .app-shell .risk-loader span {
+  background: #243044 !important;
+  box-shadow: inset 0 0 0 1px rgba(139, 148, 158, 0.16) !important;
+}
+body.theme-dark .app-shell .risk-loader span::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(125, 211, 252, 0.18) 18%,
+    rgba(255, 255, 255, 0.78) 48%,
+    rgba(255, 111, 15, 0.32) 76%,
+    transparent 100%
+  ) !important;
+  filter: drop-shadow(0 0 8px rgba(125, 211, 252, 0.35)) !important;
+  animation: skeletonSweep 0.95s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+}
+body.theme-dark .app-shell .seller-chat__skeleton-line,
+body.theme-dark .app-shell .skeleton-line {
+  position: relative !important;
+  overflow: hidden !important;
+  background: #243044 !important;
+}
+body.theme-dark .app-shell .seller-chat__skeleton-line::after,
+body.theme-dark .app-shell .skeleton-line::after {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 45% !important;
+  border-radius: inherit !important;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent) !important;
+  content: "" !important;
+  transform: translateX(-140%) !important;
+  animation: skeletonSweep 0.95s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+}
+body.theme-dark .app-shell .stage-zone-label {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-zone-label,
+body.theme-dark .app-shell .stage-zone-label b,
+body.theme-dark .app-shell .stage-zone-label span {
+  color: #fff !important;
+  text-shadow: none !important;
+}
+body.theme-dark .app-shell .direct-chat-empty,
+body.theme-dark .app-shell .direct-chat-empty p,
+body.theme-dark .app-shell .direct-chat-msg--ai p,
+body.theme-dark .app-shell .direct-chat-msg--loading p {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .direct-chat-msg--ai p,
+body.theme-dark .app-shell .direct-chat-msg--loading p,
+body.theme-dark .app-shell .direct-chat-empty p {
+  color: #dbe4ee !important;
+}
+
+/* Neutral dark theme pass: remove blue-tinted surfaces and nested input rectangles. */
+html.theme-dark,
+html.theme-dark body,
+body.theme-dark {
+  --dark-bg: #0f0f10;
+  --dark-surface: #181818;
+  --dark-surface-2: #202020;
+  --dark-surface-3: #262626;
+  --dark-border: rgba(255, 255, 255, 0.12);
+  --dark-text: #f2f2f2;
+  --dark-muted: #b8b8b8;
+  --modern-bg: var(--dark-bg);
+  --modern-surface: var(--dark-surface);
+  --modern-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
+  --modern-shadow-hover: 0 20px 54px rgba(0, 0, 0, 0.44);
+  background: var(--dark-bg) !important;
+  color: var(--dark-text) !important;
+}
+body.theme-dark .app-shell,
+body.theme-dark .analysis-board,
+body.theme-dark .listing-cluster,
+body.theme-dark #current,
+body.theme-dark .top {
+  background: var(--dark-bg) !important;
+  background-image: none !important;
+}
+body.theme-dark .brand,
+body.theme-dark .top-actions,
+body.theme-dark .stage-slide-controls,
+body.theme-dark .ai-gate__panel,
+body.theme-dark .direct-chat-card,
+body.theme-dark .recent-drawer,
+body.theme-dark .mini-card,
+body.theme-dark .card,
+body.theme-dark .stage-two-card,
+body.theme-dark .stage-two-risk-card,
+body.theme-dark .stage-three-card,
+body.theme-dark .stage-two-mini,
+body.theme-dark .used-price-guide-card,
+body.theme-dark .comparison-price-table-wrap,
+body.theme-dark .comparison-filter-result,
+body.theme-dark .current-price-card,
+body.theme-dark .seller-chat__phone,
+body.theme-dark .seller-chat__thread,
+body.theme-dark .seller-chat__suggestion-card,
+body.theme-dark .seller-chat__form,
+body.theme-dark .seller-chat__reply-form,
+body.theme-dark .dashboard-rail-panel {
+  border-color: var(--dark-border) !important;
+  background: var(--dark-surface) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+}
+body.theme-dark .app-shell .stage-zone::before {
+  border-color: var(--dark-border) !important;
+  background: var(--dark-surface) !important;
+  background-image: none !important;
+}
+body.theme-dark .url-import {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--dark-surface) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24) !important;
+}
+body.theme-dark .url-import__label {
+  background: transparent !important;
+  color: var(--dark-muted) !important;
+}
+body.theme-dark .url-import__input,
+body.theme-dark .top .url-import__input,
+body.theme-dark .app-shell .url-import__input {
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--dark-text) !important;
+  box-shadow: none !important;
+}
+body.theme-dark .url-import__input::placeholder {
+  color: #8f8f8f !important;
+}
+body.theme-dark .app-shell input:not(.url-import__input),
+body.theme-dark .app-shell textarea,
+body.theme-dark .app-shell select,
+body.theme-dark .dashboard-rail-import input {
+  border-color: var(--dark-border) !important;
+  background: var(--dark-surface-2) !important;
+  color: var(--dark-text) !important;
+}
+body.theme-dark .app-shell .stage-zone-label {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell p,
+body.theme-dark .app-shell li,
+body.theme-dark .app-shell td,
+body.theme-dark .app-shell label,
+body.theme-dark .app-shell .mini-muted,
+body.theme-dark .app-shell .meta,
+body.theme-dark .app-shell .empty,
+body.theme-dark .app-shell .stage-note,
+body.theme-dark .app-shell .hist-meta,
+body.theme-dark .sub {
+  color: var(--dark-muted) !important;
+}
+body.theme-dark .app-shell h1,
+body.theme-dark .app-shell h2,
+body.theme-dark .app-shell h3,
+body.theme-dark .app-shell h4,
+body.theme-dark .app-shell strong,
+body.theme-dark .app-shell .item-title,
+body.theme-dark .app-shell .price,
+body.theme-dark .app-shell .mini-value,
+body.theme-dark .app-shell .block-label,
+body.theme-dark .app-shell .stage-zone-label,
+body.theme-dark .app-shell .stage-zone-label b,
+body.theme-dark .app-shell .stage-zone-label span {
+  color: var(--dark-text) !important;
+}
+body.theme-dark .app-shell .stage-three-head,
+body.theme-dark .app-shell .stage-three-card .search-query-list,
+body.theme-dark .app-shell .comparison-price-list,
+body.theme-dark .app-shell .current-price-card,
+body.theme-dark .app-shell .comp-list li,
+body.theme-dark .app-shell .stage-two-youtube-insight,
+body.theme-dark .app-shell .image-analysis-comment,
+body.theme-dark .app-shell .scroll-text.is-scrollable,
+body.theme-dark .app-shell .summary-loading,
+body.theme-dark .app-shell .summary-loading--skeleton,
+body.theme-dark .app-shell .comparison-loading,
+body.theme-dark .app-shell .comparison-price-table,
+body.theme-dark .app-shell .comparison-price-table th,
+body.theme-dark .app-shell .comparison-price-table td {
+  border-color: var(--dark-border) !important;
+  background: var(--dark-surface-2) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+}
+body.theme-dark .app-shell .risk-loader span,
+body.theme-dark .app-shell .ai-loading-progress__bar,
+body.theme-dark .app-shell .seller-chat__skeleton-line,
+body.theme-dark .app-shell .skeleton-line {
+  background: #2a2a2a !important;
+}
+body.theme-dark .app-shell .dashboard-rail {
+  background: linear-gradient(180deg, #252525 0%, #1d1d1d 52%, #151515 100%) !important;
+}
+body.theme-dark .app-shell .dashboard-rail__btn:hover,
+body.theme-dark .app-shell .dashboard-rail__btn:focus-visible,
+body.theme-dark .app-shell .dashboard-rail__btn.is-active,
+body.theme-dark .app-shell .dashboard-rail__btn.is-on {
+  background: #f2f2f2 !important;
+  color: #111 !important;
+}
+
+/* Neutral dark final fix: Step 4 loading card is not receipt paper. */
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card.is-loading,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card.is-loading:not(.stage-start-card) {
+  border: 1px solid var(--dark-border) !important;
+  background: var(--dark-surface) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.32) !important;
+}
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card.is-loading p,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card.is-loading h4,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card.is-loading span {
+  color: var(--dark-text) !important;
+}
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card.is-loading .mini-muted,
+body.theme-dark .app-shell .stage-four-zone .purchase-receipt-card.is-loading .ai-loading-progress__text {
+  color: var(--dark-muted) !important;
+}
+body.theme-dark .app-shell .risk-loader span,
+body.theme-dark .app-shell .ai-loading-progress__bar,
+body.theme-dark .app-shell .seller-chat__skeleton-line,
+body.theme-dark .app-shell .skeleton-line {
+  background: #2a2a2a !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+body.theme-dark .app-shell .risk-loader span::after,
+body.theme-dark .app-shell .seller-chat__skeleton-line::after,
+body.theme-dark .app-shell .skeleton-line::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.12) 18%,
+    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 255, 255, 0.12) 82%,
+    transparent 100%
+  ) !important;
+  filter: none !important;
+}
+body.theme-dark .app-shell .ai-loading-progress__bar i {
+  background: linear-gradient(90deg, #ff6f0f 0%, #f59e0b 100%) !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-two-youtube-embed,
+body.theme-dark .app-shell .photo-main,
+body.theme-dark .app-shell .product-summary-img,
+body.theme-dark .app-shell .image-analysis-group__thumb {
+  background: #141414 !important;
 }
