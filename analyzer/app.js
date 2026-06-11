@@ -1960,6 +1960,10 @@ function directAiStepLabel(item) {
   return 'Step 1 매물 기본 정보만 반영';
 }
 
+function directAiStatusText(item = currentRenderedItem()) {
+  return `${directAiStepLabel(item)} 상태입니다. 생소한 키워드를 누르거나 직접 질문해보세요.`;
+}
+
 function directAiKeywordStages(item = currentRenderedItem()) {
   if (!item) return [];
   const stages = [];
@@ -2323,7 +2327,7 @@ function renderDirectAiPanel() {
         .join('')
     : `<div class="direct-chat-empty">
         <strong>분석 내용을 보면서 바로 설명해드릴게요.</strong>
-        <p>${escapeHtml(directAiStepLabel(item))} 상태입니다. 생소한 키워드를 누르거나 직접 질문해보세요.</p>
+        <p data-direct-chat-empty-status>${escapeHtml(directAiStatusText(item))}</p>
       </div>`;
   const loadingRow =
     directAiChat.status === 'loading'
@@ -2372,8 +2376,11 @@ function positionDirectAiPanel() {
 
 function refreshDirectAiPanelIfOpen() {
   if (!directAiChat.open) return;
+  const item = currentRenderedItem();
   const stage = $directAiPanel?.querySelector('[data-direct-chat-stage]');
-  if (stage) stage.textContent = directAiStepLabel(currentRenderedItem());
+  if (stage) stage.textContent = directAiStepLabel(item);
+  const emptyStatus = $directAiPanel?.querySelector('[data-direct-chat-empty-status]');
+  if (emptyStatus) emptyStatus.textContent = directAiStatusText(item);
   updateDirectAiSuggestions();
   void ensureDirectAiKeywords();
 }
