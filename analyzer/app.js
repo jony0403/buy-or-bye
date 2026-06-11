@@ -16,6 +16,7 @@ const $urlImportStatus = document.getElementById('urlImportStatus');
 const $btnUrlImport = document.getElementById('btnUrlImport');
 const $dashboardRail = document.querySelector('.dashboard-rail');
 const $railPanel = document.querySelector('[data-rail-panel]');
+const $shortcutPanel = document.querySelector('[data-shortcut-panel]');
 const $railImportForm = document.querySelector('[data-rail-import-form]');
 const $railUrlInput = document.querySelector('[data-rail-url-input]');
 const $railImportSubmit = document.querySelector('[data-rail-import-submit]');
@@ -1057,9 +1058,9 @@ function renderStageSlideControls() {
   const nextDisabled = stageSlideIndex >= count - 1 || !canOpenStage(stageSlideIndex + 1);
   return `
     <nav class="stage-slide-controls" data-stage-slide-controls aria-label="단계 이동">
-      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-prev ${prevDisabled ? 'disabled' : ''}>&lt;&lt; 이전 단계</button>
+      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-prev title="이전 단계 (←/↑)" ${prevDisabled ? 'disabled' : ''}>&lt;&lt; 이전 단계</button>
       <span class="stage-slide-label" data-stage-slide-label>Step 1/1</span>
-      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-next ${nextDisabled ? 'disabled' : ''}>다음 단계 &gt;&gt;</button>
+      <button type="button" class="btn btn-secondary btn-small" data-stage-slide-next title="다음 단계 (→/↓)" ${nextDisabled ? 'disabled' : ''}>다음 단계 &gt;&gt;</button>
     </nav>
   `;
 }
@@ -7944,6 +7945,20 @@ function bindDirectAiChat() {
   bindDirectAiCommandButtons();
 }
 
+function toggleDirectAiPanel(forceOpen = !directAiChat.open) {
+  directAiChat.open = Boolean(forceOpen);
+  renderDirectAiPanel();
+  if (directAiChat.open) void ensureDirectAiKeywords();
+}
+
+function closeDirectAiPanel() {
+  if (!directAiChat.open) return false;
+  directAiChat.open = false;
+  saveDirectAiChatState();
+  renderDirectAiPanel();
+  return true;
+}
+
 async function submitSellerChat(item, opts = {}) {
   const key = sellerChatKey(item);
   const state = key ? sellerChatStates.get(key) : null;
@@ -8161,9 +8176,7 @@ function bindSellerChatFlow(root, item) {
 }
 
 $btnDirectAi?.addEventListener('click', () => {
-  directAiChat.open = !directAiChat.open;
-  renderDirectAiPanel();
-  if (directAiChat.open) void ensureDirectAiKeywords();
+  toggleDirectAiPanel();
 });
 $btnLayoutMode?.addEventListener('click', () => {
   const nextMode = $appShell?.classList.contains('app-shell--slide') ? 'scroll' : 'slide';
@@ -8183,12 +8196,35 @@ function closeRailPanel() {
   setRailActive('');
 }
 
+function closeShortcutPanel() {
+  if (!$shortcutPanel) return false;
+  if ($shortcutPanel.hidden) return false;
+  $shortcutPanel.hidden = true;
+  $shortcutPanel.classList.remove('is-open');
+  setRailActive('');
+  return true;
+}
+
 function openRailPanel(action = 'import') {
   if (!$railPanel) return;
+  closeShortcutPanel();
   setRailActive(action);
   $railPanel.hidden = false;
   window.requestAnimationFrame(() => $railPanel.classList.add('is-open'));
   ($railUrlInput || $urlImportInput)?.focus();
+}
+
+function openShortcutPanel() {
+  if (!$shortcutPanel) return;
+  closeRailPanel();
+  setRailActive('shortcuts');
+  $shortcutPanel.hidden = false;
+  window.requestAnimationFrame(() => $shortcutPanel.classList.add('is-open'));
+}
+
+function toggleShortcutPanel() {
+  if (isShortcutPanelOpen()) closeShortcutPanel();
+  else openShortcutPanel();
 }
 
 function bindDashboardRail() {
@@ -8205,14 +8241,18 @@ function bindDashboardRail() {
     }
     const action = target.getAttribute('data-rail-action') || '';
     closeRailPanel();
+    closeShortcutPanel();
     if (action === 'layout') $btnLayoutMode?.click();
     if (action === 'theme') setThemeMode(isDarkModeEnabled() ? 'light' : 'dark');
     if (action === 'import') openRailPanel('import');
     if (action === 'history') $btnHistory?.click();
+    if (action === 'shortcuts') openShortcutPanel();
     if (action === 'settings') document.getElementById('btnAiSettings')?.click();
     if (action === 'reanalyze') $btnRefresh?.click();
     if (action === 'new') startNewAnalysis();
   });
+
+  $shortcutPanel?.querySelector('[data-shortcut-close]')?.addEventListener('click', closeShortcutPanel);
 
   if ($urlImportStatus && $railStatus) {
     const mirrorStatus = () => {
@@ -9104,14 +9144,247 @@ $btnHistoryClear?.addEventListener('click', () => {
   window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_HISTORY' }, '*');
 });
 $drawerBackdrop?.addEventListener('click', () => setHistoryOpen(false));
-document.addEventListener('keydown', (e) => {
-  if ($lightbox && !$lightbox.hidden) {
-    if (e.key === 'Escape') closeLightbox();
-    if (e.key === 'ArrowLeft') moveLightbox(-1);
-    if (e.key === 'ArrowRight') moveLightbox(1);
+
+function isEditableShortcutTarget(target) {
+  const el = target instanceof Element ? target : null;
+  if (!el) return false;
+  return Boolean(el.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]'));
+}
+
+function isLightboxOpen() {
+  return Boolean($lightbox && !$lightbox.hidden);
+}
+
+function isHistoryOpen() {
+  return Boolean($recentDrawer?.classList.contains('open'));
+}
+
+function isRailPanelOpen() {
+  return Boolean($railPanel && !$railPanel.hidden);
+}
+
+function isShortcutPanelOpen() {
+  return Boolean($shortcutPanel && !$shortcutPanel.hidden);
+}
+
+function isSlideLayout() {
+  return Boolean($appShell?.classList.contains('app-shell--slide'));
+}
+
+function shortcutCode(e) {
+  return String(e.code || '').trim();
+}
+
+function isShortcutCode(e, code) {
+  return shortcutCode(e) === code;
+}
+
+function isVisibleElement(el) {
+  if (!(el instanceof Element)) return false;
+  if (el.closest('[hidden]')) return false;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function moveStageSlideTo(index) {
+  if (!isSlideLayout()) return false;
+  const count = stageSlideCount();
+  const nextIndex = Math.max(0, Math.min(Number(index) || 0, count - 1));
+  if (nextIndex === stageSlideIndex || !canOpenStage(nextIndex)) return false;
+  moveStageSlide(nextIndex - stageSlideIndex);
+  return true;
+}
+
+function moveStageSlideToLastAvailable() {
+  if (!isSlideLayout()) return false;
+  for (let i = stageSlideCount() - 1; i >= 0; i -= 1) {
+    if (canOpenStage(i)) return moveStageSlideTo(i);
   }
-  if (e.key === 'Escape') setHistoryOpen(false);
-});
+  return false;
+}
+
+function scrollViewportByDirection(dir) {
+  const amount = Math.max(220, Math.round(window.innerHeight * 0.72));
+  window.scrollBy({ top: dir * amount, behavior: 'smooth' });
+}
+
+function openListingPhotoLightbox() {
+  const item = currentRenderedItem();
+  if (!item) return false;
+  const listingItems = lightboxImageItems(item.imageUrls || []);
+  if (!listingItems.length) return false;
+  const preferredIndex = photoIndexes.get(itemKey(item)) || 0;
+  const index = Math.max(0, Math.min(preferredIndex, listingItems.length - 1));
+  openLightbox(listingItems[index].src, { items: listingItems, index });
+  return true;
+}
+
+function openImageAnalysisLightbox() {
+  const item = currentRenderedItem();
+  if (!item) return false;
+  const key = summaryKey(item);
+  if (!key || listingImageAnalyses.get(key)?.status !== 'done') return false;
+  const items = lightboxAnalysisItems(imageAnalysisEntries(item));
+  if (!items.length) return false;
+  const index = Math.max(0, Math.min(imageAnalysisIndexes.get(key) || 0, items.length - 1));
+  openLightbox(items[index].src, { items, index });
+  return true;
+}
+
+function activateVisibleStageStartCard() {
+  const candidates = [...($current?.querySelectorAll('.stage-start-card:not(:disabled)') || [])];
+  const target = candidates.find(isVisibleElement);
+  if (!target) return false;
+  target.click();
+  return true;
+}
+
+function handleAppShortcut(e) {
+  if (e.defaultPrevented || e.isComposing) return;
+
+  if (isLightboxOpen()) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeLightbox();
+      return;
+    }
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      moveLightbox(-1);
+      return;
+    }
+    if (e.key === 'ArrowRight' || e.key === ' ') {
+      e.preventDefault();
+      moveLightbox(1);
+      return;
+    }
+    if (e.key === 'Home') {
+      e.preventDefault();
+      lightboxState.index = 0;
+      setLightboxImage(lightboxState.items[0], { dir: -1 });
+      return;
+    }
+    if (e.key === 'End') {
+      e.preventDefault();
+      lightboxState.index = Math.max(0, lightboxState.items.length - 1);
+      setLightboxImage(lightboxState.items[lightboxState.index], { dir: 1 });
+      return;
+    }
+  }
+
+  if (e.key === 'Escape') {
+    if (closeDirectAiPanel() || closeShortcutPanel() || isRailPanelOpen() || isHistoryOpen()) {
+      e.preventDefault();
+      closeRailPanel();
+      setHistoryOpen(false);
+    }
+    return;
+  }
+
+  if (isEditableShortcutTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+
+  if (e.key === 'Enter') {
+    if (activateVisibleStageStartCard()) e.preventDefault();
+    return;
+  }
+
+  if (isSlideLayout()) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      moveStageSlide(-1);
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      moveStageSlide(1);
+      return;
+    }
+    if (e.key === 'Home') {
+      e.preventDefault();
+      moveStageSlideTo(0);
+      return;
+    }
+    if (e.key === 'End') {
+      e.preventDefault();
+      moveStageSlideToLastAvailable();
+      return;
+    }
+    if (/^Digit[1-5]$/.test(shortcutCode(e)) || /^[1-5]$/.test(e.key)) {
+      e.preventDefault();
+      const digit = shortcutCode(e).startsWith('Digit') ? Number(shortcutCode(e).replace('Digit', '')) : Number(e.key);
+      moveStageSlideTo(digit - 1);
+      return;
+    }
+  }
+
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    scrollViewportByDirection(-1);
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    scrollViewportByDirection(1);
+    return;
+  }
+
+  if (isShortcutCode(e, 'KeyR')) {
+    e.preventDefault();
+    $btnRefresh?.click();
+    return;
+  }
+  if (isShortcutCode(e, 'KeyA')) {
+    e.preventDefault();
+    toggleDirectAiPanel();
+    return;
+  }
+  if (isShortcutCode(e, 'KeyI') && e.shiftKey) {
+    if (openImageAnalysisLightbox()) e.preventDefault();
+    return;
+  }
+  if (isShortcutCode(e, 'KeyX')) {
+    if (openImageAnalysisLightbox()) e.preventDefault();
+    return;
+  }
+  if (isShortcutCode(e, 'KeyI') || isShortcutCode(e, 'KeyP') || isShortcutCode(e, 'KeyF')) {
+    if (openListingPhotoLightbox()) e.preventDefault();
+    return;
+  }
+  if (isShortcutCode(e, 'Slash')) {
+    e.preventDefault();
+    if (e.shiftKey) toggleShortcutPanel();
+    else openRailPanel('import');
+    return;
+  }
+  if (isShortcutCode(e, 'KeyH')) {
+    e.preventDefault();
+    setHistoryOpen(!isHistoryOpen());
+    return;
+  }
+  if (isShortcutCode(e, 'KeyL')) {
+    e.preventDefault();
+    $btnLayoutMode?.click();
+    return;
+  }
+  if (isShortcutCode(e, 'KeyS')) {
+    e.preventDefault();
+    document.getElementById('btnAiSettings')?.click();
+    return;
+  }
+  if (isShortcutCode(e, 'KeyN')) {
+    e.preventDefault();
+    startNewAnalysis();
+    return;
+  }
+  if (isShortcutCode(e, 'KeyD')) {
+    e.preventDefault();
+    setThemeMode(isDarkModeEnabled() ? 'light' : 'dark');
+  }
+}
+
+document.addEventListener('keydown', handleAppShortcut);
 
 function renderHistoryList() {
   if (!history.length) {

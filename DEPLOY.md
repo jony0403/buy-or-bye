@@ -11,6 +11,7 @@
 ## 실행
 
 Windows에서는 루트 폴더의 `start-analyzer.bat`를 더블클릭하면 됩니다.
+Mac에서는 루트 폴더의 `start-analyzer.command`를 더블클릭하면 됩니다.
 
 - 서버 창을 닫거나 `Ctrl+C`를 누르면 서버가 종료됩니다.
 - 이미 서버가 켜져 있으면 중복 실행하지 않고 `http://127.0.0.1:3920/`만 엽니다.
@@ -38,7 +39,7 @@ npm install
 npm start
 ```
 
-또는 ZIP으로 옮긴 뒤 폴더명을 `buy-or-bye`로 바꾸고 `start-analyzer.bat`를 실행하세요.
+또는 ZIP으로 옮긴 뒤 폴더명을 `buy-or-bye`로 바꾸고 Windows는 `start-analyzer.bat`, Mac은 `start-analyzer.command`를 실행하세요.
 
 ## Chrome 확장 설치
 

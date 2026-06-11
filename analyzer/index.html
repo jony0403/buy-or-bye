@@ -14,7 +14,7 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-    <link rel="stylesheet" href="style.css?v=20260611-neutral-dark-step4" />
+    <link rel="stylesheet" href="style.css?v=20260611-direct-ai-fab-behind" />
   </head>
   <body>
     <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
@@ -51,11 +51,11 @@
           <img src="/icons/icon48.png" alt="" width="28" height="28" />
         </div>
         <nav class="dashboard-rail__nav">
-          <button type="button" class="dashboard-rail__btn" data-rail-action="import" aria-label="매물 URL 불러오기">
+          <button type="button" class="dashboard-rail__btn" data-rail-action="import" aria-label="매물 URL 불러오기" title="매물 URL 불러오기 (/)">
             <span class="material-symbols-rounded" aria-hidden="true">link</span>
             <small>URL</small>
           </button>
-          <button type="button" class="dashboard-rail__btn" data-rail-action="layout" aria-label="레이아웃 전환">
+          <button type="button" class="dashboard-rail__btn" data-rail-action="layout" aria-label="레이아웃 전환" title="레이아웃 전환 (L)">
             <span class="material-symbols-rounded" aria-hidden="true">view_carousel</span>
             <small>보기</small>
           </button>
@@ -65,23 +65,28 @@
             data-rail-action="theme"
             aria-label="다크모드 켜기"
             aria-pressed="false"
+            title="다크모드 전환 (D)"
           >
             <span class="material-symbols-rounded" aria-hidden="true">dark_mode</span>
             <small>다크</small>
           </button>
-          <button type="button" class="dashboard-rail__btn" data-rail-action="history" aria-label="최근 매물">
+          <button type="button" class="dashboard-rail__btn" data-rail-action="history" aria-label="최근 매물" title="최근 매물 (H)">
             <span class="material-symbols-rounded" aria-hidden="true">history</span>
             <small>최근</small>
           </button>
-          <button type="button" class="dashboard-rail__btn" data-rail-action="settings" aria-label="AI 설정">
+          <button type="button" class="dashboard-rail__btn" data-rail-action="shortcuts" aria-label="단축키 보기" title="단축키 보기 (?)">
+            <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
+            <small>단축키</small>
+          </button>
+          <button type="button" class="dashboard-rail__btn" data-rail-action="settings" aria-label="AI 설정" title="AI 설정 (S)">
             <span class="material-symbols-rounded" aria-hidden="true">settings</span>
             <small>설정</small>
           </button>
-          <button type="button" class="dashboard-rail__btn" data-rail-action="reanalyze" aria-label="현재 매물 다시 분석">
+          <button type="button" class="dashboard-rail__btn" data-rail-action="reanalyze" aria-label="현재 매물 다시 분석" title="전체 재분석 (R)">
             <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
             <small>다시</small>
           </button>
-          <button type="button" class="dashboard-rail__btn dashboard-rail__btn--accent" data-rail-action="new" aria-label="새 분석 시작">
+          <button type="button" class="dashboard-rail__btn dashboard-rail__btn--accent" data-rail-action="new" aria-label="새 분석 시작" title="새 분석 시작 (N)">
             <span class="material-symbols-rounded" aria-hidden="true">add_circle</span>
             <small>새 분석</small>
           </button>
@@ -132,6 +137,55 @@
             <p data-rail-status>링크를 붙여넣으면 기존 분석 흐름으로 바로 전달됩니다.</p>
           </form>
         </div>
+        <div class="shortcut-panel" data-shortcut-panel hidden role="dialog" aria-modal="false" aria-labelledby="shortcutPanelTitle">
+          <div class="shortcut-panel__head">
+            <div>
+              <p>Keyboard</p>
+              <strong id="shortcutPanelTitle">단축키</strong>
+            </div>
+            <button type="button" class="shortcut-panel__close" data-shortcut-close aria-label="단축키 닫기">×</button>
+          </div>
+          <div class="shortcut-panel__grid">
+            <section>
+              <h3>기본</h3>
+              <dl>
+                <div><dt><kbd>Esc</kbd></dt><dd>열린 팝업·AI 비서 닫기</dd></div>
+                <div><dt><kbd>/</kbd></dt><dd>매물 URL 입력 열기</dd></div>
+                <div><dt><kbd>?</kbd></dt><dd>단축키 패널 열기/닫기</dd></div>
+                <div><dt><kbd>R</kbd></dt><dd>전체 재분석</dd></div>
+                <div><dt><kbd>N</kbd></dt><dd>새 분석 시작</dd></div>
+              </dl>
+            </section>
+            <section>
+              <h3>보기</h3>
+              <dl>
+                <div><dt><kbd>L</kbd></dt><dd>스크롤식/슬라이드식 전환</dd></div>
+                <div><dt><kbd>D</kbd></dt><dd>다크모드 전환</dd></div>
+                <div><dt><kbd>H</kbd></dt><dd>최근 매물 열기/닫기</dd></div>
+                <div><dt><kbd>S</kbd></dt><dd>AI 설정 열기</dd></div>
+              </dl>
+            </section>
+            <section>
+              <h3>단계 이동</h3>
+              <dl>
+                <div><dt><kbd>←</kbd> or <kbd>→</kbd></dt><dd>슬라이드식 이전/다음 단계</dd></div>
+                <div><dt><kbd>1</kbd>~<kbd>5</kbd></dt><dd>해당 단계로 바로 이동</dd></div>
+                <div><dt><kbd>Home</kbd> or <kbd>End</kbd></dt><dd>첫 단계/마지막 가능 단계</dd></div>
+                <div><dt><kbd>Enter</kbd></dt><dd>보이는 다음 단계 카드 시작</dd></div>
+              </dl>
+            </section>
+            <section>
+              <h3>사진·AI</h3>
+              <dl>
+                <div><dt><kbd>↑</kbd> or <kbd>↓</kbd></dt><dd>화면 위/아래 스크롤</dd></div>
+                <div><dt><kbd>I</kbd>, <kbd>P</kbd>, <kbd>F</kbd></dt><dd>매물 사진 전체보기</dd></div>
+                <div><dt><kbd>Shift</kbd>+<kbd>I</kbd> or <kbd>X</kbd></dt><dd>하자/이미지 분석 사진 전체보기</dd></div>
+                <div><dt><kbd>A</kbd></dt><dd>AI 비서 열기/닫기</dd></div>
+              </dl>
+            </section>
+          </div>
+          <p class="shortcut-panel__note">한글 입력 상태에서도 물리 키 기준으로 동작합니다. 입력창 안에서는 전역 단축키가 비활성화됩니다.</p>
+        </div>
       </aside>
       <header class="top">
         <div class="brand">
@@ -155,14 +209,14 @@
           <div id="urlImportStatus" class="url-import__status" role="status" aria-live="polite"></div>
         </form>
         <div class="top-actions">
-          <button type="button" id="btnLayoutMode" class="btn btn-secondary btn-small mode-toggle" aria-pressed="true">스크롤식</button>
-          <button type="button" id="btnHistory" class="btn btn-secondary btn-small">최근 매물</button>
-          <button type="button" id="btnAiSettings" class="btn btn-secondary btn-small">AI 설정</button>
-          <button type="button" id="btnRefresh" class="btn">새로 분석</button>
+          <button type="button" id="btnLayoutMode" class="btn btn-secondary btn-small mode-toggle" aria-pressed="true" title="레이아웃 전환 (L)">스크롤식</button>
+          <button type="button" id="btnHistory" class="btn btn-secondary btn-small" title="최근 매물 (H)">최근 매물</button>
+          <button type="button" id="btnAiSettings" class="btn btn-secondary btn-small" title="AI 설정 (S)">AI 설정</button>
+          <button type="button" id="btnRefresh" class="btn" title="전체 재분석 (R)">새로 분석</button>
         </div>
       </header>
 
-      <button type="button" id="btnDirectAi" class="direct-chat-fab" aria-label="AI 비서" aria-expanded="false">
+      <button type="button" id="btnDirectAi" class="direct-chat-fab" aria-label="AI 비서" aria-expanded="false" title="AI 비서 열기/닫기 (A), 닫기 (Esc)">
         <span class="material-symbols-rounded" aria-hidden="true">smart_toy</span>
         <small>AI 비서</small>
       </button>
@@ -193,9 +247,9 @@
 
     <div id="lightbox" class="lightbox" hidden aria-hidden="true">
       <div class="lightbox-content">
-        <button type="button" class="lightbox-close" id="lightboxClose" aria-label="닫기">×</button>
-        <button type="button" class="lightbox-nav lightbox-nav--prev" id="lightboxPrev" aria-label="이전 사진">‹</button>
-        <button type="button" class="lightbox-nav lightbox-nav--next" id="lightboxNext" aria-label="다음 사진">›</button>
+        <button type="button" class="lightbox-close" id="lightboxClose" aria-label="닫기" title="닫기 (Esc)">×</button>
+        <button type="button" class="lightbox-nav lightbox-nav--prev" id="lightboxPrev" aria-label="이전 사진" title="이전 사진 (←)">‹</button>
+        <button type="button" class="lightbox-nav lightbox-nav--next" id="lightboxNext" aria-label="다음 사진" title="다음 사진 (→)">›</button>
         <div class="lightbox-meta">
           <span id="lightboxBadge" class="image-analysis-badge image-analysis-badge--inline lightbox-badge" hidden></span>
           <span id="lightboxCount" class="lightbox-count" hidden></span>
@@ -215,6 +269,6 @@
     <script src="ai/config.js?v=20260521-1618"></script>
     <script src="ai/client.js?v=20260522-0013-search-query-retry"></script>
     <script src="ai/gate.js?v=20260521-1618"></script>
-    <script src="app.js?v=20260611-neutral-dark-step4"></script>
+    <script src="app.js?v=20260611-shortcut-panel-v2"></script>
   </body>
 </html>

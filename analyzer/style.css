@@ -6686,6 +6686,128 @@ body::after {
   font-size: 0.72rem !important;
   font-weight: 850 !important;
 }
+.shortcut-panel {
+  position: absolute !important;
+  left: calc(100% + 0.72rem) !important;
+  top: 0.42rem !important;
+  width: min(34rem, calc(100vw - 7.4rem)) !important;
+  max-height: calc(100dvh - 2rem) !important;
+  padding: 0.95rem !important;
+  border: 1px solid rgba(231, 226, 220, 0.96) !important;
+  border-radius: 26px !important;
+  background: #fff !important;
+  box-shadow: 0 24px 64px rgba(45, 36, 20, 0.16) !important;
+  opacity: 0 !important;
+  overflow: auto !important;
+  transform: translate3d(-8px, 0, 0) scale(0.98) !important;
+  transform-origin: left top !important;
+  transition: opacity 160ms ease, transform 160ms ease !important;
+}
+.shortcut-panel[hidden] {
+  display: none !important;
+}
+.shortcut-panel.is-open {
+  opacity: 1 !important;
+  transform: translate3d(0, 0, 0) scale(1) !important;
+}
+.shortcut-panel__head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.9rem !important;
+  margin-bottom: 0.8rem !important;
+}
+.shortcut-panel__head p {
+  margin: 0 0 0.08rem !important;
+  color: #ff6f0f !important;
+  font-size: 0.68rem !important;
+  font-weight: 950 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+.shortcut-panel__head strong {
+  color: #17191f !important;
+  font-size: 1.08rem !important;
+  font-weight: 950 !important;
+}
+.shortcut-panel__close {
+  width: 1.95rem !important;
+  height: 1.95rem !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: #fff3ea !important;
+  color: #8a4a18 !important;
+  cursor: pointer !important;
+}
+.shortcut-panel__grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 0.78rem !important;
+}
+.shortcut-panel section {
+  min-width: 0 !important;
+  padding: 0.8rem !important;
+  border: 1px solid #f0e9e1 !important;
+  border-radius: 20px !important;
+  background: #fffaf5 !important;
+}
+.shortcut-panel h3 {
+  margin: 0 0 0.55rem !important;
+  color: #30343b !important;
+  font-size: 0.82rem !important;
+  font-weight: 950 !important;
+}
+.shortcut-panel dl {
+  display: grid !important;
+  gap: 0.42rem !important;
+  margin: 0 !important;
+}
+.shortcut-panel dl div {
+  display: grid !important;
+  grid-template-columns: minmax(4.8rem, auto) minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 0.58rem !important;
+}
+.shortcut-panel dt,
+.shortcut-panel dd {
+  margin: 0 !important;
+}
+.shortcut-panel dt {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 0.22rem !important;
+  color: #8a6470 !important;
+  font-size: 0.68rem !important;
+  font-weight: 900 !important;
+}
+.shortcut-panel kbd {
+  display: inline-grid !important;
+  min-width: 1.52rem !important;
+  min-height: 1.38rem !important;
+  place-items: center !important;
+  padding: 0 0.34rem !important;
+  border: 1px solid #e5d9cd !important;
+  border-bottom-width: 2px !important;
+  border-radius: 7px !important;
+  background: #fff !important;
+  color: #17191f !important;
+  font: 850 0.68rem/1 Pretendard, system-ui, -apple-system, sans-serif !important;
+  box-shadow: 0 2px 0 rgba(45, 36, 20, 0.04) !important;
+}
+.shortcut-panel dd,
+.shortcut-panel__note {
+  color: #697180 !important;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  line-height: 1.35 !important;
+}
+.shortcut-panel__note {
+  margin: 0.82rem 0 0 !important;
+  padding: 0.66rem 0.76rem !important;
+  border-radius: 16px !important;
+  background: #f8fafc !important;
+}
 .direct-chat-popover {
   position: fixed !important;
   right: auto !important;
@@ -6743,6 +6865,26 @@ body::after {
   }
   .dashboard-rail-panel.is-open {
     transform: translate3d(-50%, 0, 0) scale(1) !important;
+  }
+  .shortcut-panel {
+    top: auto !important;
+    bottom: calc(100% + 0.7rem) !important;
+    left: 50% !important;
+    width: min(34rem, calc(100vw - 1.6rem)) !important;
+    max-height: min(72dvh, 34rem) !important;
+    transform: translate3d(-50%, 8px, 0) scale(0.98) !important;
+    transform-origin: bottom center !important;
+  }
+  .shortcut-panel.is-open {
+    transform: translate3d(-50%, 0, 0) scale(1) !important;
+  }
+}
+@media (max-width: 640px) {
+  .shortcut-panel__grid {
+    grid-template-columns: 1fr !important;
+  }
+  .shortcut-panel dl div {
+    grid-template-columns: minmax(4.4rem, auto) minmax(0, 1fr) !important;
   }
 }
 
@@ -8405,7 +8547,7 @@ body .app-shell .stage-three-zone .search-query-chip,
   cursor: pointer;
   box-shadow: 0 20px 46px rgba(255, 90, 0, 0.42), 0 9px 20px rgba(17, 24, 39, 0.2);
   opacity: 1;
-  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  transition: right 180ms ease, bottom 180ms ease, width 180ms ease, height 180ms ease, transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 .direct-chat-fab::after {
   content: '';
@@ -8425,6 +8567,7 @@ body .app-shell .stage-three-zone .search-query-chip,
   box-shadow: 0 24px 56px rgba(255, 90, 0, 0.48), 0 11px 24px rgba(17, 24, 39, 0.22);
 }
 .direct-chat-fab.is-active {
+  z-index: 233;
   transform: translateY(2px) scale(0.96);
   background: #d94800;
   border-color: rgba(255, 255, 255, 0.86);
@@ -8435,7 +8578,7 @@ body .app-shell .stage-three-zone .search-query-chip,
 }
 .direct-chat-fab.is-active::after {
   animation: none;
-  opacity: 0.18;
+  opacity: 0.12;
   transform: scale(0.98);
 }
 .direct-chat-fab .material-symbols-rounded {
@@ -8464,12 +8607,13 @@ body .app-shell .stage-three-zone .search-query-chip,
 }
 .direct-chat-popover {
   position: fixed !important;
-  top: auto !important;
+  top: max(0.75rem, env(safe-area-inset-top)) !important;
   right: 1.15rem !important;
-  bottom: 6rem !important;
+  bottom: calc(4.9rem + env(safe-area-inset-bottom)) !important;
   left: auto !important;
   z-index: 234 !important;
   width: min(430px, calc(100vw - 2rem)) !important;
+  max-height: calc(100dvh - 5.9rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
   transform-origin: right bottom;
   animation: directChatPop 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -8488,9 +8632,11 @@ body .app-shell .stage-three-zone .search-query-chip,
 }
 .direct-chat-card {
   display: grid !important;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto !important;
   gap: 0.36rem !important;
-  max-height: min(900px, calc(100svh - 6.4rem)) !important;
-  min-height: min(760px, calc(100svh - 6.4rem)) !important;
+  width: 100%;
+  max-height: inherit !important;
+  min-height: 0 !important;
   padding: 0 !important;
   overflow: hidden !important;
   border-radius: 28px !important;
@@ -8538,7 +8684,8 @@ body .app-shell .stage-three-zone .search-query-chip,
   display: grid;
   gap: 0.28rem;
   padding: 0.2rem 1rem 0;
-  overflow: visible;
+  min-height: 0;
+  overflow: auto;
 }
 .direct-chat-commands > span {
   color: #9aa3b2;
@@ -8596,7 +8743,8 @@ body .app-shell .stage-three-zone .search-query-chip,
   display: grid;
   gap: 0.42rem;
   padding: 0.16rem 1rem 0.12rem;
-  overflow: visible;
+  min-height: 0;
+  overflow: auto;
 }
 .direct-chat-suggestion-group {
   display: grid;
@@ -8644,8 +8792,8 @@ body .app-shell .stage-three-zone .search-query-chip,
   display: grid !important;
   align-content: start !important;
   gap: 0.34rem !important;
-  max-height: min(620px, calc(100svh - 18rem)) !important;
-  min-height: 17rem;
+  max-height: none !important;
+  min-height: 0 !important;
   padding: 0.54rem 1rem !important;
   overflow: auto !important;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.25), rgba(255, 247, 237, 0.34));
@@ -8764,10 +8912,117 @@ body .app-shell .stage-three-zone .search-query-chip,
     width: 3.8rem;
     height: 3.8rem;
   }
+  .direct-chat-fab.is-active {
+    bottom: 5.85rem;
+  }
   .direct-chat-popover {
+    top: max(0.75rem, env(safe-area-inset-top)) !important;
     right: 0.75rem !important;
-    bottom: 10.25rem !important;
+    bottom: calc(9.75rem + env(safe-area-inset-bottom)) !important;
     width: calc(100vw - 1.5rem) !important;
+    max-height: calc(100dvh - 10.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  }
+}
+@media (max-height: 760px) {
+  .direct-chat-popover {
+    top: max(0.55rem, env(safe-area-inset-top)) !important;
+    bottom: calc(4.45rem + env(safe-area-inset-bottom)) !important;
+    max-height: calc(100dvh - 5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  }
+  .direct-chat-fab.is-active {
+    bottom: 1.2rem;
+  }
+  .direct-chat-card {
+    border-radius: 22px !important;
+    gap: 0.22rem !important;
+  }
+  .direct-chat-head {
+    padding: 0.72rem 0.82rem 0.08rem !important;
+  }
+  .direct-chat-head h3 {
+    font-size: 0.88rem !important;
+    line-height: 1.18;
+  }
+  .direct-chat-head span:not(.material-symbols-rounded) {
+    margin-top: 0.14rem;
+    font-size: 0.66rem;
+  }
+  .direct-chat-actions .chip-btn {
+    min-height: 1.7rem;
+    padding-inline: 0.5rem;
+    font-size: 0.68rem;
+  }
+  .direct-chat-close {
+    width: 1.78rem;
+    min-width: 1.78rem;
+  }
+  .direct-chat-commands,
+  .direct-chat-suggestions {
+    padding-inline: 0.82rem;
+    max-height: 4.35rem;
+  }
+  .direct-chat-command-chip,
+  .direct-chat-suggestions button {
+    min-height: 1.72rem;
+    padding-inline: 0.58rem;
+    font-size: 0.65rem;
+  }
+  .direct-chat-log {
+    padding: 0.42rem 0.82rem !important;
+  }
+  .direct-chat-empty {
+    padding: 0.62rem 0.72rem;
+    font-size: 0.72rem !important;
+  }
+  .direct-chat-msg p {
+    padding: 0.48rem 0.66rem;
+    font-size: 0.76rem !important;
+    line-height: 1.38 !important;
+  }
+  .direct-chat-form {
+    padding: 0.56rem 0.68rem 0.64rem;
+  }
+  .direct-chat-form textarea {
+    min-height: 2.25rem !important;
+    max-height: 4.6rem;
+    padding: 0.56rem 0.72rem !important;
+  }
+  .direct-chat-form .btn {
+    width: 2.45rem;
+    min-width: 2.45rem;
+    min-height: 2.45rem;
+  }
+}
+@media (max-height: 620px) {
+  .direct-chat-popover {
+    bottom: calc(3.95rem + env(safe-area-inset-bottom)) !important;
+    max-height: calc(100dvh - 4.45rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  }
+  .direct-chat-fab.is-active {
+    bottom: 1.2rem;
+  }
+  .direct-chat-head .stage-two-card-label,
+  .direct-chat-head span:not(.material-symbols-rounded),
+  .direct-chat-commands > span,
+  .direct-chat-suggestion-group > span {
+    display: none !important;
+  }
+  .direct-chat-head h3 {
+    font-size: 0.82rem !important;
+  }
+  .direct-chat-commands,
+  .direct-chat-suggestions {
+    max-height: 2.45rem;
+  }
+  .direct-chat-commands > div,
+  .direct-chat-suggestion-group > div {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.12rem;
+  }
+  .direct-chat-command-chip,
+  .direct-chat-suggestions button {
+    flex: 0 0 auto;
   }
 }
 .receipt-reprint-btn {
@@ -11425,6 +11680,7 @@ body .app-shell #btnDirectAi.direct-chat-fab {
   color: #fff !important;
 }
 body .app-shell #btnDirectAi.direct-chat-fab.is-active {
+  z-index: 233 !important;
   transform: translateY(2px) scale(0.96) !important;
   background: #d94800 !important;
   border-color: rgba(255, 255, 255, 0.86) !important;
