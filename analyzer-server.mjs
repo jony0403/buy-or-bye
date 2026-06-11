@@ -45,6 +45,7 @@ const PROMPTS = {
   listingImageAnalysis: await loadPrompt('listing-image-analysis.txt'),
   directAiChat: await loadPrompt('direct-ai-chat.txt'),
   sellerChatAssistant: await loadPrompt('seller-chat-assistant.txt'),
+  sellerReplyAnalysis: await loadPrompt('seller-reply-analysis.txt'),
 };
 
 function renderPrompt(template, vars) {
@@ -2098,6 +2099,29 @@ function parseSellerChatAssistant(text) {
   };
 }
 
+function buildSellerReplyAnalysisPrompt(payload) {
+  return renderPrompt(PROMPTS.sellerReplyAnalysis, {
+    sellerReply: String(payload.sellerReply || payload.message || '').trim() || '(없음)',
+    chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
+    listingJson: JSON.stringify(payload.listing || null),
+    summaryJson: JSON.stringify(payload.summary || null),
+    riskAnalysisJson: JSON.stringify(payload.riskAnalysis || null),
+    listingTextAnalysisJson: JSON.stringify(payload.listingTextAnalysis || null),
+    listingImageAnalysisJson: JSON.stringify(payload.listingImageAnalysis || null),
+    usedPriceGuideJson: JSON.stringify(payload.usedPriceGuide || null),
+    receiptJson: JSON.stringify(payload.receipt || null),
+    comparisonJson: JSON.stringify(payload.comparison || null),
+  });
+}
+
+function parseSellerReplyAnalysis(text) {
+  const parsed = parseJsonObject(text);
+  return {
+    analysis: String(parsed.analysis || parsed.summary || '').replace(/\s+/g, ' ').trim(),
+    parseOk: Boolean(parsed.analysis || parsed.summary),
+  };
+}
+
 /** API 키 유효성 + 선택 모델 사용 가능 여부 (REST models 목록) */
 async function verifyGeminiApiKey(apiKey, modelId) {
   const key = String(apiKey || '').trim();
@@ -2715,6 +2739,46 @@ const server = http.createServer(async (req, res) => {
         rawText: rawOut,
         model,
         pipeline: 'gemini_seller_chat_assistant_json',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/seller-reply-analysis') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const prompt = buildSellerReplyAnalysisPrompt(body);
+      const rawOut = await geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+        temperature: 0.18,
+        maxOutputTokens: 420,
+        responseMimeType: 'application/json',
+        timeoutMs: GEMINI_FAST_TIMEOUT_MS,
+      });
+      const replyAnalysis = parseSellerReplyAnalysis(rawOut);
+      json(res, 200, {
+        replyAnalysis,
+        analysis: replyAnalysis.analysis,
+        rawText: rawOut,
+        model,
+        pipeline: 'gemini_seller_reply_analysis_json',
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });

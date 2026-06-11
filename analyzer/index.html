@@ -14,7 +14,7 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-    <link rel="stylesheet" href="style.css?v=20260611-min5-grid-v25" />
+    <link rel="stylesheet" href="style.css?v=20260611-reply-analysis-fix" />
   </head>
   <body>
     <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
@@ -47,9 +47,9 @@
 
     <div id="appShell" class="app-shell app-shell--locked app-shell--slide is-empty-state" inert>
       <aside class="dashboard-rail" aria-label="주요 기능">
-        <div class="dashboard-rail__logo" aria-hidden="true">
+        <button type="button" class="dashboard-rail__logo dashboard-rail__home" data-home-action aria-label="처음 화면으로 돌아가기" title="처음 화면으로">
           <img src="/icons/icon48.png" alt="" width="28" height="28" />
-        </div>
+        </button>
         <nav class="dashboard-rail__nav">
           <button type="button" class="dashboard-rail__btn" data-rail-action="import" aria-label="매물 URL 불러오기" title="매물 URL 불러오기 (/)">
             <span class="material-symbols-rounded" aria-hidden="true">link</span>
@@ -180,7 +180,6 @@
                 <div><dt><kbd>↑</kbd> or <kbd>↓</kbd></dt><dd>화면 위/아래 스크롤</dd></div>
                 <div><dt><kbd>I</kbd>, <kbd>P</kbd>, <kbd>F</kbd></dt><dd>매물 사진 전체보기</dd></div>
                 <div><dt><kbd>Shift</kbd>+<kbd>I</kbd> or <kbd>X</kbd></dt><dd>하자/이미지 분석 사진 전체보기</dd></div>
-                <div><dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></dt><dd>AI 전송용 25×25 그리드 디버그 보기</dd></div>
                 <div><dt><kbd>A</kbd></dt><dd>AI 비서 열기/닫기</dd></div>
               </dl>
             </section>
@@ -189,13 +188,13 @@
         </div>
       </aside>
       <header class="top">
-        <div class="brand">
+        <button type="button" class="brand brand-home" data-home-action aria-label="처음 화면으로 돌아가기" title="처음 화면으로">
           <img class="brand-icon" src="/icons/icon48.png" alt="" width="32" height="32" />
           <div>
           <h1>중고매물 살까말까</h1>
           <p class="sub">Buy or Bye · 가격 참고자료·하자·네고까지 구매 판단을 도와줍니다.</p>
           </div>
-        </div>
+        </button>
         <form id="urlImportForm" class="url-import" autocomplete="off">
           <label class="url-import__label" for="urlImportInput">매물 URL</label>
           <input
@@ -237,6 +236,7 @@
     <aside class="recent-drawer" id="recentDrawer" aria-hidden="true">
       <div class="recent-drawer__head">
         <h2>최근 매물</h2>
+        <button type="button" id="btnFavoriteCompare" class="drawer-clear">즐겨찾기 비교</button>
         <button type="button" id="btnHistoryClear" class="drawer-clear">전체 삭제</button>
         <button type="button" id="btnHistoryClose" class="drawer-close" aria-label="최근 매물 닫기">×</button>
       </div>
@@ -244,6 +244,7 @@
         <li class="empty-item">비어 있음</li>
       </ul>
     </aside>
+    <section id="favoriteCompareModal" class="favorite-compare-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="favoriteCompareTitle"></section>
     <button type="button" id="drawerBackdrop" class="drawer-backdrop" hidden aria-label="최근 매물 닫기"></button>
 
     <div id="lightbox" class="lightbox" hidden aria-hidden="true">
@@ -268,8 +269,8 @@
     </div>
 
     <script src="ai/config.js?v=20260521-1618"></script>
-    <script src="ai/client.js?v=20260522-0013-search-query-retry"></script>
+    <script src="ai/client.js?v=20260611-reply-analysis-fix"></script>
     <script src="ai/gate.js?v=20260521-1618"></script>
-    <script src="app.js?v=20260611-min5-grid-v25"></script>
+    <script src="app.js?v=20260611-hide-dev-shortcut"></script>
   </body>
 </html>

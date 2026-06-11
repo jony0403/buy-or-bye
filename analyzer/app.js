@@ -7,7 +7,9 @@ const $btnDirectAi = document.getElementById('btnDirectAi');
 const $btnHistory = document.getElementById('btnHistory');
 const $btnHistoryClose = document.getElementById('btnHistoryClose');
 const $btnHistoryClear = document.getElementById('btnHistoryClear');
+const $btnFavoriteCompare = document.getElementById('btnFavoriteCompare');
 const $recentDrawer = document.getElementById('recentDrawer');
+const $favoriteCompareModal = document.getElementById('favoriteCompareModal');
 const $drawerBackdrop = document.getElementById('drawerBackdrop');
 const $directAiPanel = document.getElementById('directAiPanel');
 const $urlImportForm = document.getElementById('urlImportForm');
@@ -79,6 +81,7 @@ const directAiChat = {
 };
 const directAiChatStates = new Map();
 const sellerChatStates = new Map();
+const favoriteListingKeys = new Set();
 const sellerChatToneOptions = [
   { value: 'polite', label: '공손하게' },
   { value: 'warm', label: '부드럽게' },
@@ -97,6 +100,7 @@ let stageSlideAnimationTimer = 0;
 let stageStartMotionTimer = 0;
 let aiResultMotionTimer = 0;
 let sellerChatToastTimer = 0;
+let favoriteCompareOpen = false;
 let lastStageThreeCompsRenderKey = '';
 let activeAiRunId = 0;
 const activeAiAbortControllers = new Set();
@@ -110,6 +114,7 @@ const LISTING_IMAGE_OVERLAY_VERSION = 25;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
+const FAVORITE_LISTINGS_STORAGE_KEY = 'ulsa_favorite_listing_keys_v1';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v3',
   'ulsa_ai_analysis_cache_v4',
@@ -265,6 +270,14 @@ function resolvedUsedPriceGuideState(item, comps) {
   return { key, state: key ? usedPriceGuides.get(key) : null };
 }
 
+function resolvedPurchaseReceiptState(item, comps) {
+  const key = purchaseReceiptKey(item, comps);
+  const listingKey = summaryKey(item);
+  const settledKey = findListingStageCacheKey(purchaseReceipts, listingKey, key);
+  if (settledKey) return { key: settledKey, state: purchaseReceipts.get(settledKey) };
+  return { key, state: key ? purchaseReceipts.get(key) : null };
+}
+
 function persistAiCaches() {
   try {
     localStorage.setItem(
@@ -324,10 +337,35 @@ function loadAiCaches() {
   for (const key of [...usedPriceGuides.keys(), ...purchaseReceipts.keys()]) {
     if (key && !comparisonFilters.has(key)) comparisonFilters.set(key, { status: 'done', matches: [] });
   }
+  for (const [key, state] of purchaseReceipts.entries()) {
+    if (state?.status === 'done') purchaseReceiptPrintedKeys.add(key);
+  }
   persistAiCaches();
 }
 
 loadAiCaches();
+function loadFavoriteListings() {
+  try {
+    const raw = localStorage.getItem(FAVORITE_LISTINGS_STORAGE_KEY);
+    const parsed = JSON.parse(raw || '[]');
+    if (Array.isArray(parsed)) {
+      favoriteListingKeys.clear();
+      parsed.filter(Boolean).forEach((key) => favoriteListingKeys.add(String(key)));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function persistFavoriteListings() {
+  try {
+    localStorage.setItem(FAVORITE_LISTINGS_STORAGE_KEY, JSON.stringify([...favoriteListingKeys]));
+  } catch {
+    /* ignore */
+  }
+}
+
+loadFavoriteListings();
 setLayoutMode(readLayoutMode(), { persist: false });
 
 function readLayoutMode() {
@@ -953,13 +991,15 @@ function isStepThreeDone(item) {
 }
 
 function isStepFourDone(item) {
-  const key = item && comps ? purchaseReceiptKey(item, comps) : '';
-  return Boolean(key && purchaseReceipts.get(key)?.status === 'done');
+  const stageComps = item ? effectiveStageThreeComps(item) : null;
+  const { state } = item && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
+  return state?.status === 'done';
 }
 
 function isPurchaseReceiptPrinted(item, nextComps = comps) {
-  const key = item && nextComps ? purchaseReceiptKey(item, nextComps) : '';
-  return Boolean(key && purchaseReceipts.get(key)?.status === 'done' && purchaseReceiptPrintedKeys.has(key));
+  const stageComps = item ? effectiveStageThreeComps(item, nextComps) : null;
+  const { state } = item && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
+  return state?.status === 'done';
 }
 
 function clearPurchaseReceiptPrintedForListing(key) {
@@ -3267,12 +3307,36 @@ function uniqueDirectAiKeywords(values = []) {
   const seen = new Set();
   for (const value of values) {
     const keyword = String(value || '').trim();
-    const key = keyword.toLowerCase();
+    const key = directAiKeywordKey(keyword);
     if (!keyword || seen.has(key)) continue;
     seen.add(key);
     out.push(keyword);
   }
   return out;
+}
+
+function directAiKeywordKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+function dedupeDirectAiKeywordGroups(groups = []) {
+  const seen = new Set();
+  return (Array.isArray(groups) ? groups : [])
+    .map((group) => {
+      const items = [];
+      for (const item of Array.isArray(group?.items) ? group.items : []) {
+        const keyword = String(item || '').trim();
+        const key = directAiKeywordKey(keyword);
+        if (!keyword || seen.has(key)) continue;
+        seen.add(key);
+        items.push(keyword);
+      }
+      return { ...group, items };
+    })
+    .filter((group) => group.items.length);
 }
 
 function sanitizeDirectAiKeywordGroups(state = {}) {
@@ -3301,7 +3365,7 @@ function sanitizeDirectAiKeywordGroups(state = {}) {
       });
     }
   }
-  return groups.slice(-6);
+  return dedupeDirectAiKeywordGroups(groups).slice(-6);
 }
 
 function flattenDirectAiKeywordGroups(groups = [], fallbackItems = []) {
@@ -3324,7 +3388,7 @@ function upsertDirectAiKeywordGroup(item, stage, signature, keywords) {
   group.signature = signature;
   group.label = directAiKeywordGroupLabel(item, stage);
   group.items = uniqueDirectAiKeywords([...(group.items || []), ...keywords]).slice(0, 3);
-  directAiChat.keywordGroups = groups.slice(-6);
+  directAiChat.keywordGroups = dedupeDirectAiKeywordGroups(groups).slice(-6);
   directAiChat.keywordItems = flattenDirectAiKeywordGroups(directAiChat.keywordGroups).slice(-15);
 }
 
@@ -3332,7 +3396,7 @@ function directAiContext(item = currentRenderedItem(), opts = {}) {
   if (!item) return { stage: '매물 없음', listing: null };
   const key = summaryKey(item);
   const stageComps = effectiveStageThreeComps(item, comps);
-  const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
+  const { state: receiptState } = stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
   const usedGuideState = stageComps ? resolvedUsedPriceGuideState(item, stageComps).state : null;
   const targetStage = opts.keywordStage || '';
   const includeStep2 = !targetStage || ['step2', 'step3', 'step4'].includes(targetStage);
@@ -3367,7 +3431,7 @@ function directAiContext(item = currentRenderedItem(), opts = {}) {
           }
         : null,
     usedPriceGuide: includeStep3 && usedGuideState?.status === 'done' ? usedGuideState.guide || null : null,
-    purchaseReceipt: includeStep4 && receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done' ? purchaseReceipts.get(receiptKey)?.receipt || null : null,
+    purchaseReceipt: includeStep4 && receiptState?.status === 'done' ? receiptState.receipt || null : null,
   };
 }
 
@@ -3701,6 +3765,7 @@ function defaultSellerChatState() {
     toneNote: '',
     input: '',
     sellerReply: '',
+    replyAnalysis: null,
     status: 'idle',
     messages: [],
     lastSuggestion: null,
@@ -3735,10 +3800,10 @@ function sellerChatContext(item, comps) {
   const riskAnalysis = key ? productRiskAnalyses.get(key)?.analysis || null : null;
   const listingTextAnalysis = key ? listingTextAnalyses.get(key)?.analysis || null : null;
   const listingImageAnalysis = key ? listingImageAnalyses.get(key)?.analysis || null : null;
-  const receiptKey = key && stageComps ? purchaseReceiptKey(item, stageComps) : '';
-  const usedGuideKey = key && stageComps ? usedPriceGuideKey(item, stageComps) : '';
-  const receipt = receiptKey ? purchaseReceipts.get(receiptKey)?.receipt || null : null;
-  const usedPriceGuide = usedGuideKey ? usedPriceGuides.get(usedGuideKey)?.guide || null : null;
+  const { state: receiptState } = key && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
+  const { state: usedGuideState } = key && stageComps ? resolvedUsedPriceGuideState(item, stageComps) : { state: null };
+  const receipt = receiptState?.status === 'done' ? receiptState.receipt || null : null;
+  const usedPriceGuide = usedGuideState?.status === 'done' ? usedGuideState.guide || null : null;
   const matched = key && stageComps ? (filteredComparisonItems(item, stageComps) || []) : [];
   const stats = matched.length ? compStats(matched) : null;
   return {
@@ -4077,6 +4142,20 @@ function renderSellerChatSuggestions(state) {
   `;
 }
 
+function renderSellerReplyAnalysis(state) {
+  const analysis = state?.replyAnalysis || null;
+  if (!analysis?.text) return '';
+  return `
+    <div class="seller-chat__reply-insight" data-seller-reply-analysis>
+      <span class="material-symbols-rounded" aria-hidden="true">quick_phrases</span>
+      <div>
+        <strong>판매자 답장 해석</strong>
+        <p>${escapeHtml(analysis.text)}</p>
+      </div>
+    </div>
+  `;
+}
+
 function renderSellerChatChips(state) {
   const quickChips = sellerChatQuickChips(state?.mode || 'first', state?.lastSuggestion || null, state?.messages || []);
   return quickChips
@@ -4148,6 +4227,7 @@ function refreshSellerChatDynamic(item, opts = {}) {
   const panel = $current?.querySelector('[data-stage-five-panel]');
   if (!state || !panel) return false;
   const thread = panel.querySelector('[data-seller-chat-thread]');
+  const replyAnalysis = panel.querySelector('[data-seller-reply-analysis-slot]');
   const suggestions = panel.querySelector('[data-seller-chat-suggestions]');
   const chips = panel.querySelector('[data-seller-chat-chips]');
   const error = panel.querySelector('[data-seller-chat-error]');
@@ -4155,6 +4235,7 @@ function refreshSellerChatDynamic(item, opts = {}) {
   const input = panel.querySelector('[data-seller-chat-input]');
   const reply = panel.querySelector('[data-seller-chat-reply]');
   if (thread && !opts.skipThread) thread.innerHTML = renderSellerChatThread(state);
+  if (replyAnalysis) replyAnalysis.innerHTML = renderSellerReplyAnalysis(state);
   if (suggestions) suggestions.innerHTML = renderSellerChatSuggestions(state);
   if (chips) chips.innerHTML = renderSellerChatChips(state);
   if (error) error.innerHTML = state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : '';
@@ -4249,6 +4330,7 @@ function renderSellerChatPanel(item, comps) {
               ${note}
             </div>
             <div class="seller-chat__thread" data-seller-chat-thread>${renderSellerChatThread(state)}</div>
+            <div data-seller-reply-analysis-slot>${renderSellerReplyAnalysis(state)}</div>
             <div data-seller-chat-suggestions>${renderSellerChatSuggestions(state)}</div>
             <div class="seller-chat__chips" data-seller-chat-chips>
               ${renderSellerChatChips(state)}
@@ -5644,8 +5726,8 @@ function renderPurchaseReportDocumentStatic(item, comps) {
   const imageAnalysis = listingImageAnalyses.get(key)?.analysis || {};
   const { state: guideState } = resolvedUsedPriceGuideState(item, stageComps);
   const guide = guideState?.guide || {};
-  const receiptKey = stageComps ? purchaseReceiptKey(item, stageComps) : '';
-  const receipt = receiptKey ? purchaseReceipts.get(receiptKey)?.receipt || {} : {};
+  const { state: receiptState } = stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
+  const receipt = receiptState?.status === 'done' ? receiptState.receipt || {} : {};
   const listingImages = (Array.isArray(item?.imageUrls) ? item.imageUrls : []).map((url, idx) => ({
     imageUrl: url,
     index: idx + 1,
@@ -6366,8 +6448,7 @@ function renderPurchaseReceiptBlock(item, comps) {
   if (!isStageThreeCacheSettled(filterState?.status)) return '';
   const { state: guideState } = resolvedUsedPriceGuideState(item, comps);
   if (!isStageThreeCacheSettled(guideState?.status)) return '';
-  const key = purchaseReceiptKey(item, comps);
-  const state = key ? purchaseReceipts.get(key) : null;
+  const { key, state } = resolvedPurchaseReceiptState(item, comps);
   if (state?.status === 'loading') {
     return `
       <article class="mini-card stage-three-card purchase-receipt-card is-loading">
@@ -7284,8 +7365,10 @@ function renderItem(item, comps) {
   bindStageThreeFlow($current, item);
   bindUsedPriceGuide($current, item);
   bindPurchaseReceipt($current, item);
-  const receiptKey = item && comps ? purchaseReceiptKey(item, comps) : '';
-  const receiptDone = Boolean(receiptKey && purchaseReceipts.get(receiptKey)?.status === 'done');
+  const stageCompsForReceipt = item ? effectiveStageThreeComps(item, comps) : null;
+  const { key: receiptKey, state: receiptState } =
+    item && stageCompsForReceipt ? resolvedPurchaseReceiptState(item, stageCompsForReceipt) : { key: '', state: null };
+  const receiptDone = receiptState?.status === 'done';
   const receiptPrinted = Boolean(receiptKey && purchaseReceiptPrintedKeys.has(receiptKey));
   window.requestAnimationFrame(() => {
     if (receiptDone && !receiptPrinted) {
@@ -7961,7 +8044,8 @@ function followPurchaseReceiptPrint(root = $current) {
   const paper = stage?.querySelector('.purchase-receipt-paper');
   if (!stage || !reveal || !paper || stage.dataset.receiptScrollStarted === '1') return;
   const item = currentRenderedItem();
-  const receiptKey = item && comps ? purchaseReceiptKey(item, comps) : '';
+  const stageComps = item ? effectiveStageThreeComps(item, comps) : null;
+  const { key: receiptKey } = item && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { key: '' };
   stage.dataset.receiptScrollStarted = '1';
   const printHeight = Math.ceil(paper.scrollHeight + 12);
   reveal.style.setProperty('--receipt-print-height', `${printHeight}px`);
@@ -8182,6 +8266,44 @@ async function submitSellerChat(item, opts = {}) {
 
   try {
     const chatHistory = sellerChatHistoryPayload(state.messages);
+    if (asSellerReply && typeof globalThis.UlsaAi?.fetchSellerReplyAnalysis === 'function') {
+      void globalThis.UlsaAi.fetchSellerReplyAnalysis({
+        apiKey,
+        sellerReply: payloadMessage,
+        chatHistory,
+        listing: context.item,
+        summary: context.summary,
+        riskAnalysis: context.riskAnalysis,
+        listingTextAnalysis: context.listingTextAnalysis,
+        listingImageAnalysis: context.listingImageAnalysis,
+        usedPriceGuide: context.usedPriceGuide,
+        receipt: context.receipt,
+        comparison: context.comparison,
+      })
+        .then((analysisData) => {
+          const current = getSellerChatState(item);
+          if (!current || selectedKey !== key) return;
+          const text = stripChatMarkdown(analysisData.analysis || analysisData.replyAnalysis?.analysis || '').trim();
+          current.replyAnalysis = text ? { status: 'done', text, source: payloadMessage } : null;
+          refreshSellerChatDynamic(item, { skipThread: true });
+        })
+        .catch(() => {
+          const current = getSellerChatState(item);
+          if (!current || selectedKey !== key) return;
+          current.replyAnalysis = {
+            status: 'error',
+            text: '판매자 답장 해석을 불러오지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도해 주세요.',
+            source: payloadMessage,
+          };
+          refreshSellerChatDynamic(item, { skipThread: true });
+        });
+    } else if (asSellerReply) {
+      state.replyAnalysis = {
+        status: 'error',
+        text: '판매자 답장 해석 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.',
+        source: payloadMessage,
+      };
+    }
     const data = await globalThis.UlsaAi.fetchSellerChatAssistant({
       apiKey,
       mode: state.mode,
@@ -8312,6 +8434,7 @@ function bindSellerChatFlow(root, item) {
       currentState.mode = 'first';
       currentState.messages = [];
       currentState.lastSuggestion = null;
+      currentState.replyAnalysis = null;
       currentState.input = '';
       currentState.sellerReply = '';
       currentState.status = 'idle';
@@ -8416,6 +8539,11 @@ function bindDashboardRail() {
   updateRailLayoutToggle();
   updateRailThemeToggle();
   $dashboardRail.addEventListener('click', (e) => {
+    const home = e.target.closest('[data-home-action]');
+    if (home && $dashboardRail.contains(home)) {
+      startNewAnalysis();
+      return;
+    }
     const target = e.target.closest('[data-rail-action], [data-rail-close]');
     if (!target || !$dashboardRail.contains(target)) return;
     if (target.matches('[data-rail-close]')) {
@@ -8452,6 +8580,11 @@ function bindDashboardRail() {
 
 setThemeMode(storedThemeMode(), { persist: false });
 bindDashboardRail();
+
+document.querySelectorAll('[data-home-action]').forEach((el) => {
+  if ($dashboardRail?.contains(el)) return;
+  el.addEventListener('click', startNewAnalysis);
+});
 
 window.addEventListener('resize', () => {
   positionDirectAiPanel();
@@ -8723,6 +8856,8 @@ function clearCurrentAnalysisState() {
 
 function startNewAnalysis() {
   closeRailPanel();
+  favoriteCompareOpen = false;
+  renderFavoriteComparePanel();
   saveDirectAiChatState();
   latest = null;
   selectedKey = null;
@@ -8913,13 +9048,18 @@ async function ensurePurchaseReceipt(item, opts = {}) {
   if (!item || !stageComps || !isCompsCollected(stageComps)) return;
   const key = purchaseReceiptKey(item, stageComps);
   if (!key) return;
-  const existing = purchaseReceipts.get(key);
+  const { key: existingKey, state: existing } = resolvedPurchaseReceiptState(item, stageComps);
   if (existing?.status === 'loading') return;
   if (opts.regenerate) {
     purchaseReceipts.delete(key);
     purchaseReceiptPrintedKeys.delete(key);
     persistAiCaches();
   } else if (existing?.status === 'done') {
+    if (existingKey && existingKey !== key) {
+      purchaseReceipts.set(key, { ...existing });
+      if (purchaseReceiptPrintedKeys.has(existingKey)) purchaseReceiptPrintedKeys.add(key);
+      persistAiCaches();
+    }
     refreshStageFourSection(item);
     return;
   }
@@ -8955,7 +9095,7 @@ async function ensurePurchaseReceipt(item, opts = {}) {
       riskAnalysis: productRiskAnalyses.get(summaryKey(item))?.analysis || null,
       listingTextAnalysis: listingTextAnalyses.get(summaryKey(item))?.analysis || null,
       listingImageAnalysis: listingImageAnalyses.get(summaryKey(item))?.analysis || null,
-      usedPriceGuide: usedPriceGuides.get(key)?.status === 'done' ? usedPriceGuides.get(key)?.guide || null : null,
+      usedPriceGuide: resolvedUsedPriceGuideState(item, stageComps).state?.status === 'done' ? resolvedUsedPriceGuideState(item, stageComps).state?.guide || null : null,
       comparison: purchaseReceiptComparisonPayload(item, stageComps),
       apiKey,
     });
@@ -9287,8 +9427,44 @@ $lightboxNext?.addEventListener('click', (e) => {
 });
 $btnHistory?.addEventListener('click', () => setHistoryOpen(true));
 $btnHistoryClose?.addEventListener('click', () => setHistoryOpen(false));
+$btnFavoriteCompare?.addEventListener('click', () => {
+  favoriteCompareOpen = !favoriteCompareOpen;
+  if (favoriteCompareOpen) setHistoryOpen(false);
+  else setHistoryOpen(true);
+  renderFavoriteComparePanel();
+});
+$favoriteCompareModal?.addEventListener('click', (e) => {
+  const close = e.target.closest('[data-favorite-compare-close]');
+  if (close) {
+    favoriteCompareOpen = false;
+    renderFavoriteComparePanel();
+    return;
+  }
+  const open = e.target.closest('[data-favorite-open]');
+  if (!open) return;
+  const key = open.getAttribute('data-favorite-open') || '';
+  const found = promoteHistoryItem(key);
+  if (!found) return;
+  if (selectedKey !== key) {
+    saveDirectAiChatState(selectedKey);
+    loadDirectAiChatState(key);
+  }
+  selectedKey = key;
+  comps = restoredStageThreeComps(found, found.comps || comps);
+  favoriteCompareOpen = false;
+  renderFavoriteComparePanel();
+  renderItem(found, comps);
+  refreshDirectAiPanelForListingChange();
+  void ensureProductSummary(found);
+  renderHistoryList();
+  window.postMessage({ type: 'MARKET_SCRAPE_PROMOTE_HISTORY', key }, '*');
+});
 $btnHistoryClear?.addEventListener('click', () => {
   history = [];
+  favoriteListingKeys.clear();
+  favoriteCompareOpen = false;
+  persistFavoriteListings();
+  renderFavoriteComparePanel();
   latest = null;
   selectedKey = null;
   comps = null;
@@ -9348,6 +9524,10 @@ function isRailPanelOpen() {
 
 function isShortcutPanelOpen() {
   return Boolean($shortcutPanel && !$shortcutPanel.hidden);
+}
+
+function isFavoriteCompareOpen() {
+  return Boolean($favoriteCompareModal && !$favoriteCompareModal.hidden);
 }
 
 function isSlideLayout() {
@@ -9438,6 +9618,15 @@ function activateVisibleStageStartCard() {
 
 function handleAppShortcut(e) {
   if (e.defaultPrevented || e.isComposing) return;
+
+  if (isFavoriteCompareOpen()) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      favoriteCompareOpen = false;
+      renderFavoriteComparePanel();
+    }
+    return;
+  }
 
   if (isLightboxOpen()) {
     if (e.key === 'Escape') {
@@ -9586,16 +9775,168 @@ function handleAppShortcut(e) {
 
 document.addEventListener('keydown', handleAppShortcut);
 
+function favoriteCompareItems() {
+  const items = history.filter((item) => favoriteListingKeys.has(itemKey(item)));
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = itemKey(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function compareReceiptForListing(key) {
+  const receiptKey = findListingStageCacheKey(purchaseReceipts, key);
+  return receiptKey ? purchaseReceipts.get(receiptKey)?.receipt || null : null;
+}
+
+function compareGuideForListing(key) {
+  const guideKey = findListingStageCacheKey(usedPriceGuides, key);
+  return guideKey ? usedPriceGuides.get(guideKey)?.guide || null : null;
+}
+
+function compareRiskCount(analysis) {
+  if (!analysis) return 0;
+  const groups = [analysis.chronicDefects, analysis.relatedIssues, analysis.purchaseChecklist, analysis.redFlags];
+  return groups.reduce((sum, group) => sum + (Array.isArray(group) ? group.length : 0), 0);
+}
+
+function compareImageIssueCount(analysis) {
+  const images = Array.isArray(analysis?.images) ? analysis.images : [];
+  return images.reduce((sum, image) => {
+    const defects = Array.isArray(image?.defects) ? image.defects : [];
+    return sum + defects.length;
+  }, 0);
+}
+
+function favoriteCompareSnapshot(item) {
+  const key = itemKey(item);
+  const summary = productSummaries.get(key)?.summary || {};
+  const receipt = compareReceiptForListing(key);
+  const guide = compareGuideForListing(key);
+  const risk = productRiskAnalyses.get(key)?.analysis || null;
+  const image = listingImageAnalyses.get(key)?.analysis || null;
+  const price = Number.isFinite(item?.price) ? item.price : null;
+  const riskCount = compareRiskCount(risk);
+  const imageIssueCount = compareImageIssueCount(image);
+  const verdict = receipt?.verdict || (receipt ? 'done' : 'pending');
+  const score =
+    (price != null ? Math.min(50, Math.max(0, 50 - price / 20000)) : 18) +
+    (verdict === 'buy' ? 30 : verdict === 'negotiate' ? 18 : verdict === 'hold' ? 4 : 10) -
+    Math.min(18, riskCount * 2 + imageIssueCount * 3);
+  return {
+    key,
+    item,
+    summary,
+    receipt,
+    guide,
+    price,
+    riskCount,
+    imageIssueCount,
+    verdict,
+    score,
+    imageUrl: displayImageUrl(item?.imageUrls?.[0] || ''),
+  };
+}
+
+function compareVerdictText(verdict) {
+  if (verdict === 'buy') return '구매 후보';
+  if (verdict === 'negotiate') return '네고 후보';
+  if (verdict === 'hold') return '보류';
+  return '분석 전';
+}
+
+function renderFavoriteComparePanel() {
+  if (!$favoriteCompareModal) return;
+  const snapshots = favoriteCompareItems()
+    .map(favoriteCompareSnapshot)
+    .sort((a, b) => b.score - a.score || (a.price ?? Infinity) - (b.price ?? Infinity));
+  $favoriteCompareModal.hidden = !favoriteCompareOpen;
+  $favoriteCompareModal.setAttribute('aria-hidden', favoriteCompareOpen ? 'false' : 'true');
+  document.body.classList.toggle('modal-scroll-locked', favoriteCompareOpen);
+  if (!favoriteCompareOpen) return;
+  if (snapshots.length < 2) {
+    $favoriteCompareModal.innerHTML = `
+      <div class="favorite-compare-backdrop" data-favorite-compare-close></div>
+      <div class="favorite-compare-dialog">
+        <div class="favorite-compare-head">
+          <div>
+            <strong id="favoriteCompareTitle">즐겨찾기 매물 비교</strong>
+            <p>최근 매물에서 별표를 눌러 2개 이상 담으면 가격·리스크·최종 판단을 한 번에 비교합니다.</p>
+          </div>
+          <button type="button" data-favorite-compare-close aria-label="비교 닫기">×</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+  $favoriteCompareModal.innerHTML = `
+    <div class="favorite-compare-backdrop" data-favorite-compare-close></div>
+    <div class="favorite-compare-dialog">
+      <div class="favorite-compare-head">
+        <div>
+          <strong id="favoriteCompareTitle">즐겨찾기 매물 비교</strong>
+          <p>${snapshots.length}개 매물을 현재 분석 캐시 기준으로 정렬했습니다. 대표 이미지와 판단 근거를 같이 봅니다.</p>
+        </div>
+        <button type="button" data-favorite-compare-close aria-label="비교 닫기">×</button>
+      </div>
+      <div class="favorite-compare-list">
+        ${snapshots
+          .map((entry, index) => {
+            const { item, summary, receipt, guide } = entry;
+            const title = summary.productName || item.title || '제목 없음';
+            const reason = receipt?.summary || guide?.currentAssessment || '아직 최종 판단이 없으면 가격과 수집된 리스크만 참고하세요.';
+            const priceReason = receipt?.priceReason || guide?.priceReason || '';
+            return `
+              <article class="favorite-compare-card verdict-${escapeAttr(entry.verdict)}">
+                <div class="favorite-compare-rank">${index + 1}</div>
+                <div class="favorite-compare-image">
+                  ${
+                    entry.imageUrl
+                      ? `<img src="${escapeAttr(entry.imageUrl)}" alt="" loading="lazy" />`
+                      : '<span>이미지 없음</span>'
+                  }
+                </div>
+                <div class="favorite-compare-main">
+                  <div class="favorite-compare-title">
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>${escapeHtml([item.platformLabel || item.platform || '', item.title || ''].filter(Boolean).join(' · '))}</span>
+                  </div>
+                  <div class="favorite-compare-metrics">
+                    <b>${escapeHtml(item.priceLabel || '-')}</b>
+                    <span>${escapeHtml(compareVerdictText(entry.verdict))}</span>
+                    <span>리스크 ${entry.riskCount}</span>
+                    <span>사진 이슈 ${entry.imageIssueCount}</span>
+                    ${receipt?.negotiationPriceLabel ? `<span>네고 ${escapeHtml(receipt.negotiationPriceLabel)}</span>` : ''}
+                    ${receipt?.maxBuyPriceLabel ? `<span>상한 ${escapeHtml(receipt.maxBuyPriceLabel)}</span>` : ''}
+                  </div>
+                  <p>${escapeHtml(reason)}</p>
+                  ${priceReason ? `<p class="favorite-compare-reason">${escapeHtml(priceReason)}</p>` : ''}
+                </div>
+                <button type="button" data-favorite-open="${escapeAttr(entry.key)}">열기</button>
+              </article>
+            `;
+          })
+          .join('')}
+      </div>
+    </div>
+  `;
+}
+
 function renderHistoryList() {
   if (!history.length) {
     $history.innerHTML = '<li class="empty-item">비어 있음</li>';
+    renderFavoriteComparePanel();
     return;
   }
   $history.innerHTML = history
     .map((item) => {
       const key = itemKey(item);
       const active = key === selectedKey ? ' active' : '';
+      const favorite = favoriteListingKeys.has(key);
       return `<li class="history-row">
+        <button type="button" class="history-favorite${favorite ? ' is-active' : ''}" data-favorite-key="${escapeAttr(key)}" aria-label="즐겨찾기 ${favorite ? '해제' : '추가'}" aria-pressed="${favorite ? 'true' : 'false'}">★</button>
         <button type="button" data-key="${escapeAttr(key)}" class="${active.trim()}">
           <span class="hist-title">[${escapeHtml(item.platformLabel || item.platform)}] ${escapeHtml(item.title || '')}</span>
           <span class="hist-meta">${escapeHtml([item.priceLabel || '', shippingLine(item), formatTime(item.exportedAt)].filter(Boolean).join(' · '))}</span>
@@ -9604,6 +9945,20 @@ function renderHistoryList() {
       </li>`;
     })
     .join('');
+
+  renderFavoriteComparePanel();
+
+  $history.querySelectorAll('button[data-favorite-key]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = btn.getAttribute('data-favorite-key') || '';
+      if (!key) return;
+      if (favoriteListingKeys.has(key)) favoriteListingKeys.delete(key);
+      else favoriteListingKeys.add(key);
+      persistFavoriteListings();
+      renderHistoryList();
+    });
+  });
 
   $history.querySelectorAll('button[data-key]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -9629,6 +9984,8 @@ function renderHistoryList() {
     btn.addEventListener('click', () => {
       const key = btn.getAttribute('data-delete-key');
       history = history.filter((h) => itemKey(h) !== key);
+      favoriteListingKeys.delete(key);
+      persistFavoriteListings();
       productSummaries.delete(key);
       directAiChatStates.delete(key);
       relatedRequestedKeys.delete(key);

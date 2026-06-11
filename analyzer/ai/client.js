@@ -415,4 +415,44 @@
     return data;
   };
 
+  /**
+   * @param {{ sellerReply: string, chatHistory?: object[], listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @returns {Promise<{ analysis: string, replyAnalysis: object, model: string, pipeline: string }>}
+   */
+  UlsaAi.fetchSellerReplyAnalysis = async (p) => {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(`http://${location.hostname}:${port}/api/seller-reply-analysis`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': p.apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        sellerReply: p.sellerReply || '',
+        chatHistory: Array.isArray(p.chatHistory) ? p.chatHistory : [],
+        listing: p.listing || null,
+        summary: p.summary || null,
+        riskAnalysis: p.riskAnalysis || null,
+        listingTextAnalysis: p.listingTextAnalysis || null,
+        listingImageAnalysis: p.listingImageAnalysis || null,
+        usedPriceGuide: p.usedPriceGuide || null,
+        receipt: p.receipt || null,
+        comparison: p.comparison || null,
+      }),
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+    }
+    if (!res.ok) {
+      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+    }
+    return data;
+  };
+
 })();

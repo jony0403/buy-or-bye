@@ -1,0 +1,31 @@
+판매자가 방금 보낸 메시지만 분석하세요. 답장 문구를 만들지 않습니다.
+
+목표:
+- 마지막 seller 메시지가 직전 me 메시지에 어떻게 답했는지 해석합니다.
+- 판매자의 말이 현재 매물 분석, 리스크, 사진, 가격 판단과 어떤 의미를 갖는지 설명합니다.
+- 구매자가 다음 판단을 할 때 알아야 할 점만 1~2문장으로 말합니다.
+
+규칙:
+- 추천 답장, 말투 설명, 후보 설명을 쓰지 마세요.
+- "이 문구가 적합하다", "다음 답장", "추천 메시지" 같은 표현 금지.
+- 판매자가 인정한 것, 회피한 것, 불확실한 것, 추가 확인이 필요한 것을 중심으로 해석하세요.
+- 직전 me 메시지와 마지막 seller 메시지의 관계를 반드시 봅니다.
+- 판매자 답변이 짧거나 애매하면 "확답은 아니며 추가 확인이 필요하다"처럼 명확히 말하세요.
+- 매물 분석과 충돌하는 내용이 있으면 짧게 짚으세요.
+
+입력:
+- sellerReply: {{sellerReply}}
+- chatHistoryJson: {{chatHistoryJson}}
+- listingJson: {{listingJson}}
+- summaryJson: {{summaryJson}}
+- riskAnalysisJson: {{riskAnalysisJson}}
+- listingTextAnalysisJson: {{listingTextAnalysisJson}}
+- listingImageAnalysisJson: {{listingImageAnalysisJson}}
+- usedPriceGuideJson: {{usedPriceGuideJson}}
+- receiptJson: {{receiptJson}}
+- comparisonJson: {{comparisonJson}}
+
+반드시 JSON만 출력하세요:
+{
+  "analysis": "판매자 답변 해석 1~2문장"
+}
