@@ -106,6 +106,8 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 0;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 24_000;
 const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v15';
+const LISTING_IMAGE_OVERLAY_VERSION = 25;
+const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
@@ -126,10 +128,10 @@ function mapToPersistableObject(map) {
   );
 }
 
-function restorePersistedMap(map, raw) {
+function restorePersistedMap(map, raw, acceptState = null) {
   if (!raw || typeof raw !== 'object') return;
   for (const [key, state] of Object.entries(raw)) {
-    if (state?.status === 'done' || state?.status === 'error') map.set(key, state);
+    if ((state?.status === 'done' || state?.status === 'error') && (!acceptState || acceptState(state, key))) map.set(key, state);
   }
 }
 
@@ -299,7 +301,11 @@ function loadAiCaches() {
       restorePersistedMap(productRiskAnalyses, parsed.productRiskAnalyses);
       restorePersistedMap(productRiskYoutubeAnalyses, parsed.productRiskYoutubeAnalyses);
       restorePersistedMap(listingTextAnalyses, parsed.listingTextAnalyses);
-      restorePersistedMap(listingImageAnalyses, parsed.listingImageAnalyses);
+      restorePersistedMap(
+        listingImageAnalyses,
+        parsed.listingImageAnalyses,
+        (state) => state?.status !== 'done' || Number(state.overlayVersion) >= LISTING_IMAGE_OVERLAY_VERSION
+      );
       restorePersistedMap(comparisonFilters, parsed.comparisonFilters);
       restorePersistedSet(stageThreeComparisonSkippedKeys, parsed.stageThreeComparisonSkippedKeys);
       restorePersistedMap(usedPriceGuides, parsed.usedPriceGuides);
@@ -421,7 +427,7 @@ const AI_LOADING_DURATIONS = {
   productRisk: 18000,
   productRiskYoutube: 30000,
   listingText: 7000,
-  listingImage: 7000,
+  listingImage: 18000,
   searchQuery: 8000,
   comparisonFilter: 11000,
   usedPriceGuide: 9000,
@@ -457,6 +463,12 @@ function renderAiLoadingProgress(state, kind) {
   const percent = aiLoadingPercent(state, kind);
   if (percent == null) return '';
   const displayPercent = Math.floor(percent);
+  const detailText =
+    kind === 'listingImage' && displayPercent >= 86
+      ? '사진 분석 마무리 중'
+      : kind === 'listingImage'
+        ? '사진 상태 확인 중'
+        : '';
   const startedAt = Number(state.startedAt || state.loadingStartedAt || 0) || Date.now();
   const duration = Number(state.durationMs || state.duration) || AI_LOADING_DURATIONS[kind] || 8000;
   const forcePercent = Number.isFinite(Number(state.forcePercent)) ? Number(state.forcePercent) : '';
@@ -466,9 +478,10 @@ function renderAiLoadingProgress(state, kind) {
   const endPercent = Number.isFinite(Number(state.endPercent)) ? Number(state.endPercent) : '';
   ensureAiLoadingProgressTicker();
   return `
-    <div class="ai-loading-progress" aria-hidden="true" data-ai-progress data-started-at="${startedAt}" data-duration="${duration}" data-force-percent="${forcePercent}" data-finish-started-at="${finishStartedAt}" data-finish-from-percent="${finishFromPercent}" data-start-percent="${startPercent}" data-end-percent="${endPercent}">
+    <div class="ai-loading-progress" aria-hidden="true" data-ai-progress data-started-at="${startedAt}" data-duration="${duration}" data-force-percent="${forcePercent}" data-finish-started-at="${finishStartedAt}" data-finish-from-percent="${finishFromPercent}" data-start-percent="${startPercent}" data-end-percent="${endPercent}" data-kind="${escapeAttr(kind || '')}">
       <div class="ai-loading-progress__bar"><i style="width:${percent}%"></i></div>
       <span class="ai-loading-progress__text">${displayPercent}%</span>
+      ${detailText ? `<span class="ai-loading-progress__detail">${escapeHtml(detailText)}</span>` : ''}
     </div>
   `;
 }
@@ -736,8 +749,12 @@ function ensureAiLoadingProgressTicker() {
       const percent = Math.max(0, Math.min(100, raw));
       const bar = node.querySelector('.ai-loading-progress__bar i');
       const text = node.querySelector('.ai-loading-progress__text');
+      const detail = node.querySelector('.ai-loading-progress__detail');
       if (bar) bar.style.width = `${percent}%`;
       if (text) text.textContent = `${Math.floor(percent)}%`;
+      if (detail && node.getAttribute('data-kind') === 'listingImage') {
+        detail.textContent = percent >= 86 ? '사진 분석 마무리 중' : '사진 상태 확인 중';
+      }
       hasProgress = true;
     });
     if (!hasProgress && !hasVisibleAiLoading()) {
@@ -1375,6 +1392,118 @@ function lightboxAnalysisItems(images) {
       level: image.level || 'neutral',
       defects: Array.isArray(image.defects) ? image.defects : [],
     }));
+}
+
+function imageDebugDefectSummary(image) {
+  const defects = Array.isArray(image?.defects) ? image.defects : [];
+  if (!defects.length) return 'AI 선택 하자 칸: 없음';
+  return defects
+    .map((defect, idx) => {
+      const center = String(
+        defect?.gridCenter || defect?.centerCell || defect?.centerGrid || defect?.centerGridCell || defect?.gridCell || ''
+      )
+        .replace(/\s+/g, '')
+        .trim()
+        .toUpperCase();
+      const size = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
+      const cols = Number(size.cols ?? size.columns ?? size.width ?? size.w);
+      const rows = Number(size.rows ?? size.height ?? size.h);
+      const sizeLabel =
+        Number.isFinite(cols) || Number.isFinite(rows)
+          ? `${Number.isFinite(cols) ? Math.round(cols) : '?'}×${Number.isFinite(rows) ? Math.round(rows) : '?'}칸`
+          : '크기 미지정';
+      const desc = String(defect?.description || defect?.detail || defect?.label || '하자 의심')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const reason = String(
+        defect?.gridReason || defect?.coordinateReason || defect?.locationReason || defect?.reason || defect?.evidence || ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim();
+      return `AI 선택 ${idx + 1}: ${center || '셀 미지정'} / ${sizeLabel} / ${desc}${reason ? ` / 근거: ${reason}` : ''}`;
+    })
+    .join('\n');
+}
+
+function gridDebugDefectToRect(defect, meta) {
+  const gridCenter = defect?.gridCenter || defect?.centerCell || defect?.centerGrid || defect?.centerGridCell;
+  const point = gridCellToPoint(gridCenter, meta?.gridCols, meta?.gridRows);
+  if (!point) return null;
+  const rawSize = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
+  const rawCols = Number(rawSize.cols ?? rawSize.columns ?? rawSize.width ?? rawSize.w);
+  const rawRows = Number(rawSize.rows ?? rawSize.height ?? rawSize.h);
+  const cellCols = Math.max(5, Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5)));
+  const cellRows = Math.max(5, Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols)));
+  const boardWidth = Number(meta?.boardWidth) || 0;
+  const boardHeight = Number(meta?.boardHeight) || 0;
+  const imageX = Number(meta?.imageX) || 0;
+  const imageY = Number(meta?.imageY) || 0;
+  const imageWidth = Number(meta?.imageWidth) || 0;
+  const imageHeight = Number(meta?.imageHeight) || 0;
+  if (![boardWidth, boardHeight, imageWidth, imageHeight].every((n) => Number.isFinite(n) && n > 0)) return null;
+  const blockW = (cellCols / point.cols) * imageWidth;
+  const blockH = (cellRows / point.rows) * imageHeight;
+  const centerXBoard = imageX + (point.centerX / 100) * imageWidth;
+  const centerYBoard = imageY + (point.centerY / 100) * imageHeight;
+  return {
+    left: ((centerXBoard - blockW / 2) / boardWidth) * 100,
+    top: ((centerYBoard - blockH / 2) / boardHeight) * 100,
+    width: (blockW / boardWidth) * 100,
+    height: (blockH / boardHeight) * 100,
+  };
+}
+
+function gridDebugMarkerHtml(defect, meta, idx) {
+  const rect = gridDebugDefectToRect(defect, meta);
+  if (!rect) return '';
+  const center = String(defect?.gridCenter || defect?.gridCell || '셀 미지정')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  const size = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
+  const cols = Number(size.cols ?? size.columns ?? size.width ?? size.w);
+  const rows = Number(size.rows ?? size.height ?? size.h);
+  const sizeLabel = `${Number.isFinite(cols) ? Math.round(cols) : '?'}×${Number.isFinite(rows) ? Math.round(rows) : '?'}칸`;
+  return `
+    <span
+      class="grid-debug-selection"
+      style="left:${rect.left.toFixed(2)}%;top:${rect.top.toFixed(2)}%;width:${rect.width.toFixed(2)}%;height:${rect.height.toFixed(2)}%"
+      aria-label="AI 선택 블럭 ${idx + 1}"
+    >
+      <b>${escapeHtml(center)}</b>
+      <small>${escapeHtml(sizeLabel)}</small>
+    </span>
+  `;
+}
+
+function renderGridDebugSelectionMarkers(item) {
+  const meta = item?.debugGridMeta || null;
+  const defects = Array.isArray(item?.defects) ? item.defects : [];
+  if (!meta || !defects.length) return '';
+  const markers = defects
+    .map((defect, idx) => gridDebugMarkerHtml(defect, meta, idx))
+    .filter(Boolean)
+    .join('');
+  return markers ? `<div class="grid-debug-selections">${markers}</div>` : '';
+}
+
+function lightboxAnalysisGridItems(images) {
+  return images
+    .filter((image) => image.debugGridImageUrl)
+    .map((image) => {
+      const index = Number(image.index) || '?';
+      return {
+        src: image.debugGridImageUrl,
+        imageWidth: image.imageWidth,
+        imageHeight: image.imageHeight,
+        label: `AI 전송 그리드 ${index}`.trim(),
+        kind: 'gridDebug',
+        comment: `${index}번 사진 · Gemini로 보낸 25×25 좌표 그리드 보드\n${imageDebugDefectSummary(image)}`,
+        level: 'neutral',
+        defects: Array.isArray(image.defects) ? image.defects : [],
+        debugGridMeta: image.debugGridMeta || null,
+      };
+    });
 }
 
 function imageAnalysisLabel(image) {
@@ -5398,7 +5527,7 @@ function renderReportDefectMarkers(image) {
       const rect =
         defectBoxToRect(defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area) ||
         gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
-      const marker = defectGridToCenterMarker(defect) || defectToCenterMarker(defect) || defectRectToCenterMarker(rect);
+      const marker = defectToCenterMarker(defect) || defectRectToCenterMarker(rect) || defectGridToCenterMarker(defect);
       if (!marker) return '';
       const label = reportValue(defect?.description || defect?.detail || '하자 의심', '하자 의심').slice(0, 42);
       const severity = String(defect?.severity || 'caution').toLowerCase();
@@ -6757,10 +6886,19 @@ function defectBoxToRect(raw) {
         ? raw
         : null;
   if (!box) return null;
-  const left = Number(box.x ?? box.left ?? box.leftPercent);
-  const top = Number(box.y ?? box.top ?? box.topPercent);
-  const width = Number(box.width ?? box.w ?? box.widthPercent);
-  const height = Number(box.height ?? box.h ?? box.heightPercent);
+  const normalizePercent = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return NaN;
+    return n > 0 && n <= 1 ? n * 100 : n;
+  };
+  const left = normalizePercent(box.x ?? box.left ?? box.leftPercent);
+  const top = normalizePercent(box.y ?? box.top ?? box.topPercent);
+  let width = normalizePercent(box.width ?? box.w ?? box.widthPercent);
+  let height = normalizePercent(box.height ?? box.h ?? box.heightPercent);
+  const right = normalizePercent(box.x2 ?? box.right ?? box.rightPercent);
+  const bottom = normalizePercent(box.y2 ?? box.bottom ?? box.bottomPercent);
+  if (!Number.isFinite(width) && Number.isFinite(right) && Number.isFinite(left)) width = right - left;
+  if (!Number.isFinite(height) && Number.isFinite(bottom) && Number.isFinite(top)) height = bottom - top;
   if (![left, top, width, height].every(Number.isFinite)) return null;
   return {
     left: Math.max(0, Math.min(99, left)),
@@ -6785,15 +6923,17 @@ function defectRectToCenterMarker(rect) {
   };
 }
 
-function gridCellToPoint(cell, gridCols = 32, gridRows = 32) {
-  const cols = Math.max(1, Math.min(52, Number(gridCols) || 32));
-  const rows = Math.max(1, Math.min(99, Number(gridRows) || 32));
+function gridCellToPoint(cell, gridCols = 25, gridRows = 25) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
   const match = String(cell || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
   if (!match) return null;
   const col = gridColumnIndex(match[1]);
   const row = Number(match[2]) - 1;
   if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
   return {
+    col,
+    row,
     centerX: ((col + 0.5) / cols) * 100,
     centerY: ((row + 0.5) / rows) * 100,
     cols,
@@ -6808,25 +6948,32 @@ function defectGridToCenterMarker(defect) {
   const rawSize = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
   const rawCols = Number(rawSize.cols ?? rawSize.columns ?? rawSize.width ?? rawSize.w);
   const rawRows = Number(rawSize.rows ?? rawSize.height ?? rawSize.h);
-  const cellCols = Math.max(1, Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 2)));
-  const cellRows = Math.max(1, Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols)));
+  const cellCols = Math.max(5, Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5)));
+  const cellRows = Math.max(5, Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols)));
+  const width = Math.min(80, (cellCols / point.cols) * 100);
+  const height = Math.min(80, (cellRows / point.rows) * 100);
   return {
     centerX: point.centerX,
     centerY: point.centerY,
-    width: Math.max(2.6, Math.min(80, (cellCols / point.cols) * 100)),
-    height: Math.max(2.6, Math.min(80, (cellRows / point.rows) * 100)),
+    width,
+    height,
   };
 }
 
 function defectToCenterMarker(defect) {
   const centerRaw = defect?.center || defect?.centerPercent || defect?.point || defect?.position;
   const sizeRaw = defect?.size || defect?.markerSize || defect?.extent;
-  const centerX = Number(centerRaw?.x ?? centerRaw?.cx ?? centerRaw?.left ?? defect?.centerX ?? defect?.cx);
-  const centerY = Number(centerRaw?.y ?? centerRaw?.cy ?? centerRaw?.top ?? defect?.centerY ?? defect?.cy);
-  const radius = Number(sizeRaw?.radius ?? defect?.radius ?? defect?.r);
-  const diameter = Number(sizeRaw?.diameter ?? defect?.diameter);
-  const width = Number(sizeRaw?.width ?? sizeRaw?.w ?? defect?.markerWidth ?? defect?.width ?? (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN));
-  const height = Number(sizeRaw?.height ?? sizeRaw?.h ?? defect?.markerHeight ?? defect?.height ?? (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN));
+  const normalizePercent = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return NaN;
+    return n > 0 && n <= 1 ? n * 100 : n;
+  };
+  const centerX = normalizePercent(centerRaw?.x ?? centerRaw?.cx ?? centerRaw?.left ?? defect?.centerX ?? defect?.cx);
+  const centerY = normalizePercent(centerRaw?.y ?? centerRaw?.cy ?? centerRaw?.top ?? defect?.centerY ?? defect?.cy);
+  const radius = normalizePercent(sizeRaw?.radius ?? defect?.radius ?? defect?.r);
+  const diameter = normalizePercent(sizeRaw?.diameter ?? defect?.diameter);
+  const width = normalizePercent(sizeRaw?.width ?? sizeRaw?.w ?? defect?.markerWidth ?? defect?.width ?? (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN));
+  const height = normalizePercent(sizeRaw?.height ?? sizeRaw?.h ?? defect?.markerHeight ?? defect?.height ?? (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN));
   if ([centerX, centerY].every(Number.isFinite)) {
     const markerWidth = Number.isFinite(width) ? width : 6;
     const markerHeight = Number.isFinite(height) ? height : markerWidth;
@@ -6840,9 +6987,21 @@ function defectToCenterMarker(defect) {
   return null;
 }
 
-function gridCellToRect(cell, gridCols = 32, gridRows = 32) {
-  const cols = Math.max(1, Math.min(52, Number(gridCols) || 32));
-  const rows = Math.max(1, Math.min(99, Number(gridRows) || 32));
+function enforceDefectMarkerMinimum(marker) {
+  if (!marker) return null;
+  const centerX = Math.max(0, Math.min(100, Number(marker.centerX)));
+  const centerY = Math.max(0, Math.min(100, Number(marker.centerY)));
+  const rawWidth = Math.max(1, Math.min(80, Number(marker.width) || 0));
+  const rawHeight = Math.max(1, Math.min(80, Number(marker.height) || rawWidth));
+  const width = Math.max(rawWidth, IMAGE_DEFECT_MARKER_MIN_PERCENT);
+  const height = Math.max(rawHeight, IMAGE_DEFECT_MARKER_MIN_PERCENT);
+  if (![centerX, centerY, width, height].every(Number.isFinite)) return null;
+  return { centerX, centerY, width, height };
+}
+
+function gridCellToRect(cell, gridCols = 25, gridRows = 25) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
   const parseCell = (value) => {
     const match = String(value || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
     if (!match) return null;
@@ -6886,7 +7045,9 @@ function renderImageDefectMarkers(image) {
         (defect?.startCell && defect?.endCell ? `${defect.startCell}-${defect.endCell}` : '');
       const bboxRect = defectBoxToRect(defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area);
       const rect = bboxRect || gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
-      const marker = defectGridToCenterMarker(defect) || defectToCenterMarker(defect) || defectRectToCenterMarker(rect);
+      const marker = enforceDefectMarkerMinimum(
+        defectToCenterMarker(defect) || defectRectToCenterMarker(rect) || defectGridToCenterMarker(defect)
+      );
       if (!marker) return '';
       const description = String(defect?.description || defect?.detail || '하자 의심')
         .replace(/\s+/g, ' ')
@@ -6905,11 +7066,15 @@ function renderImageDefectMarkers(image) {
               : marker.centerY + marker.height / 2 > 82
                 ? 'top'
                 : 'right';
+      const left = marker.centerX - marker.width / 2;
+      const top = marker.centerY - marker.height / 2;
+      const width = marker.width;
+      const height = marker.height;
       return `
         <button
           type="button"
           class="image-defect-marker image-defect-marker--label-${labelSide} risk-${escapeAttr(severity)}"
-          style="left:${marker.centerX.toFixed(2)}%;top:${marker.centerY.toFixed(2)}%;width:${marker.width.toFixed(2)}%;height:${marker.height.toFixed(2)}%"
+          style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%;width:${width.toFixed(2)}%;height:${height.toFixed(2)}%"
           title="${escapeAttr(label)}"
           aria-label="${escapeAttr(label)}"
         >
@@ -6944,6 +7109,17 @@ function containImageFrame(containerWidth, containerHeight, imageWidth, imageHei
   };
 }
 
+function markerImageDimensions(img) {
+  const dataWidth = Number(img?.dataset?.imageWidth);
+  const dataHeight = Number(img?.dataset?.imageHeight);
+  const naturalWidth = Number(img?.naturalWidth);
+  const naturalHeight = Number(img?.naturalHeight);
+  return {
+    width: naturalWidth > 0 ? naturalWidth : dataWidth,
+    height: naturalHeight > 0 ? naturalHeight : dataHeight,
+  };
+}
+
 function updateDefectMarkerFrames(root = document) {
   const boxes = root?.matches?.('.annotated-photo-box')
     ? [root]
@@ -6957,7 +7133,8 @@ function updateDefectMarkerFrames(root = document) {
       return;
     }
     const boxRect = box.getBoundingClientRect();
-    const frame = containImageFrame(boxRect.width, boxRect.height, img.naturalWidth, img.naturalHeight);
+    const dims = markerImageDimensions(img);
+    const frame = containImageFrame(boxRect.width, boxRect.height, dims.width, dims.height);
     if (!frame) return;
     markers.style.width = `${frame.width}px`;
     markers.style.height = `${frame.height}px`;
@@ -6972,7 +7149,8 @@ function updateLightboxOverlayFrame() {
   }
   const wrapRect = $lightboxImg.parentElement?.getBoundingClientRect();
   if (!wrapRect?.width || !wrapRect?.height) return;
-  const frame = containImageFrame(wrapRect.width, wrapRect.height, $lightboxImg.naturalWidth, $lightboxImg.naturalHeight);
+  const dims = markerImageDimensions($lightboxImg);
+  const frame = containImageFrame(wrapRect.width, wrapRect.height, dims.width, dims.height);
   if (!frame) return;
   $lightboxImg.style.width = `${frame.width}px`;
   $lightboxImg.style.height = `${frame.height}px`;
@@ -7148,11 +7326,16 @@ function setLightboxImage(item, opts = {}) {
   $lightboxImg.setAttribute('data-image-width', item?.imageWidth || '');
   $lightboxImg.setAttribute('data-image-height', item?.imageHeight || '');
   if ($lightboxOverlay) {
-    $lightboxOverlay.innerHTML = item?.kind === 'analysis' ? renderImageDefectMarkers(item) : '';
+    $lightboxOverlay.innerHTML =
+      item?.kind === 'analysis'
+        ? renderImageDefectMarkers(item)
+        : item?.kind === 'gridDebug'
+          ? renderGridDebugSelectionMarkers(item)
+          : '';
     updateLightboxOverlayFrame();
   }
   if ($lightboxBadge) {
-    const label = item?.kind === 'analysis' ? String(item?.label || '').trim() : '';
+    const label = item?.kind === 'analysis' || item?.kind === 'gridDebug' ? String(item?.label || '').trim() : '';
     $lightboxBadge.textContent = label;
     $lightboxBadge.hidden = !label;
     $lightboxBadge.className = `image-analysis-badge image-analysis-badge--inline lightbox-badge risk-${String(item?.level || 'neutral').trim() || 'neutral'}`;
@@ -9233,6 +9416,18 @@ function openImageAnalysisLightbox() {
   return true;
 }
 
+function openImageAnalysisGridDebugLightbox() {
+  const item = currentRenderedItem();
+  if (!item) return false;
+  const key = summaryKey(item);
+  if (!key || listingImageAnalyses.get(key)?.status !== 'done') return false;
+  const items = lightboxAnalysisGridItems(imageAnalysisEntries(item));
+  if (!items.length) return false;
+  const index = Math.max(0, Math.min(imageAnalysisIndexes.get(key) || 0, items.length - 1));
+  openLightbox(items[index].src, { items, index, kind: 'gridDebug' });
+  return true;
+}
+
 function activateVisibleStageStartCard() {
   const candidates = [...($current?.querySelectorAll('.stage-start-card:not(:disabled)') || [])];
   const target = candidates.find(isVisibleElement);
@@ -9280,6 +9475,11 @@ function handleAppShortcut(e) {
       closeRailPanel();
       setHistoryOpen(false);
     }
+    return;
+  }
+
+  if (isShortcutCode(e, 'KeyG') && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
+    if (openImageAnalysisGridDebugLightbox()) e.preventDefault();
     return;
   }
 
@@ -9733,7 +9933,7 @@ async function ensureListingImageAnalysis(item) {
   if (!key) return;
   const existing = listingImageAnalyses.get(key);
   if (existing?.status === 'loading') return;
-  if (existing?.status === 'done' && existing.overlayVersion === 11) {
+  if (existing?.status === 'done' && Number(existing.overlayVersion) >= LISTING_IMAGE_OVERLAY_VERSION) {
     if (selectedKey === key) {
       refreshListingImageAnalysisCard(item);
       previewListingImageAnalysis(item);
@@ -9761,7 +9961,12 @@ async function ensureListingImageAnalysis(item) {
   }
 
   const summary = getProductSummaryState(item)?.summary || null;
-  listingImageAnalyses.set(key, { status: 'loading', startedAt: Date.now() });
+  listingImageAnalyses.set(key, {
+    status: 'loading',
+    startedAt: Date.now(),
+    durationMs: AI_LOADING_DURATIONS.listingImage,
+    endPercent: 96,
+  });
   if (selectedKey === key) refreshListingImageAnalysisCard(item);
 
   const aiScope = createAiRequestScope();
@@ -9775,7 +9980,7 @@ async function ensureListingImageAnalysis(item) {
       signal: aiScope.signal,
     });
     if (shouldIgnoreAiScope(aiScope)) return;
-    await finishAiLoadingState(listingImageAnalyses, key, { status: 'done', analysis: data.analysis || {}, overlayVersion: 11 }, () => {
+    await finishAiLoadingState(listingImageAnalyses, key, { status: 'done', analysis: data.analysis || {}, overlayVersion: LISTING_IMAGE_OVERLAY_VERSION }, () => {
       if (selectedKey === key) refreshListingImageAnalysisCard(item);
     }, 'listingImage');
     persistAiCaches();

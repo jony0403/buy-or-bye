@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.ANALYZER_PORT) || 3920;
@@ -365,6 +366,257 @@ function readImageDimensionsFromBuffer(buf) {
   return { width: 0, height: 0 };
 }
 
+function gridColumnLabel(index) {
+  let n = Number(index) + 1;
+  let label = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return label;
+}
+
+function svgText(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildImageGridBoardOverlaySvg(imageWidth, imageHeight, pad, cols = 25, rows = 25) {
+  const iw = Math.max(1, Math.round(Number(imageWidth) || 0));
+  const ih = Math.max(1, Math.round(Number(imageHeight) || 0));
+  const p = Math.max(28, Math.round(Number(pad) || 0));
+  const w = iw + p * 2;
+  const h = ih + p * 2;
+  const fontSize = Math.max(12, Math.min(28, Math.round(Math.min(iw, ih) / 28)));
+  const smallFontSize = Math.max(11, Math.round(fontSize * 0.86));
+  const majorStroke = Math.max(1.6, Math.min(4.2, Math.min(iw, ih) / 360));
+  const minorStroke = Math.max(0.75, majorStroke * 0.45);
+  const cellW = iw / cols;
+  const cellH = ih / rows;
+  const x0 = p;
+  const y0 = p;
+  const x1 = p + iw;
+  const y1 = p + ih;
+  const checker = [];
+  const square = Math.max(12, Math.round(Math.min(iw, ih) / 25));
+  for (let y = 0; y < h; y += square) {
+    for (let x = 0; x < w; x += square) {
+      const dark = (Math.floor(x / square) + Math.floor(y / square)) % 2 === 0;
+      checker.push(
+        `<rect x="${x}" y="${y}" width="${square}" height="${square}" fill="${dark ? '#f1f5f9' : '#e2e8f0'}"/>`
+      );
+    }
+  }
+  const lines = [];
+  for (let c = 0; c <= cols; c += 1) {
+    const x = Math.round((x0 + c * cellW) * 100) / 100;
+    const major = c % 5 === 0 || c === cols;
+    lines.push(
+      `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}" stroke="${major ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.58)'}" stroke-width="${major ? majorStroke : minorStroke}"/>`,
+      `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}" stroke="${major ? 'rgba(15,23,42,0.78)' : 'rgba(15,23,42,0.36)'}" stroke-width="${Math.max(0.5, (major ? majorStroke : minorStroke) * 0.45)}"/>`
+    );
+  }
+  for (let r = 0; r <= rows; r += 1) {
+    const y = Math.round((y0 + r * cellH) * 100) / 100;
+    const major = r % 5 === 0 || r === rows;
+    lines.push(
+      `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${major ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.58)'}" stroke-width="${major ? majorStroke : minorStroke}"/>`,
+      `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${major ? 'rgba(15,23,42,0.78)' : 'rgba(15,23,42,0.36)'}" stroke-width="${Math.max(0.5, (major ? majorStroke : minorStroke) * 0.45)}"/>`
+    );
+  }
+  const labels = [];
+  const guideLabels = [];
+  for (let c = 0; c < cols; c += 1) {
+    const label = gridColumnLabel(c);
+    const x = x0 + (c + 0.5) * cellW;
+    labels.push(
+      `<text x="${x}" y="${Math.max(fontSize + 6, p * 0.48)}" text-anchor="middle">${svgText(label)}</text>`,
+      `<text x="${x}" y="${h - Math.max(8, p * 0.22)}" text-anchor="middle">${svgText(label)}</text>`
+    );
+  }
+  const guideFontSize = Math.max(7, Math.round(smallFontSize * 0.62));
+  const columnGuideRows = [5, 12, 18];
+  for (const guideRow of columnGuideRows) {
+    const y = y0 + (guideRow + 0.5) * cellH + guideFontSize / 2 - 2;
+    for (let c = 0; c < cols; c += 1) {
+      const label = gridColumnLabel(c);
+      const x = x0 + (c + 0.5) * cellW;
+      guideLabels.push(`<text x="${x}" y="${y}" text-anchor="middle">${svgText(label)}</text>`);
+    }
+  }
+  for (let r = 0; r < rows; r += 1) {
+    const label = String(r + 1);
+    const y = y0 + (r + 0.5) * cellH + smallFontSize / 2 - 2;
+    labels.push(
+      `<text x="${Math.max(8, p * 0.26)}" y="${y}" text-anchor="start">${svgText(label)}</text>`,
+      `<text x="${w - Math.max(8, p * 0.26)}" y="${y}" text-anchor="end">${svgText(label)}</text>`
+    );
+  }
+  const rowGuideCols = [4, 12, 20];
+  for (let r = 0; r < rows; r += 1) {
+    const label = String(r + 1);
+    const y = y0 + (r + 0.5) * cellH + guideFontSize / 2 - 2;
+    for (const guideCol of rowGuideCols) {
+      const x = x0 + (guideCol + 0.5) * cellW;
+      guideLabels.push(`<text x="${x}" y="${y}" text-anchor="middle">${svgText(label)}</text>`);
+    }
+  }
+  const centerX = x0 + iw / 2;
+  const centerY = y0 + ih / 2;
+  return {
+    width: w,
+    height: h,
+    backgroundSvg: Buffer.from(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        ${checker.join('\n')}
+      </svg>
+    `),
+    overlaySvg: Buffer.from(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        <rect width="${w}" height="${h}" fill="none"/>
+        <rect x="${x0 - 1}" y="${y0 - 1}" width="${iw + 2}" height="${ih + 2}" fill="none" stroke="#111827" stroke-width="${Math.max(2, majorStroke)}"/>
+        ${lines.join('\n')}
+        <line x1="${centerX}" y1="${y0}" x2="${centerX}" y2="${y1}" stroke="rgba(239,68,68,0.72)" stroke-width="${majorStroke}"/>
+        <line x1="${x0}" y1="${centerY}" x2="${x1}" y2="${centerY}" stroke="rgba(239,68,68,0.72)" stroke-width="${majorStroke}"/>
+        <g font-family="Arial, Helvetica, sans-serif" font-size="${guideFontSize}" font-weight="900" fill="rgba(15,23,42,0.66)" stroke="rgba(255,255,255,0.72)" stroke-width="2.4" paint-order="stroke">
+          ${guideLabels.join('\n')}
+        </g>
+        <g font-family="Arial, Helvetica, sans-serif" font-size="${smallFontSize}" font-weight="900" fill="#111827" stroke="#ffffff" stroke-width="4" paint-order="stroke">
+          ${labels.join('\n')}
+        </g>
+        <rect x="${Math.max(8, p * 0.16)}" y="${Math.max(7, p * 0.12)}" width="${Math.max(108, fontSize * 7.8)}" height="${fontSize * 1.9}" rx="${fontSize * 0.75}" fill="rgba(17,24,39,0.82)"/>
+        <text x="${Math.max(18, p * 0.34)}" y="${Math.max(7, p * 0.12) + fontSize * 1.34}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25×25 GRID</text>
+      </svg>
+    `),
+  };
+}
+
+function buildImageGridOverlaySvg(width, height, cols = 25, rows = 25) {
+  const w = Math.max(1, Math.round(Number(width) || 0));
+  const h = Math.max(1, Math.round(Number(height) || 0));
+  const fontSize = Math.max(10, Math.min(28, Math.round(Math.min(w, h) / 34)));
+  const smallFontSize = Math.max(9, Math.round(fontSize * 0.78));
+  const majorStroke = Math.max(1.5, Math.min(4, Math.min(w, h) / 420));
+  const minorStroke = Math.max(0.7, majorStroke * 0.48);
+  const cellW = w / cols;
+  const cellH = h / rows;
+  const lines = [];
+  for (let c = 0; c <= cols; c += 1) {
+    const x = Math.round(c * cellW * 100) / 100;
+    const major = c % 4 === 0 || c === cols;
+    lines.push(
+      `<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="${major ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.5)'}" stroke-width="${major ? majorStroke : minorStroke}"/>`,
+      `<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="${major ? 'rgba(15,23,42,0.74)' : 'rgba(15,23,42,0.34)'}" stroke-width="${Math.max(0.5, (major ? majorStroke : minorStroke) * 0.45)}"/>`
+    );
+  }
+  for (let r = 0; r <= rows; r += 1) {
+    const y = Math.round(r * cellH * 100) / 100;
+    const major = r % 4 === 0 || r === rows;
+    lines.push(
+      `<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="${major ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.5)'}" stroke-width="${major ? majorStroke : minorStroke}"/>`,
+      `<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="${major ? 'rgba(15,23,42,0.74)' : 'rgba(15,23,42,0.34)'}" stroke-width="${Math.max(0.5, (major ? majorStroke : minorStroke) * 0.45)}"/>`
+    );
+  }
+  const labels = [];
+  for (let c = 0; c < cols; c += 1) {
+    const label = gridColumnLabel(c);
+    const x = (c + 0.5) * cellW;
+    labels.push(
+      `<text x="${x}" y="${fontSize + 4}" text-anchor="middle">${svgText(label)}</text>`,
+      `<text x="${x}" y="${h - 5}" text-anchor="middle">${svgText(label)}</text>`
+    );
+  }
+  for (let r = 0; r < rows; r += 1) {
+    const label = String(r + 1);
+    const y = (r + 0.5) * cellH + smallFontSize / 2 - 2;
+    labels.push(
+      `<text x="5" y="${y}" text-anchor="start">${svgText(label)}</text>`,
+      `<text x="${w - 5}" y="${y}" text-anchor="end">${svgText(label)}</text>`
+    );
+  }
+  const centerX = w / 2;
+  const centerY = h / 2;
+  return Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <rect width="${w}" height="${h}" fill="none"/>
+      <rect width="${w}" height="${h}" fill="rgba(15,23,42,0.04)"/>
+      ${lines.join('\n')}
+      <line x1="${centerX}" y1="0" x2="${centerX}" y2="${h}" stroke="rgba(239,68,68,0.72)" stroke-width="${majorStroke}"/>
+      <line x1="0" y1="${centerY}" x2="${w}" y2="${centerY}" stroke="rgba(239,68,68,0.72)" stroke-width="${majorStroke}"/>
+      <g font-family="Arial, Helvetica, sans-serif" font-size="${smallFontSize}" font-weight="800" fill="#ffffff" stroke="#111827" stroke-width="3" paint-order="stroke">
+        ${labels.join('\n')}
+      </g>
+      <rect x="6" y="6" width="${Math.max(92, fontSize * 7.4)}" height="${fontSize * 1.85}" rx="${fontSize * 0.75}" fill="rgba(17,24,39,0.78)"/>
+      <text x="${fontSize}" y="${fontSize * 1.35}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25×25 GRID</text>
+    </svg>
+  `);
+}
+
+async function normalizeListingImageBuffer(buf) {
+  const normalized = await sharp(buf, { animated: false }).rotate().jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+  const meta = await sharp(normalized).metadata();
+  return {
+    buf: normalized,
+    width: Number(meta.width) || 0,
+    height: Number(meta.height) || 0,
+  };
+}
+
+async function createImageGridPart(buf, preNormalized = null) {
+  try {
+    const normalized = preNormalized || (await normalizeListingImageBuffer(buf));
+    const normalizedBuf = normalized.buf || normalized;
+    const width = Number(normalized.width) || 0;
+    const height = Number(normalized.height) || 0;
+    if (!width || !height) return null;
+    const pad = Math.max(44, Math.min(96, Math.round(Math.min(width, height) * 0.12)));
+    const board = buildImageGridBoardOverlaySvg(width, height, pad, 25, 25);
+    const out = await sharp({
+      create: {
+        width: board.width,
+        height: board.height,
+        channels: 3,
+        background: '#e2e8f0',
+      },
+    })
+      .composite([
+        { input: board.backgroundSvg, left: 0, top: 0 },
+        { input: normalizedBuf, left: pad, top: pad },
+        { input: board.overlaySvg, left: 0, top: 0 },
+      ])
+      .jpeg({ quality: 86, mozjpeg: true })
+      .toBuffer();
+    const data = out.toString('base64');
+    return {
+      inline_data: {
+        mime_type: 'image/jpeg',
+        data,
+      },
+      dataUrl: `data:image/jpeg;base64,${data}`,
+      width,
+      height,
+      normalizedBuf: normalizedBuf,
+      meta: {
+        gridCols: 25,
+        gridRows: 25,
+        imageX: pad,
+        imageY: pad,
+        imageWidth: width,
+        imageHeight: height,
+        boardWidth: board.width,
+        boardHeight: board.height,
+      },
+    };
+  } catch (e) {
+    console.warn('[listing-image] 그리드 이미지 생성 실패:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
 async function fetchImageUrlToInlineSource(url) {
   const imageUrl = optimizeImageUrlForAi(url);
   const res = await fetch(imageUrl, {
@@ -388,16 +640,21 @@ async function fetchImageUrlToInlineSource(url) {
     else if (p.includes('.gif')) mime = 'image/gif';
     else mime = 'image/jpeg';
   }
-  const { width, height } = readImageDimensionsFromBuffer(buf);
+  const normalized = await normalizeListingImageBuffer(buf);
+  const grid = await createImageGridPart(buf, normalized);
   return {
     part: {
       inline_data: {
-        mime_type: mime,
-        data: buf.toString('base64'),
+        mime_type: 'image/jpeg',
+        data: normalized.buf.toString('base64'),
       },
     },
-    width,
-    height,
+    gridPart: grid ? { inline_data: grid.inline_data } : null,
+    gridImageUrl: grid?.dataUrl || '',
+    gridMeta: grid?.meta || null,
+    normalizedBuf: normalized.buf,
+    width: normalized.width || grid?.width || 0,
+    height: normalized.height || grid?.height || 0,
   };
 }
 
@@ -1090,8 +1347,8 @@ function normalizeGridSizeCells(raw) {
   const rows = Number(value.rows ?? value.height ?? value.h);
   if (!Number.isFinite(cols) && !Number.isFinite(rows)) return null;
   return {
-    cols: Math.max(1, Math.min(32, Math.round(Number.isFinite(cols) ? cols : rows))),
-    rows: Math.max(1, Math.min(32, Math.round(Number.isFinite(rows) ? rows : cols))),
+    cols: Math.max(5, Math.min(25, Math.round(Number.isFinite(cols) ? cols : rows))),
+    rows: Math.max(5, Math.min(25, Math.round(Number.isFinite(rows) ? rows : cols))),
   };
 }
 
@@ -1103,19 +1360,19 @@ function gridColumnIndex(label) {
   return n - 1;
 }
 
-function gridCenterToMarker(gridCenter, gridSizeCells, gridCols = 32, gridRows = 32) {
-  const cols = Math.max(1, Math.min(52, Number(gridCols) || 32));
-  const rows = Math.max(1, Math.min(99, Number(gridRows) || 32));
+function gridCenterToMarker(gridCenter, gridSizeCells, gridCols = 25, gridRows = 25) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
   const match = String(gridCenter || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
   if (!match) return null;
   const col = gridColumnIndex(match[1]);
   const row = Number(match[2]) - 1;
   if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
-  const size = gridSizeCells || { cols: 2, rows: 2 };
-  const cellCols = Math.max(1, Math.min(cols, Number(size.cols) || 2));
-  const cellRows = Math.max(1, Math.min(rows, Number(size.rows) || cellCols));
-  const width = Math.max(2.6, Math.min(80, (cellCols / cols) * 100));
-  const height = Math.max(2.6, Math.min(80, (cellRows / rows) * 100));
+  const size = gridSizeCells || { cols: 5, rows: 5 };
+  const cellCols = Math.max(5, Math.min(cols, Number(size.cols) || 5));
+  const cellRows = Math.max(5, Math.min(rows, Number(size.rows) || cellCols));
+  const width = Math.min(80, (cellCols / cols) * 100);
+  const height = Math.min(80, (cellRows / rows) * 100);
   const center = {
     x: ((col + 0.5) / cols) * 100,
     y: ((row + 0.5) / rows) * 100,
@@ -1124,11 +1381,85 @@ function gridCenterToMarker(gridCenter, gridSizeCells, gridCols = 32, gridRows =
     center,
     size: { width, height },
     bbox: {
-      x: Math.max(0, center.x - width / 2),
-      y: Math.max(0, center.y - height / 2),
+      x: center.x - width / 2,
+      y: center.y - height / 2,
       width,
       height,
     },
+  };
+}
+
+function percentNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return NaN;
+  const scaled = n > 0 && n <= 1 ? n * 100 : n;
+  return Math.max(0, Math.min(100, scaled));
+}
+
+function readPercentBox(raw) {
+  const box = Array.isArray(raw)
+    ? { x: raw[0], y: raw[1], width: raw[2], height: raw[3] }
+    : typeof raw === 'string'
+      ? (() => {
+          const parts = raw
+            .split(/[,\s]+/)
+            .map((part) => Number(part.trim()))
+            .filter(Number.isFinite);
+          return parts.length >= 4 ? { x: parts[0], y: parts[1], width: parts[2], height: parts[3] } : null;
+        })()
+      : raw && typeof raw === 'object'
+        ? raw
+        : null;
+  if (!box) return null;
+  const x = percentNumber(box.x ?? box.left ?? box.leftPercent);
+  const y = percentNumber(box.y ?? box.top ?? box.topPercent);
+  let width = percentNumber(box.width ?? box.w ?? box.widthPercent);
+  let height = percentNumber(box.height ?? box.h ?? box.heightPercent);
+  const x2 = percentNumber(box.x2 ?? box.right ?? box.rightPercent);
+  const y2 = percentNumber(box.y2 ?? box.bottom ?? box.bottomPercent);
+  if (!Number.isFinite(width) && Number.isFinite(x2) && Number.isFinite(x)) width = x2 - x;
+  if (!Number.isFinite(height) && Number.isFinite(y2) && Number.isFinite(y)) height = y2 - y;
+  if (![x, y, width, height].every(Number.isFinite)) return null;
+  const left = Math.max(0, Math.min(99.5, x));
+  const top = Math.max(0, Math.min(99.5, y));
+  return {
+    x: left,
+    y: top,
+    width: Math.max(0.8, Math.min(100 - left, width)),
+    height: Math.max(0.8, Math.min(100 - top, height)),
+  };
+}
+
+function readPercentPoint(raw, fallback = {}) {
+  const point = raw && typeof raw === 'object' ? raw : {};
+  const x = percentNumber(point.x ?? point.cx ?? point.left ?? fallback.x ?? fallback.centerX ?? fallback.cx);
+  const y = percentNumber(point.y ?? point.cy ?? point.top ?? fallback.y ?? fallback.centerY ?? fallback.cy);
+  if (![x, y].every(Number.isFinite)) return null;
+  return { x, y };
+}
+
+function readPercentSize(raw, fallback = {}) {
+  const size = raw && typeof raw === 'object' ? raw : {};
+  const radius = percentNumber(size.radius ?? fallback.radius ?? fallback.r);
+  const diameter = percentNumber(size.diameter ?? fallback.diameter);
+  const width = percentNumber(
+    size.width ??
+      size.w ??
+      fallback.markerWidth ??
+      fallback.width ??
+      (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN)
+  );
+  const height = percentNumber(
+    size.height ??
+      size.h ??
+      fallback.markerHeight ??
+      fallback.height ??
+      (Number.isFinite(diameter) ? diameter : Number.isFinite(radius) ? radius * 2 : NaN)
+  );
+  if (![width, height].every(Number.isFinite)) return null;
+  return {
+    width: Math.max(0.8, Math.min(80, width)),
+    height: Math.max(0.8, Math.min(80, height)),
   };
 }
 
@@ -1155,9 +1486,39 @@ function normalizeImageDefects(items) {
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 80);
-      if (!bbox && !gridCell && !gridCenter) return null;
+      const gridReason = String(
+        defect.gridReason || defect.coordinateReason || defect.locationReason || defect.reason || defect.evidence || ''
+      )
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 120);
+      const normalizedBox = readPercentBox(bbox);
+      const normalizedCenterFromInput = readPercentPoint(
+        defect.center || defect.centerPercent || defect.point || defect.position,
+        defect
+      );
+      const normalizedSizeFromInput = readPercentSize(defect.size && typeof defect.size === 'object' ? defect.size : null, defect);
+      const boxCenter = normalizedBox
+        ? {
+            x: Math.max(0, Math.min(100, normalizedBox.x + normalizedBox.width / 2)),
+            y: Math.max(0, Math.min(100, normalizedBox.y + normalizedBox.height / 2)),
+          }
+        : null;
+      const boxSize = normalizedBox ? { width: normalizedBox.width, height: normalizedBox.height } : null;
+      const normalizedCenter = boxCenter || normalizedCenterFromInput;
+      const normalizedSize = boxSize || normalizedSizeFromInput;
+      const boxFromCenter =
+        !normalizedBox && normalizedCenter && normalizedSize
+          ? {
+              x: Math.max(0, normalizedCenter.x - normalizedSize.width / 2),
+              y: Math.max(0, normalizedCenter.y - normalizedSize.height / 2),
+              width: normalizedSize.width,
+              height: normalizedSize.height,
+            }
+          : null;
+      if (!normalizedBox && !normalizedCenter && !gridCell && !gridCenter) return null;
       const severity = normalizeImageLevel(defect.severity || defect.level || 'caution');
-      const marker = gridCenterToMarker(gridCenter, gridSizeCells, defect.gridCols, defect.gridRows);
+      const gridMarker = gridCenterToMarker(gridCenter, gridSizeCells, defect.gridCols, defect.gridRows);
       const approximateSize =
         typeof defect.approximateSize === 'string'
           ? defect.approximateSize
@@ -1168,17 +1529,18 @@ function normalizeImageDefects(items) {
         gridCenter,
         gridSizeCells,
         gridCell,
-        bbox: marker?.bbox || bbox,
-        center: marker?.center || defect.center || defect.centerPercent || null,
-        size: marker?.size || (defect.size && typeof defect.size === 'object' ? defect.size : null),
+        bbox: gridMarker?.bbox || normalizedBox || boxFromCenter || null,
+        center: gridMarker?.center || normalizedCenter || null,
+        size: gridMarker?.size || normalizedSize || null,
         description,
+        gridReason,
         approximateSize: String(approximateSize)
           .replace(/\s+/g, ' ')
           .trim()
           .slice(0, 40),
         severity: severity === 'neutral' || severity === 'safe' ? 'caution' : severity,
-        gridCols: Number(defect.gridCols) || 32,
-        gridRows: Number(defect.gridRows) || 32,
+        gridCols: Number(defect.gridCols) || 25,
+        gridRows: Number(defect.gridRows) || 25,
       };
     })
     .filter(Boolean)
@@ -1595,15 +1957,29 @@ async function runPurchaseReceipt(apiKey, model, payload) {
 
 async function runListingImageAnalysis(apiKey, model, payload, sources) {
   const list = Array.isArray(sources) ? sources : [];
-  const inlineParts = list.map((s) => s?.part).filter(Boolean);
-  const imageCount = inlineParts.length;
+  const messageParts = [];
+  for (const s of list) {
+    const index = Number(s?.index) || messageParts.length + 1;
+    if (s?.part) {
+      messageParts.push({ text: `${index}번 사진 원본입니다. 실제 하자 여부를 먼저 이 원본에서 확인하세요.` });
+      messageParts.push(s.part);
+    }
+    if (s?.gridPart) {
+      messageParts.push({
+        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요.`,
+      });
+      messageParts.push(s.gridPart);
+    }
+  }
+  const imageCount = list.filter((s) => s?.part).length;
   const sizeLines = list
     .map((s, i) => {
       const w = Number(s?.width) || 0;
       const h = Number(s?.height) || 0;
       const index = Number(s?.index) || i + 1;
-      if (w > 0 && h > 0) return `${index}번 사진: ${w}×${h}px (첨부 순서 ${i + 1}번째 이미지)`;
-      return `${index}번 사진: 해상도 미확인 (첨부 순서 ${i + 1}번째 이미지)`;
+      const gridNote = s?.gridPart ? '원본 다음에 25×25 그리드 보드 이미지가 이어짐' : '그리드 이미지 생성 실패, 원본만 제공됨';
+      if (w > 0 && h > 0) return `${index}번 사진: ${w}×${h}px (${gridNote})`;
+      return `${index}번 사진: 해상도 미확인 (${gridNote})`;
     })
     .join('\n');
   const prompt = renderPrompt(PROMPTS.listingImageAnalysis, {
@@ -1613,7 +1989,7 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
     body: String(payload.body || '').slice(0, 1800),
     sizeLines,
   });
-  return geminiGenerateFromParts(apiKey, model, [{ text: prompt }, ...inlineParts], {
+  return geminiGenerateFromParts(apiKey, model, [{ text: prompt }, ...messageParts], {
     responseMimeType: 'application/json',
     temperature: 0.15,
     maxOutputTokens: 4096,
@@ -2033,9 +2409,22 @@ const server = http.createServer(async (req, res) => {
       }
       const parsedBatches = rawOutputs.map((rawOut) => parseListingImageAnalysis(rawOut, imageUrls, sourceMeta));
       const imageByIndex = new Map();
+      const debugGridByIndex = new Map();
+      const debugGridMetaByIndex = new Map();
+      for (const s of imageSources) {
+        const idx = Number(s?.index) || 0;
+        if (idx > 0 && s?.gridImageUrl) debugGridByIndex.set(idx, s.gridImageUrl);
+        if (idx > 0 && s?.gridMeta) debugGridMetaByIndex.set(idx, s.gridMeta);
+      }
       for (const img of parsedBatches.flatMap((p) => (Array.isArray(p.images) ? p.images : []))) {
         const idx = Number(img?.index) || 0;
-        if (idx > 0 && !imageByIndex.has(idx)) imageByIndex.set(idx, img);
+        if (idx > 0 && !imageByIndex.has(idx)) {
+          imageByIndex.set(idx, {
+            ...img,
+            debugGridImageUrl: debugGridByIndex.get(idx) || img.debugGridImageUrl || '',
+            debugGridMeta: debugGridMetaByIndex.get(idx) || img.debugGridMeta || null,
+          });
+        }
       }
       const loadedIndexSet = new Set(imageSources.map((s) => Number(s?.index) || 0).filter(Boolean));
       for (const s of imageSources) {
@@ -2046,6 +2435,8 @@ const server = http.createServer(async (req, res) => {
           imageUrl: imageUrls[idx - 1] || s.url || '',
           imageWidth: Number(s.width) || 0,
           imageHeight: Number(s.height) || 0,
+          debugGridImageUrl: debugGridByIndex.get(idx) || '',
+          debugGridMeta: debugGridMetaByIndex.get(idx) || null,
           label: '추가 사진',
           comment: 'AI가 이 사진에 대한 개별 코멘트를 반환하지 않았습니다. 원본 매물 사진으로 함께 확인하세요.',
           level: 'neutral',
@@ -2059,6 +2450,8 @@ const server = http.createServer(async (req, res) => {
           imageUrl: imageUrls[i] || '',
           imageWidth: 0,
           imageHeight: 0,
+          debugGridImageUrl: '',
+          debugGridMeta: null,
           label: loadedIndexSet.size ? '분석 생략' : '사진 확인',
           comment: loadedIndexSet.size
             ? '분석 서버가 이 사진을 불러오지 못했습니다. 위 매물 사진과 동일한 원본으로 직접 확인하세요.'
