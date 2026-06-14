@@ -17,6 +17,7 @@ const LISTING_HOST_PATTERNS = [
   { id: 'joongna', hostRe: /(^|\.)joongna\.com$/i },
 ];
 const SEARCH_TAB_TIMEOUT_MS = 10_000;
+const SEARCH_CLOSE_ALARM_NAME = 'buy-or-bye-close-search-tabs';
 const searchCollectionTabIds = new Set();
 
 function createSearchCollectionAutoCollect() {
@@ -59,6 +60,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (comps?.status === 'collected') void closeSearchCollectionTabsIfAny();
 });
 
+if (chrome.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === SEARCH_CLOSE_ALARM_NAME) void closeSearchCollectionTabsIfAny();
+  });
+}
+
 async function isSearchCollectionFinished() {
   const { marketScrapeAutoCollect, marketScrapeComps } = await chrome.storage.local.get([
     'marketScrapeAutoCollect',
@@ -87,15 +94,10 @@ async function closeSearchCollectionTabsIfAny() {
   }
   if (!closeIds.size) {
     await chrome.storage.local.remove(['marketScrapeCloseTabs', 'marketScrapeCloseTabsMeta']);
+    await chrome.alarms?.clear?.(SEARCH_CLOSE_ALARM_NAME);
     return;
   }
-  for (const id of closeIds) {
-    try {
-      await chrome.tabs.remove(id);
-    } catch {
-      /* 이미 닫힘 */
-    }
-  }
+  await closeTabIds(closeIds);
   for (const id of closeIds) searchCollectionTabIds.delete(id);
 
   // 번개장터처럼 리다이렉트/지연 로딩 중인 검색 탭이 남는 경우가 있어 짧게 재확인한다.
@@ -106,31 +108,39 @@ async function closeSearchCollectionTabsIfAny() {
   }
   if (leftovers.size) {
     for (const id of leftovers) {
-      try {
-        await chrome.tabs.remove(id);
-      } catch {
-        /* 이미 닫힘 */
-      }
+      await closeTabIds([id]);
       searchCollectionTabIds.delete(id);
     }
     await waitMs(500);
     const finalLeftovers = new Set();
     addMatchingSearchCollectionTabs(await chrome.tabs.query({}), finalLeftovers, metaQueries, metaUrls);
     for (const id of finalLeftovers) {
-      try {
-        await chrome.tabs.remove(id);
-      } catch {
-        /* 이미 닫힘 */
-      }
+      await closeTabIds([id]);
       searchCollectionTabIds.delete(id);
     }
   }
 
   await chrome.storage.local.remove(['marketScrapeCloseTabs', 'marketScrapeCloseTabsMeta']);
+  await chrome.alarms?.clear?.(SEARCH_CLOSE_ALARM_NAME);
 }
 
 function waitMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function closeTabIds(ids) {
+  const uniqueIds = [...new Set([...(ids || [])].filter((id) => typeof id === 'number'))];
+  for (const id of uniqueIds) {
+    for (const delay of [0, 180, 520]) {
+      if (delay) await waitMs(delay);
+      try {
+        await chrome.tabs.remove(id);
+        break;
+      } catch {
+        /* 이미 닫혔거나 아직 닫을 수 없는 탭이면 짧게 재시도 */
+      }
+    }
+  }
 }
 
 function addMatchingSearchCollectionTabs(tabs, closeIds, queries = [], urls = []) {
@@ -162,6 +172,7 @@ async function closeSearchCollectionTabsIfFinished() {
 }
 
 function scheduleCloseSearchCollectionTabs() {
+  chrome.alarms?.create?.(SEARCH_CLOSE_ALARM_NAME, { when: Date.now() + SEARCH_TAB_TIMEOUT_MS + 800 });
   setTimeout(() => {
     void (async () => {
       const { marketScrapeComps } = await chrome.storage.local.get('marketScrapeComps');
@@ -262,6 +273,7 @@ async function persistSearchCollectionSession({ forItemKey, queries, closeIds, t
       timeoutAt: Date.now() + SEARCH_TAB_TIMEOUT_MS,
     },
   });
+  scheduleCloseSearchCollectionTabs();
 }
 
 async function finalizeSearchCollection() {
@@ -424,7 +436,12 @@ async function collectSearchTabsAndClose(tabsByPlatform) {
   await Promise.allSettled(
     SEARCH_PLATFORMS.map(async (platform) => {
       for (const tabId of grouped[platform]) {
-        await collectSearchTab(tabId, platform);
+        try {
+          await collectSearchTab(tabId, platform);
+        } finally {
+          await closeTabIds([tabId]);
+          searchCollectionTabIds.delete(tabId);
+        }
       }
     })
   );

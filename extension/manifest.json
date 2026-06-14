@@ -3,7 +3,7 @@
   "name": "Buy or Bye - 중고매물 살까말까",
   "version": "2.7.7",
   "description": "번개장터·당근마켓·중고나라 매물을 모아 가격 참고자료·하자·네고까지 살까말까 판단을 돕습니다.",
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "permissions": ["activeTab", "alarms", "scripting", "storage", "tabs"],
   "background": {
     "service_worker": "background.js"
   },

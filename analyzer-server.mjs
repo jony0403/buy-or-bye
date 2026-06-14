@@ -1350,6 +1350,9 @@ function normalizeImageLevel(raw) {
 function cleanUpstreamErrorText(text, fallback = '외부 AI 서버 오류') {
   const raw = String(text || '').trim();
   if (!raw) return fallback;
+  if (/(quota|rate limit|rate-limits|resource_exhausted|too many requests|429|exceeded your current quota)/i.test(raw)) {
+    return 'Gemini API 사용량 한도를 초과했습니다. Google AI Studio의 결제/쿼터 상태를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
+  }
   if (/<!doctype|<html|<title>/i.test(raw)) {
     const title = raw.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
     return title || fallback;
