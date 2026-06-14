@@ -14,7 +14,7 @@ if errorlevel 1 (
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort 3920 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if not errorlevel 1 (
-  echo Buy or Bye server is already running.
+  echo Buy or Bye server is already running.  
   start "" "%ANALYZER_URL%"
   exit /b 0
 )

@@ -372,7 +372,7 @@
   };
 
   /**
-   * @param {{ mode: string, tone: string, toneLabel?: string, toneNote?: string, message?: string, chatHistory?: object[], listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @param {{ mode: string, tone: string, toneLabel?: string, toneNote?: string, message?: string, chatHistory?: object[], replyAnalysis?: object, listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
    * @returns {Promise<{ assistant: object, model: string, pipeline: string }>}
    */
   UlsaAi.fetchSellerChatAssistant = async (p) => {
@@ -392,6 +392,7 @@
         toneNote: p.toneNote || '',
         message: p.message || '',
         chatHistory: Array.isArray(p.chatHistory) ? p.chatHistory : [],
+        replyAnalysis: p.replyAnalysis || null,
         listing: p.listing || null,
         summary: p.summary || null,
         riskAnalysis: p.riskAnalysis || null,

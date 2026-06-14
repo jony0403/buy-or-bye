@@ -16,10 +16,39 @@ const LISTING_HOST_PATTERNS = [
   { id: 'daangn', hostRe: /(^|\.)daangn\.com$/i },
   { id: 'joongna', hostRe: /(^|\.)joongna\.com$/i },
 ];
-const SEARCH_TAB_TIMEOUT_MS = 45_000;
+const SEARCH_TAB_TIMEOUT_MS = 10_000;
+const searchCollectionTabIds = new Set();
+
+function createSearchCollectionAutoCollect() {
+  return { bunjang: true, daangn: true, joongna: true, at: Date.now(), sessionActive: true };
+}
+
+function clearedSearchCollectionAutoCollect(flags = {}) {
+  return {
+    ...flags,
+    ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, false])),
+    at: Date.now(),
+    sessionActive: true,
+  };
+}
 
 function allSearchPlatformsDone(flags) {
-  return SEARCH_PLATFORMS.every((id) => !flags?.[id]);
+  if (!flags?.at || flags.sessionActive !== true) return false;
+  return SEARCH_PLATFORMS.every((id) => flags[id] === false);
+}
+
+function dedupeSearchQueries(rawQueries, limit = 3) {
+  const queries = [];
+  const seen = new Set();
+  for (const rawQuery of rawQueries) {
+    const query = String(rawQuery || '').trim();
+    const key = query.replace(/\s+/g, '').toLowerCase();
+    if (!query || seen.has(key)) continue;
+    seen.add(key);
+    queries.push(query);
+    if (queries.length >= limit) break;
+  }
+  return queries;
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -43,14 +72,18 @@ async function closeSearchCollectionTabsIfAny() {
     'marketScrapeCloseTabs',
     'marketScrapeCloseTabsMeta',
   ]);
-  const closeIds = new Set((Array.isArray(marketScrapeCloseTabs) ? marketScrapeCloseTabs : []).filter((id) => typeof id === 'number'));
+  const closeIds = new Set([
+    ...(Array.isArray(marketScrapeCloseTabs) ? marketScrapeCloseTabs : []),
+    ...searchCollectionTabIds,
+  ].filter((id) => typeof id === 'number'));
   const meta = marketScrapeCloseTabsMeta && typeof marketScrapeCloseTabsMeta === 'object' ? marketScrapeCloseTabsMeta : null;
-  if (meta?.query) {
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      if (tab.id == null) continue;
-      if (isSearchCollectionTab(tab.url, meta.query)) closeIds.add(tab.id);
-    }
+  const metaQueries = Array.isArray(meta?.queries) ? meta.queries : meta?.query ? [meta.query] : [];
+  const metaUrls = [
+    ...(Array.isArray(meta?.urls) ? meta.urls : []),
+    ...Object.values(meta?.tabsByPlatform || {}).map((entry) => entry?.url),
+  ].filter(Boolean);
+  if (metaQueries.length || metaUrls.length) {
+    addMatchingSearchCollectionTabs(await chrome.tabs.query({}), closeIds, metaQueries, metaUrls);
   }
   if (!closeIds.size) {
     await chrome.storage.local.remove(['marketScrapeCloseTabs', 'marketScrapeCloseTabsMeta']);
@@ -63,7 +96,65 @@ async function closeSearchCollectionTabsIfAny() {
       /* 이미 닫힘 */
     }
   }
+  for (const id of closeIds) searchCollectionTabIds.delete(id);
+
+  // 번개장터처럼 리다이렉트/지연 로딩 중인 검색 탭이 남는 경우가 있어 짧게 재확인한다.
+  const leftovers = new Set();
+  if (metaQueries.length || metaUrls.length) {
+    await waitMs(220);
+    addMatchingSearchCollectionTabs(await chrome.tabs.query({}), leftovers, metaQueries, metaUrls);
+  }
+  if (leftovers.size) {
+    for (const id of leftovers) {
+      try {
+        await chrome.tabs.remove(id);
+      } catch {
+        /* 이미 닫힘 */
+      }
+      searchCollectionTabIds.delete(id);
+    }
+    await waitMs(500);
+    const finalLeftovers = new Set();
+    addMatchingSearchCollectionTabs(await chrome.tabs.query({}), finalLeftovers, metaQueries, metaUrls);
+    for (const id of finalLeftovers) {
+      try {
+        await chrome.tabs.remove(id);
+      } catch {
+        /* 이미 닫힘 */
+      }
+      searchCollectionTabIds.delete(id);
+    }
+  }
+
   await chrome.storage.local.remove(['marketScrapeCloseTabs', 'marketScrapeCloseTabsMeta']);
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function addMatchingSearchCollectionTabs(tabs, closeIds, queries = [], urls = []) {
+  const exactUrls = new Set(urls.map((url) => normalizeComparableUrl(url)).filter(Boolean));
+  for (const tab of tabs || []) {
+    if (tab.id == null) continue;
+    const tabUrl = String(tab.url || tab.pendingUrl || '');
+    const normalizedTabUrl = normalizeComparableUrl(tabUrl);
+    if (normalizedTabUrl && exactUrls.has(normalizedTabUrl)) {
+      closeIds.add(tab.id);
+      continue;
+    }
+    if (queries.some((query) => isSearchCollectionTab(tabUrl, query))) closeIds.add(tab.id);
+  }
+}
+
+function normalizeComparableUrl(rawUrl) {
+  try {
+    const url = new URL(String(rawUrl || ''));
+    url.hash = '';
+    return url.href;
+  } catch {
+    return '';
+  }
 }
 
 async function closeSearchCollectionTabsIfFinished() {
@@ -76,7 +167,7 @@ function scheduleCloseSearchCollectionTabs() {
       const { marketScrapeComps } = await chrome.storage.local.get('marketScrapeComps');
       if (marketScrapeComps && marketScrapeComps.status !== 'collected') {
         await chrome.storage.local.set({
-          marketScrapeAutoCollect: { ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, false])), at: Date.now() },
+          marketScrapeAutoCollect: clearedSearchCollectionAutoCollect(),
           marketScrapeComps: {
             ...(marketScrapeComps || {}),
             status: 'collected',
@@ -97,8 +188,9 @@ function isSearchCollectionTab(rawUrl, query) {
     const url = new URL(String(rawUrl || ''));
     const host = url.hostname.toLowerCase();
     const path = url.pathname;
-    if (host.endsWith('bunjang.co.kr') && path.includes('/search/products')) {
-      return (url.searchParams.get('q') || '').trim() === normalizedQuery;
+    if (host.endsWith('bunjang.co.kr') && /\/search(?:\/products)?\/?$/i.test(path)) {
+      const q = (url.searchParams.get('q') || url.searchParams.get('keyword') || '').replace(/\s+/g, ' ').trim();
+      return q === normalizedQuery;
     }
     if (host.endsWith('daangn.com') && /\/kr\/buy-sell\/?$/i.test(path)) {
       return (url.searchParams.get('search') || '').trim() === normalizedQuery;
@@ -111,6 +203,110 @@ function isSearchCollectionTab(rawUrl, query) {
     return false;
   }
   return false;
+}
+
+function searchUrlForPlatform(platform, query) {
+  if (platform === 'bunjang') return `https://m.bunjang.co.kr/search/products?q=${encodeURIComponent(query)}&order=score`;
+  if (platform === 'daangn') return `https://www.daangn.com/kr/buy-sell/?search=${encodeURIComponent(query)}`;
+  if (platform === 'joongna') return `https://web.joongna.com/search/${encodeURIComponent(query)}`;
+  return '';
+}
+
+async function createSearchTabsForQuery(query) {
+  // 매물검색 시작 시 3개 플랫폼 탭은 무조건 연다. 하나가 실패해도 나머지는 계속 연다.
+  const tabsByPlatform = { bunjang: undefined, daangn: undefined, joongna: undefined };
+  const tabMetaByPlatform = {};
+  for (const platform of SEARCH_PLATFORMS) {
+    try {
+      const url = searchUrlForPlatform(platform, query);
+      const tab = await chrome.tabs.create({ url, active: false });
+      tabsByPlatform[platform] = tab?.id;
+      if (typeof tab?.id === 'number') searchCollectionTabIds.add(tab.id);
+      tabMetaByPlatform[platform] = { id: tab?.id, url };
+    } catch (e) {
+      console.warn(`[OPEN_SEARCH_TABS] ${platform} 탭 열기 실패:`, e instanceof Error ? e.message : e);
+    }
+  }
+  const closeIds = Object.values(tabsByPlatform).filter((id) => typeof id === 'number');
+  return { tabsByPlatform, tabMetaByPlatform, closeIds, query };
+}
+
+async function persistSearchCollectionSession({ forItemKey, queries, closeIds, tabMetaByPlatform = {}, resetComps = false }) {
+  const primaryQuery = queries[0] || '';
+  const { marketScrapeComps } = await chrome.storage.local.get('marketScrapeComps');
+  const nextComps = resetComps
+    ? {
+        forItemKey,
+        status: 'collecting',
+        startedAt: Date.now(),
+        expectedQueries: queries,
+        ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, null])),
+      }
+    : {
+        ...(marketScrapeComps || {}),
+        forItemKey: forItemKey || marketScrapeComps?.forItemKey || null,
+        status: 'collecting',
+        startedAt: marketScrapeComps?.startedAt || Date.now(),
+        expectedQueries: queries,
+      };
+  await chrome.storage.local.set({
+    marketScrapeAutoCollect: createSearchCollectionAutoCollect(),
+    marketScrapeComps: nextComps,
+    marketScrapeCloseTabs: closeIds,
+    marketScrapeCloseTabsMeta: {
+      query: primaryQuery,
+      queries,
+      tabsByPlatform: tabMetaByPlatform,
+      urls: Object.values(tabMetaByPlatform).map((entry) => entry?.url).filter(Boolean),
+      startedAt: Date.now(),
+      timeoutAt: Date.now() + SEARCH_TAB_TIMEOUT_MS,
+    },
+  });
+}
+
+async function finalizeSearchCollection() {
+  const { marketScrapeComps, marketScrapeAutoCollect } = await chrome.storage.local.get([
+    'marketScrapeComps',
+    'marketScrapeAutoCollect',
+  ]);
+  if (marketScrapeComps && marketScrapeComps.status !== 'collected') {
+    await chrome.storage.local.set({
+      marketScrapeAutoCollect: clearedSearchCollectionAutoCollect(marketScrapeAutoCollect || {}),
+      marketScrapeComps: {
+        ...marketScrapeComps,
+        status: 'collected',
+        collectedAt: new Date().toISOString(),
+      },
+    });
+  }
+  await closeSearchCollectionTabsIfAny();
+}
+
+// 자동 매물검색은 무조건 끝나야 한다. 수집이 실패하거나 탭이 멈춰도
+// finally + 하드 타임아웃으로 storage를 'collected'로 정리하고 탭을 닫는다.
+async function runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds) {
+  let finalized = false;
+  const finalizeOnce = async () => {
+    if (finalized) return;
+    finalized = true;
+    try {
+      await finalizeSearchCollection();
+      await pushAnalyzerTabs();
+    } catch (e) {
+      console.warn('[OPEN_SEARCH_TABS] finalize failed:', e instanceof Error ? e.message : e);
+    }
+  };
+  const hardStop = setTimeout(() => {
+    void finalizeOnce();
+  }, SEARCH_TAB_TIMEOUT_MS);
+  try {
+    await collectSearchTabsAndClose(tabsByPlatform);
+  } catch (e) {
+    console.warn('[OPEN_SEARCH_TABS] background collection failed:', e instanceof Error ? e.message : e);
+  } finally {
+    clearTimeout(hardStop);
+    await finalizeOnce();
+  }
 }
 
 function classifyListingUrl(rawUrl) {
@@ -209,23 +405,36 @@ async function injectAnalyzerBridge(tabId) {
 }
 
 async function collectSearchTab(tabId, platform) {
-  await waitForTabComplete(tabId, platform === 'daangn' ? 16_000 : 12_000).catch(() => {});
+  // 전체 수집을 10초 안에 끝내기 위해 탭당 대기/수집 시간을 빠듯하게 잡는다.
+  await waitForTabComplete(tabId, platform === 'daangn' ? 4_000 : 3_500).catch(() => {});
   await injectSearchScripts(tabId);
-  const res = await sendMessageToTab(tabId, { type: 'COLLECT_SEARCH' }, platform === 'daangn' ? 16_000 : 12_000);
+  const res = await sendMessageToTab(tabId, { type: 'COLLECT_SEARCH' }, platform === 'daangn' ? 5_000 : 4_000);
   return res?.ok ? res : { ok: false, platform, error: res?.error || '검색 탭 수집 실패' };
 }
 
 async function collectSearchTabsAndClose(tabsByPlatform) {
-  const entries = Object.entries(tabsByPlatform || {}).filter(([, tabId]) => typeof tabId === 'number');
+  const entries = Array.isArray(tabsByPlatform)
+    ? tabsByPlatform
+        .map((entry) => [entry?.platform, entry?.tabId])
+        .filter(([platform, tabId]) => SEARCH_PLATFORMS.includes(platform) && typeof tabId === 'number')
+    : Object.entries(tabsByPlatform || {}).filter(([, tabId]) => typeof tabId === 'number');
   if (!entries.length) return;
-  await Promise.allSettled(entries.map(([platform, tabId]) => collectSearchTab(tabId, platform)));
+  const grouped = Object.fromEntries(SEARCH_PLATFORMS.map((platform) => [platform, []]));
+  for (const [platform, tabId] of entries) grouped[platform]?.push(tabId);
+  await Promise.allSettled(
+    SEARCH_PLATFORMS.map(async (platform) => {
+      for (const tabId of grouped[platform]) {
+        await collectSearchTab(tabId, platform);
+      }
+    })
+  );
   const { marketScrapeAutoCollect, marketScrapeComps } = await chrome.storage.local.get([
     'marketScrapeAutoCollect',
     'marketScrapeComps',
   ]);
   if (marketScrapeAutoCollect && !allSearchPlatformsDone(marketScrapeAutoCollect)) {
     await chrome.storage.local.set({
-      marketScrapeAutoCollect: { ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, false])), at: Date.now() },
+      marketScrapeAutoCollect: clearedSearchCollectionAutoCollect(marketScrapeAutoCollect),
       marketScrapeComps: {
         ...(marketScrapeComps || {}),
         status: 'collected',
@@ -363,58 +572,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       if (msg.type === 'OPEN_SEARCH_TABS') {
         await closeSearchCollectionTabsIfAny();
-        const rawQueries = Array.isArray(msg.queries) ? msg.queries : [msg.query];
-        const queries = [];
-        const seen = new Set();
-        for (const rawQuery of rawQueries) {
-          const query = String(rawQuery || '').trim();
-          const key = query.replace(/\s+/g, '').toLowerCase();
-          if (!query || seen.has(key)) continue;
-          seen.add(key);
-          queries.push(query);
-          break;
-        }
+        const queries = dedupeSearchQueries(Array.isArray(msg.queries) ? msg.queries : [msg.query]);
         if (!queries.length) {
           sendResponse({ ok: false, error: '검색어가 비었습니다.' });
           return;
         }
         const { marketScrapeLatest } = await chrome.storage.local.get('marketScrapeLatest');
         const forItemKey = marketScrapeLatest ? `${marketScrapeLatest.platform}:${marketScrapeLatest.itemId}` : null;
-        const query = queries[0];
-        const bunjangUrl = `https://m.bunjang.co.kr/search/products?q=${encodeURIComponent(query)}&order=score`;
-        const daangnUrl = `https://www.daangn.com/kr/buy-sell/?search=${encodeURIComponent(query)}`;
-        const joongnaUrl = `https://web.joongna.com/search/${encodeURIComponent(query)}`;
-        await chrome.storage.local.set({
-          marketScrapeAutoCollect: { bunjang: true, daangn: true, joongna: true, at: Date.now() },
-          marketScrapeComps: {
-            forItemKey,
-            status: 'collecting',
-            startedAt: Date.now(),
-            ...Object.fromEntries(SEARCH_PLATFORMS.map((id) => [id, null])),
-          },
-        });
-        const bunTab = await chrome.tabs.create({ url: bunjangUrl, active: false });
-        const dangTab = await chrome.tabs.create({ url: daangnUrl, active: false });
-        const joongTab = await chrome.tabs.create({ url: joongnaUrl, active: false });
-        const closeIds = [bunTab?.id, dangTab?.id, joongTab?.id].filter((id) => typeof id === 'number');
-        if (closeIds.length) {
-          await chrome.storage.local.set({
-            marketScrapeCloseTabs: closeIds,
-            marketScrapeCloseTabsMeta: {
-              query,
-              startedAt: Date.now(),
-              timeoutAt: Date.now() + SEARCH_TAB_TIMEOUT_MS,
-            },
-          });
+        const { tabsByPlatform, tabMetaByPlatform, closeIds } = await createSearchTabsForQuery(queries[0]);
+        if (!closeIds.length) {
+          sendResponse({ ok: false, error: '검색 탭을 열지 못했습니다.' });
+          return;
         }
-        await collectSearchTabsAndClose({
-          bunjang: bunTab?.id,
-          daangn: dangTab?.id,
-          joongna: joongTab?.id,
-        });
-        await closeSearchCollectionTabsIfFinished();
-        scheduleCloseSearchCollectionTabs();
-        sendResponse({ ok: true, query, queries: [query], tabIds: closeIds });
+        await persistSearchCollectionSession({ forItemKey, queries, closeIds, tabMetaByPlatform, resetComps: true });
+        sendResponse({ ok: true, query: queries[0], queries, tabIds: closeIds });
+        void runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds);
         return;
       }
 

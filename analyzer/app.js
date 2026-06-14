@@ -49,6 +49,7 @@ const imageAnalysisDirections = new Map();
 const stageTwoActiveKeys = new Set();
 const stageThreeActiveKeys = new Set();
 const stageFiveActiveKeys = new Set();
+const stageFiveEnteringKeys = new Set();
 const stageTwoCompletedKeys = new Set();
 const stageThreeIsolatedRefreshKeys = new Set();
 const productRiskAnalyses = new Map();
@@ -90,6 +91,45 @@ const sellerChatToneOptions = [
   { value: 'short', label: '짧게' },
   { value: 'negotiate', label: '가격협상' },
 ];
+const APP_SHORTCUT_GROUPS = [
+  {
+    title: '기본',
+    items: [
+      ['Esc', '열린 팝업·AI 비서 닫기'],
+      ['/', '매물 URL 입력 열기'],
+      ['?', '단축키 패널 열기/닫기'],
+      ['R', '전체 재분석'],
+      ['N', '새 분석 시작'],
+    ],
+  },
+  {
+    title: '보기',
+    items: [
+      ['L', '스크롤식/슬라이드식 전환'],
+      ['D', '다크모드 전환'],
+      ['H', '최근 매물 열기/닫기'],
+      ['S', 'AI 설정 열기'],
+    ],
+  },
+  {
+    title: '단계 이동',
+    items: [
+      ['← / →', '슬라이드식 이전/다음 단계'],
+      ['1~5', '해당 단계로 바로 이동'],
+      ['Home / End', '첫 단계/마지막 가능 단계'],
+      ['Enter', '보이는 다음 단계 카드 시작'],
+    ],
+  },
+  {
+    title: '사진·AI',
+    items: [
+      ['↑ / ↓', '화면 위/아래 스크롤'],
+      ['I, P, F', '매물 사진 전체보기'],
+      ['Shift+I / X', '하자/이미지 분석 사진 전체보기'],
+      ['A', 'AI 비서 열기/닫기'],
+    ],
+  },
+];
 let lightboxAutoPlayTimer = 0;
 let lightboxCloseTimer = 0;
 let photoSliderAutoTimer = 0;
@@ -108,7 +148,8 @@ let pendingImportUrl = '';
 const RECEIPT_PRINT_SCROLL_MS = 6600;
 const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 0;
-const STAGE_THREE_COLLECTION_TIMEOUT_MS = 24_000;
+const STAGE_THREE_COLLECTION_TIMEOUT_MS = 10_000;
+const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
 const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v15';
 const LISTING_IMAGE_OVERLAY_VERSION = 25;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
@@ -524,6 +565,57 @@ function renderAiLoadingProgress(state, kind) {
   `;
 }
 
+function htmlHasAiProgress(html) {
+  return /\bdata-ai-progress\b/.test(String(html || ''));
+}
+
+function elementHasAiProgress(el) {
+  return Boolean(el?.querySelector?.('[data-ai-progress]'));
+}
+
+function aiProgressKind(source) {
+  if (!source) return '';
+  if (typeof source === 'string') {
+    const match = source.match(/data-ai-progress[^>]*\bdata-kind="([^"]*)"/);
+    return match ? match[1] : '';
+  }
+  const node = source.querySelector?.('[data-ai-progress]');
+  return node?.getAttribute('data-kind') || '';
+}
+
+function shouldKeepExistingLoadingBlock(existing, nextHtml) {
+  if (!existing || !elementHasAiProgress(existing) || !htmlHasAiProgress(nextHtml)) return false;
+  // 로딩 "종류"가 같을 때만 기존 블록을 유지한다(재등장 애니메이션 방지).
+  // 종류가 다르면(예: 수집 → AI 판별 전환) 반드시 새로 렌더해 다음 단계 파이프라인이 이어지게 한다.
+  return aiProgressKind(existing) === aiProgressKind(nextHtml);
+}
+
+function updateAiLoadingProgressNodes(kind = '', state = null, root = document) {
+  const nodes = root?.querySelectorAll?.('[data-ai-progress]') || [];
+  nodes.forEach((node) => {
+    if (kind && node.getAttribute('data-kind') !== kind) return;
+    if (!state) return;
+    const attrs = {
+      'data-started-at': Number(state.startedAt || state.loadingStartedAt || 0) || Date.now(),
+      'data-duration': Number(state.durationMs || state.duration) || AI_LOADING_DURATIONS[kind] || 8000,
+      'data-force-percent': Number.isFinite(Number(state.forcePercent)) ? Number(state.forcePercent) : '',
+      'data-finish-started-at': Number(state.finishStartedAt || 0) || '',
+      'data-finish-from-percent': Number.isFinite(Number(state.finishFromPercent)) ? Number(state.finishFromPercent) : '',
+      'data-start-percent': Number.isFinite(Number(state.startPercent)) ? Number(state.startPercent) : '',
+      'data-end-percent': Number.isFinite(Number(state.endPercent)) ? Number(state.endPercent) : '',
+    };
+    for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+    const percent = aiLoadingPercent(state || {}, kind);
+    if (Number.isFinite(percent)) {
+      const bar = node.querySelector('.ai-loading-progress__bar i');
+      const text = node.querySelector('.ai-loading-progress__text');
+      if (bar) bar.style.width = `${percent}%`;
+      if (text) text.textContent = `${Math.floor(percent)}%`;
+    }
+  });
+  ensureAiLoadingProgressTicker();
+}
+
 function optionalNumberAttr(node, name) {
   const raw = node.getAttribute(name);
   if (raw == null || raw === '') return NaN;
@@ -628,7 +720,9 @@ function stageThreeSearchProgressState(item, phase, seed = {}) {
 }
 
 async function completeStageThreeSearchProgress(item, refresh) {
-  stageThreeSearchProgressState(item, 'complete');
+  const state = stageThreeSearchProgressState(item, 'complete');
+  updateAiLoadingProgressNodes('searchQuery', state);
+  updateAiLoadingProgressNodes('comparisonFilter', state);
   if (typeof refresh === 'function') refresh();
   await waitMs(AI_LOADING_FINISH_MS);
   const key = summaryKey(item);
@@ -709,7 +803,8 @@ function usedPriceGuideProgressState(item, phase, seed = {}) {
 }
 
 async function completeUsedPriceGuideProgress(item, refresh) {
-  usedPriceGuideProgressState(item, 'complete');
+  const state = usedPriceGuideProgressState(item, 'complete');
+  updateAiLoadingProgressNodes('usedPriceGuide', state);
   if (typeof refresh === 'function') refresh();
   await waitMs(AI_LOADING_FINISH_MS);
   const key = usedPriceGuideProgressKey(item);
@@ -732,11 +827,11 @@ function refreshVisibleAiLoadingCards(item = currentRenderedItem()) {
     listingTextAnalyses.get(key)?.status === 'loading' ||
     listingImageAnalyses.get(key)?.status === 'loading'
   ) {
-    refreshProductSummaryBlock(item);
+    updateAiLoadingProgressNodes();
     refreshed = true;
   }
   if (productRiskYoutubeAnalyses.get(key)?.status === 'loading') {
-    refreshProductRiskYoutubeCard(item);
+    updateAiLoadingProgressNodes('productRiskYoutube', productRiskYoutubeAnalyses.get(key));
     refreshed = true;
   }
   if (searchQueryRegenerations.get(key)?.status === 'loading') {
@@ -751,7 +846,7 @@ function refreshVisibleAiLoadingCards(item = currentRenderedItem()) {
   }
   const receiptKey = purchaseReceiptKey(item, stageComps);
   if (receiptKey && purchaseReceipts.get(receiptKey)?.status === 'loading') {
-    refreshStageFourSection(item);
+    updateAiLoadingProgressNodes('purchaseReceipt', purchaseReceipts.get(receiptKey));
     refreshed = true;
   }
   const sellerState = sellerChatStates.get(sellerChatKey(item));
@@ -877,7 +972,7 @@ async function showAiLoadingComplete(store, key, refresh, kind = '') {
       finishStartedAt: Date.now(),
       finishFromPercent: Math.min(99, Math.max(0, aiLoadingPercent(current, kind) || 0)),
     });
-    if (typeof refresh === 'function') refresh();
+    updateAiLoadingProgressNodes(kind, store.get(key));
     await waitMs(AI_LOADING_FINISH_MS);
   }
 }
@@ -965,6 +1060,36 @@ function clearStageThreeCollectionTimeout(key) {
   stageThreeCollectionTimeoutTimers.delete(key);
 }
 
+// 자동 매물검색은 무조건 10초 안에 끝난다. storage push가 늦거나 멈춰도
+// 이 권위적 타이머가 수집을 강제 마감(collected 처리)하고 다음 단계로 넘긴다.
+function armStageThreeHardDeadline(item) {
+  const key = summaryKey(item);
+  if (!key) return;
+  clearStageThreeCollectionTimeout(key);
+  const timer = window.setTimeout(() => {
+    stageThreeCollectionTimeoutTimers.delete(key);
+    forceFinalizeStageThreeCollection(item);
+  }, STAGE_THREE_COLLECTION_TIMEOUT_MS + 200);
+  stageThreeCollectionTimeoutTimers.set(key, timer);
+}
+
+function forceFinalizeStageThreeCollection(item) {
+  const key = summaryKey(item);
+  if (!key || selectedKey !== key) return;
+  // 아직 수집 중이면(collected 신호 미수신) 메모리 comps를 강제로 collected로 전환한다.
+  // 이때 그동안 쌓인 매물 항목은 그대로 보존되어 "그대로 출력"이 가능하다.
+  if (comps && comps.forItemKey === itemKey(item)) {
+    if (comps.status !== 'collected') {
+      comps = { ...comps, status: 'collected', collectedAt: new Date().toISOString(), timedOut: true };
+    }
+  } else {
+    comps = { ...emptyComparisonComps(item), timedOut: true };
+  }
+  lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
+  if (stageThreeIsolatedRefreshKeys.has(key)) refreshStageThreeCompsBlock(item, { schedule: true });
+  else refreshStageThreeSection(item);
+}
+
 function effectiveStageThreeComps(item, nextComps = comps) {
   if (nextComps && isCompsCollected(nextComps)) return nextComps;
   const key = summaryKey(item);
@@ -998,8 +1123,8 @@ function isStepFourDone(item) {
 
 function isPurchaseReceiptPrinted(item, nextComps = comps) {
   const stageComps = item ? effectiveStageThreeComps(item, nextComps) : null;
-  const { state } = item && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
-  return state?.status === 'done';
+  const { key, state } = item && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { key: '', state: null };
+  return Boolean(key && state?.status === 'done' && purchaseReceiptPrintedKeys.has(key));
 }
 
 function clearPurchaseReceiptPrintedForListing(key) {
@@ -1009,6 +1134,16 @@ function clearPurchaseReceiptPrintedForListing(key) {
       purchaseReceiptPrintedKeys.delete(cacheKey);
     }
   }
+}
+
+function purchaseReceiptsForListingClear(key) {
+  if (!key) return;
+  for (const cacheKey of [...purchaseReceipts.keys()]) {
+    if (listingKeyFromStageCacheKey(cacheKey) === key || cacheKey.startsWith(`${key}::`)) {
+      purchaseReceipts.delete(cacheKey);
+    }
+  }
+  clearPurchaseReceiptPrintedForListing(key);
 }
 
 function maybeMarkStageTwoComplete(item) {
@@ -1209,6 +1344,49 @@ function fallbackSearchQuery(item) {
     .trim();
 }
 
+function normalizeStageThreeSearchQuery(raw) {
+  return String(raw || '')
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
+    .replace(/\b\d{1,3}(?:,\d{3})+\s*원?\b/g, ' ')
+    .replace(/\b\d+\s*(?:원|만원|천원)\b/g, ' ')
+    .replace(/[|｜/·•,+]/g, ' ')
+    .replace(
+      /\b(?:급처|네고|택포|직거래|무료배송|배송|판매|팝니다|삽니다|구매|교환|미개봉|새상품|단순개봉|풀박스|박스|정품|보증|상태좋음|깨끗|깨끗한|무결점|구성품|포함)\b/gi,
+      ' '
+    )
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 48);
+}
+
+function pushUniqueSearchQuery(out, seen, raw) {
+  const query = normalizeStageThreeSearchQuery(raw);
+  const key = query.replace(/\s+/g, '').toLowerCase();
+  if (!query || seen.has(key)) return false;
+  seen.add(key);
+  out.push(query);
+  return true;
+}
+
+function localStageThreeSearchQueries(item, summary = null) {
+  const out = [];
+  const seen = new Set();
+  const sourceQueries = [
+    summary?.productName,
+    summary?.searchQuery,
+    ...(Array.isArray(summary?.searchQueries) ? summary.searchQueries : []),
+    fallbackSearchQuery(item),
+  ];
+  for (const raw of sourceQueries) {
+    pushUniqueSearchQuery(out, seen, raw);
+    const words = normalizeStageThreeSearchQuery(raw).split(/\s+/).filter(Boolean);
+    if (words.length >= 4) pushUniqueSearchQuery(out, seen, words.slice(0, 3).join(' '));
+    if (words.length >= 3) pushUniqueSearchQuery(out, seen, words.slice(0, 2).join(' '));
+    if (out.length >= 4) break;
+  }
+  return out.slice(0, 4);
+}
+
 function getProductSummaryState(item) {
   const key = summaryKey(item);
   return key ? productSummaries.get(key) || null : null;
@@ -1372,7 +1550,15 @@ function renderScrollableText(text, className, id, maxHeight) {
 }
 
 function productSummaryQueries(summary, item) {
-  return splitSearchQueries(summary?.searchQueries || summary?.searchQuery || fallbackSearchQuery(item));
+  const out = [];
+  const seen = new Set();
+  for (const query of [
+    ...splitSearchQueries(summary?.searchQueries || summary?.searchQuery || ''),
+    ...localStageThreeSearchQueries(item, summary),
+  ]) {
+    if (pushUniqueSearchQuery(out, seen, query) && out.length >= 4) break;
+  }
+  return out;
 }
 
 function danawaPriceUrl(summary) {
@@ -2764,6 +2950,20 @@ const DIRECT_AI_ACTIONS = [
     },
   },
   {
+    id: 'ui.shortcuts',
+    label: '단축키 안내',
+    risk: 'safe',
+    chipLabel: '단축키',
+    aliases: ['단축키', '키보드 단축키', 'shortcut', 'shortcuts', 'hotkey', 'hotkeys'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      openShortcutPanel();
+      return { message: directAiShortcutHelpText() };
+    },
+  },
+  {
     id: 'ui.openListing',
     label: '판매글 열기',
     risk: 'safe',
@@ -2983,6 +3183,7 @@ function getDirectAiSuggestedCommands(item = currentRenderedItem()) {
     'ui.openDanawa',
     'regen.comparisonSearch',
     'regen.productSummary',
+    'ui.shortcuts',
     'ui.openHistory',
   ];
   const available = new Set(getDirectAiAvailableActions(item).map((action) => action.id));
@@ -3004,8 +3205,13 @@ function normalizeDirectAiCommandText(text) {
 
 function isLikelyDirectAiExplanationQuestion(message) {
   const text = String(message || '');
+  if (isDirectAiShortcutHelpRequest(text)) return false;
   if (!/(?:뭐야|무엇|설명|알려|뜻|의미|궁금|어떤|왜|무슨)/i.test(text)) return false;
   return !/(?:다시\s*(?:생성|만들|분석|검색|실행|돌려)|재생성)/i.test(text);
+}
+
+function isDirectAiShortcutHelpRequest(message) {
+  return /(?:단축키|키보드\s*단축키|shortcut|shortcuts|hotkey|hotkeys)/i.test(String(message || ''));
 }
 
 function directAiActionIdFromAlias(text) {
@@ -3025,6 +3231,7 @@ function matchDirectAiCommandRules(message) {
   const raw = String(message || '').trim();
   const text = normalizeDirectAiCommandText(raw);
   if (!text) return null;
+  if (isDirectAiShortcutHelpRequest(raw)) return { actionId: 'ui.shortcuts', confidence: 0.99, source: 'rule' };
   if (isLikelyDirectAiExplanationQuestion(raw)) return null;
   const url = extractSupportedListingUrlFromText(raw);
   if (url) return { actionId: 'ui.importUrl', confidence: 0.98, source: 'url', url };
@@ -3053,6 +3260,7 @@ function matchDirectAiCommandRules(message) {
     { pattern: /중고나라|중나/, actionId: 'ui.openJoongna', confidence: 0.9 },
     { pattern: /최근\s*매물|히스토리/, actionId: 'ui.openHistory', confidence: 0.9 },
     { pattern: /ai\s*설정|api\s*설정|키\s*설정|api\s*키|gemini|제미나이/, actionId: 'ui.openSettings', confidence: 0.92 },
+    { pattern: /단축키|키보드\s*단축키|shortcut|hotkey/, actionId: 'ui.shortcuts', confidence: 0.98 },
     { pattern: /보기\s*전환|레이아웃|스크롤(?:식)?|슬라이드(?:식)?/, actionId: 'ui.openLayout', confidence: 0.88 },
     { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode).*(꺼|꺼줘|off|해제|비활성)|라이트\s*모드|밝은\s*모드/, actionId: 'ui.darkModeOff', confidence: 0.96 },
     { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode)(?:\s*(?:실행|켜|켜줘|on|적용|활성|해줘|해|전환|바꿔)?)?$/, actionId: 'ui.darkModeOn', confidence: 0.96 },
@@ -3602,6 +3810,13 @@ function directAiPrompt(question, item = currentRenderedItem()) {
   ].join('\n');
 }
 
+function directAiShortcutHelpText() {
+  const body = APP_SHORTCUT_GROUPS.map(
+    (group) => `${group.title}\n${group.items.map(([key, desc]) => `${key}: ${desc}`).join('\n')}`
+  ).join('\n\n');
+  return `단축키 패널을 열었습니다.\n\n${body}\n\n입력창 안에서는 전역 단축키가 비활성화됩니다.`;
+}
+
 function renderDirectAiSuggestionsHtml() {
   const groups = sanitizeDirectAiKeywordGroups(directAiChat);
   if (groups.length) {
@@ -4076,7 +4291,6 @@ function renderSellerChatReplyForm(state) {
 
 function renderSellerChatThread(state) {
   const messages = Array.isArray(state?.messages) ? state.messages : [];
-  const replyForm = renderSellerChatReplyForm(state);
   if (!messages.length) {
     return `
       <div class="seller-chat__empty">
@@ -4084,11 +4298,10 @@ function renderSellerChatThread(state) {
           <span class="seller-chat__label">AI</span>
           <p>거래를 이어갈 때만 아래에서 첫 메시지를 만들거나, 판매자 답변을 붙여넣어 답장 후보를 받아보세요.</p>
         </div>
-        ${replyForm}
       </div>
     `;
   }
-  return `${messages.map((msg, index) => renderSellerChatMessage(msg, index)).join('')}${replyForm}`;
+  return messages.map((msg, index) => renderSellerChatMessage(msg, index)).join('');
 }
 
 function renderSellerChatSuggestions(state) {
@@ -4209,14 +4422,11 @@ function appendSellerChatMessageToThread(item, msg, index) {
   const panel = $current?.querySelector('[data-stage-five-panel]');
   const thread = panel?.querySelector('[data-seller-chat-thread]');
   if (!state || !thread) return false;
-  const replyForm = thread.querySelector('[data-seller-chat-reply-form]');
   const rowHtml = renderSellerChatMessage({ ...msg, isNew: true }, index);
   if (thread.querySelector('.seller-chat__empty')) {
-    thread.innerHTML = `${rowHtml}${renderSellerChatReplyForm(state)}`;
-  } else if (replyForm) {
-    replyForm.insertAdjacentHTML('beforebegin', rowHtml);
+    thread.innerHTML = rowHtml;
   } else {
-    thread.insertAdjacentHTML('beforeend', `${rowHtml}${renderSellerChatReplyForm(state)}`);
+    thread.insertAdjacentHTML('beforeend', rowHtml);
   }
   thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
   return true;
@@ -4236,7 +4446,14 @@ function refreshSellerChatDynamic(item, opts = {}) {
   const reply = panel.querySelector('[data-seller-chat-reply]');
   if (thread && !opts.skipThread) thread.innerHTML = renderSellerChatThread(state);
   if (replyAnalysis) replyAnalysis.innerHTML = renderSellerReplyAnalysis(state);
-  if (suggestions) suggestions.innerHTML = renderSellerChatSuggestions(state);
+  if (suggestions) {
+    const suggestionsHtml = renderSellerChatSuggestions(state);
+    if (shouldKeepExistingLoadingBlock(suggestions, suggestionsHtml)) {
+      updateAiLoadingProgressNodes('sellerChat', state, suggestions);
+    } else {
+      suggestions.innerHTML = suggestionsHtml;
+    }
+  }
   if (chips) chips.innerHTML = renderSellerChatChips(state);
   if (error) error.innerHTML = state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : '';
   if (modeTitle) modeTitle.textContent = `거래 메시지 도우미 · ${sellerChatToneLabel(state.tone)}`;
@@ -4293,8 +4510,9 @@ function renderSellerChatPanel(item, comps) {
   const summaryName = ctx.summary?.productName || item.title || '판매자 대화 보조';
   const toneLabel = sellerChatToneLabel(state.tone);
   const placeholder = '보낼 메시지에 반영할 조건을 적어주세요. 예: 구성품과 하자 먼저 확인하고 싶어요.';
-  const actionLabel = '첫 메시지 만들기';
+  const actionLabel = '추천 문구 만들기';
   const note = state.toneNote ? `<p class="seller-chat__note">커스텀 말투: ${escapeHtml(state.toneNote)}</p>` : '';
+  const enteringClass = stageFiveEnteringKeys.has(key) ? ' is-stage-five-entering' : '';
   return `
     <section class="stage-five-panel stage-zone stage-five-zone is-active" data-stage-panel data-stage-five-panel>
       <aside class="stage-zone-label">
@@ -4302,51 +4520,72 @@ function renderSellerChatPanel(item, comps) {
         <span>거래 메시지</span>
       </aside>
       <div class="stage-zone-grid stage-five-zone-grid">
-        <article class="mini-card stage-five-card">
-          <div class="seller-chat__phone">
-            <header class="seller-chat__phone-head">
-              <button type="button" class="seller-chat__back" aria-label="뒤로">‹</button>
-              <div class="seller-chat__title">
-                <strong>${escapeHtml(summaryName)}</strong>
-                <span data-seller-chat-mode-title>거래 메시지 도우미 · ${escapeHtml(toneLabel)}</span>
+        <article class="mini-card stage-five-card stage-five-card--split${enteringClass}">
+          <div class="seller-chat__workspace">
+            <section class="seller-chat__left-pane" aria-label="판매자 프로필과 대화창">
+              <header class="seller-chat__phone-head">
+                <button type="button" class="seller-chat__back" aria-label="뒤로">‹</button>
+                <div class="seller-chat__title">
+                  <strong>${escapeHtml(summaryName)}</strong>
+                  <span data-seller-chat-mode-title>거래 메시지 도우미 · ${escapeHtml(toneLabel)}</span>
+                </div>
+                <button type="button" class="seller-chat__reset-icon" data-seller-chat-reset aria-label="대화 초기화">↺</button>
+              </header>
+              ${renderSellerChatMeta(item)}
+              <div class="seller-chat__thread" data-seller-chat-thread>${renderSellerChatThread(state)}</div>
+              <div class="seller-chat__reply-dock">${renderSellerChatReplyForm(state)}</div>
+            </section>
+            <aside class="seller-chat__right-pane" aria-label="거래 전 확인과 메시지 후보">
+              <div class="seller-chat__side-section seller-chat__side-section--checklist">
+                <div class="seller-chat__side-head">
+                  <span class="material-symbols-rounded" aria-hidden="true">fact_check</span>
+                  <div>
+                    <strong>거래 전 확인</strong>
+                    <p>답장에 반영할 핵심 체크포인트입니다.</p>
+                  </div>
+                </div>
+                ${renderSellerChatChecklist(item) || '<p class="seller-chat__side-empty">확인 항목이 아직 없습니다.</p>'}
               </div>
-              <button type="button" class="seller-chat__reset-icon" data-seller-chat-reset aria-label="대화 초기화">↺</button>
-            </header>
-            ${renderSellerChatMeta(item)}
-            ${renderSellerChatChecklist(item)}
-            <div class="seller-chat__toolbar">
-              <div class="seller-chat__tone-row">
-                ${sellerChatToneOptions
-                  .map(
-                    (tone) => `
-                      <button type="button" class="seller-chat__tone${state.tone === tone.value ? ' is-active' : ''}" data-seller-chat-tone="${escapeAttr(tone.value)}">
-                        ${escapeHtml(tone.label)}
-                      </button>
-                    `
-                  )
-                  .join('')}
+              <div data-seller-reply-analysis-slot>${renderSellerReplyAnalysis(state)}</div>
+              <div class="seller-chat__side-section">
+                <div class="seller-chat__side-head">
+                  <span class="material-symbols-rounded" aria-hidden="true">record_voice_over</span>
+                  <div>
+                    <strong>말투 변경</strong>
+                    <p>후보 문장의 온도와 어휘를 조정합니다.</p>
+                  </div>
+                </div>
+                <div class="seller-chat__tone-row">
+                  ${sellerChatToneOptions
+                    .map(
+                      (tone) => `
+                        <button type="button" class="seller-chat__tone${state.tone === tone.value ? ' is-active' : ''}" data-seller-chat-tone="${escapeAttr(tone.value)}">
+                          ${escapeHtml(tone.label)}
+                        </button>
+                      `
+                    )
+                    .join('')}
+                </div>
+                <input class="seller-chat__note-input" type="text" value="${escapeAttr(state.toneNote || '')}" placeholder="말투 추가 요청: 예) 너무 딱딱하지 않게" data-seller-chat-tone-note />
+                ${note}
               </div>
-              <input class="seller-chat__note-input" type="text" value="${escapeAttr(state.toneNote || '')}" placeholder="말투 추가 요청: 예) 너무 딱딱하지 않게" data-seller-chat-tone-note />
-              ${note}
-            </div>
-            <div class="seller-chat__thread" data-seller-chat-thread>${renderSellerChatThread(state)}</div>
-            <div data-seller-reply-analysis-slot>${renderSellerReplyAnalysis(state)}</div>
-            <div data-seller-chat-suggestions>${renderSellerChatSuggestions(state)}</div>
-            <div class="seller-chat__chips" data-seller-chat-chips>
-              ${renderSellerChatChips(state)}
-            </div>
-            <form class="seller-chat__form" data-seller-chat-form>
-              <span class="seller-chat__form-label">AI에게 요청할 조건</span>
-              <textarea
-                class="seller-chat__composer"
-                rows="2"
-                placeholder="${escapeAttr(placeholder)}"
-                data-seller-chat-input
-                ${state.status === 'loading' ? 'disabled' : ''}
-              >${escapeHtml(state.input || '')}</textarea>
-              <button type="submit" class="seller-chat__send"${state.status === 'loading' ? ' disabled' : ''}>${escapeHtml(actionLabel)}${state.status === 'loading' ? ' 중...' : ''}</button>
-            </form>
-            <div data-seller-chat-error>${state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : ''}</div>
+              <div data-seller-chat-suggestions>${renderSellerChatSuggestions(state)}</div>
+              <div class="seller-chat__chips" data-seller-chat-chips>
+                ${renderSellerChatChips(state)}
+              </div>
+              <form class="seller-chat__form" data-seller-chat-form>
+                <span class="seller-chat__form-label">AI에게 요청할 조건</span>
+                <textarea
+                  class="seller-chat__composer"
+                  rows="2"
+                  placeholder="${escapeAttr(placeholder)}"
+                  data-seller-chat-input
+                  ${state.status === 'loading' ? 'disabled' : ''}
+                >${escapeHtml(state.input || '')}</textarea>
+                <button type="submit" class="seller-chat__send"${state.status === 'loading' ? ' disabled' : ''}>${escapeHtml(actionLabel)}${state.status === 'loading' ? ' 중...' : ''}</button>
+              </form>
+              <div data-seller-chat-error>${state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : ''}</div>
+            </aside>
           </div>
         </article>
       </div>
@@ -4609,11 +4848,12 @@ function renderProductSummaryBlock(item) {
   const summary = state?.summary;
   const images = productSummaryImages(summary, item);
   const danawaUrl = danawaPriceUrl(summary);
+  const renderKey = productSummaryRenderKey(item);
 
   if (state?.status === 'loading') {
     const loadingHint = '현재 선택한 모델로 제품명·신품 가격 참고자료·대표 이미지를 준비합니다.';
     return `
-      <article class="mini-card mini-card--product mini-card--compact mini-card--loading" data-product-summary>
+      <article class="mini-card mini-card--product mini-card--compact mini-card--loading" data-product-summary data-product-summary-render-key="${escapeAttr(renderKey)}">
         <div class="summary-loading summary-loading--skeleton">
           <div class="ai-loading-copy">
             <p class="mini-value">AI가 제품 정보를 정리하는 중...</p>
@@ -4630,7 +4870,7 @@ function renderProductSummaryBlock(item) {
 
   if (state?.status === 'error') {
     return `
-      <article class="mini-card mini-card--product mini-card--compact" data-product-summary>
+      <article class="mini-card mini-card--product mini-card--compact" data-product-summary data-product-summary-render-key="${escapeAttr(renderKey)}">
         <p class="mini-value">제품 정리를 만들지 못했습니다.</p>
         <p class="mini-muted">${escapeHtml(state.error || 'API 설정 또는 서버 상태를 확인하세요.')}</p>
         <button type="button" class="btn btn-small retry-product-summary-btn">제품 정리 다시 시도</button>
@@ -4639,7 +4879,7 @@ function renderProductSummaryBlock(item) {
   }
 
   return `
-    <article class="mini-card mini-card--product mini-card--compact" data-product-summary>
+    <article class="mini-card mini-card--product mini-card--compact" data-product-summary data-product-summary-render-key="${escapeAttr(renderKey)}">
       <div class="product-summary-layout">
         <div class="product-image-strip">
           ${
@@ -4673,6 +4913,22 @@ function renderProductSummaryBlock(item) {
       <button type="button" class="wrong-product-btn retry-product-summary-btn" title="제품을 다시 식별합니다">이게 아니에요</button>
     </article>
   `;
+}
+
+function productSummaryRenderKey(item) {
+  const state = getProductSummaryState(item);
+  const summary = state?.summary || null;
+  return [
+    summaryKey(item),
+    state?.status || 'idle',
+    state?.error || '',
+    summary?.productName || '',
+    summary?.newPrice || '',
+    summary?.makerOrSeller || '',
+    productSummaryDescription(summary, item),
+    productSummaryImages(summary, item).join('|'),
+    danawaPriceUrl(summary),
+  ].join('::');
 }
 
 function comparisonItems(comps) {
@@ -4749,6 +5005,31 @@ function balancedComparisonItems(scoredItems, limit = 16) {
 
 function comparisonFilterCandidates(item, comps, limit = 16) {
   return balancedComparisonItems(scoreComparisonItems(item, comps), limit);
+}
+
+function fallbackComparisonMatches(item, comps, limit = 8) {
+  const scored = scoreComparisonItems(item, comps);
+  const positive = scored.filter((entry) => entry.score > 0);
+  const source = positive.length ? positive : scored;
+  return balancedComparisonItems(source, limit).map((candidate) => ({
+    key: comparisonItemKey(candidate),
+    same: true,
+    reason: positive.length
+      ? 'AI 확정 매칭이 없어 제목 키워드가 겹치는 후보를 참고용으로 포함했습니다.'
+      : 'AI 확정 매칭이 없어 수집된 검색 후보를 참고용으로 포함했습니다.',
+    fallback: true,
+  }));
+}
+
+// AI가 동일 제품 판별 결과를 내놓지 못했을 때, 수집된 비교 매물을 그대로(필터 없이) 노출한다.
+function allComparisonMatches(item, comps) {
+  const scored = scoreComparisonItems(item, comps);
+  return scored.map((entry) => ({
+    key: comparisonItemKey(entry.candidate),
+    same: true,
+    reason: 'AI 동일 제품 판별 결과가 없어 수집된 비교 매물을 그대로 표시합니다.',
+    fallback: true,
+  }));
 }
 
 function comparisonSignature(comps) {
@@ -4840,8 +5121,9 @@ function purchaseReceiptKey(item, comps) {
   return comparisonFilterKey(item, comps);
 }
 
-function usedPriceGuideKey(item, comps) {
-  return comparisonFilterKey(item, comps);
+function usedPriceGuideKey(item) {
+  const key = summaryKey(item);
+  return key ? `${key}::guide` : '';
 }
 
 function comparisonImageUrl(item) {
@@ -6646,14 +6928,18 @@ function renderCompsBlock(item, comps) {
   const statsTxt = st
     ? `${st.n}건 · 중앙 ${formatWon(st.median)} · ${formatWon(st.min)} ~ ${formatWon(st.max)}`
     : `${allMatched.length}건`;
+  const matchNote = filterState?.fallback
+    ? 'AI 동일 제품 판별 결과가 없어 수집된 비교 매물을 그대로 표시합니다.'
+    : '같은 제품으로 판별된 매물';
+  const listLimit = filterState?.fallback ? Math.max(allMatched.length, 8) : 8;
   const caution =
     '중고 매물 가격은 상태, 구성품, 보증, 판매완료 여부, 지역, 거래조건에 따라 크게 달라집니다. 가품일 가능성도 있으니 표시된 가격은 참고용 가격 자료로만 보고 그대로 믿고 구매 판단하면 안 됩니다.';
   return `
     <div class="comparison-filter-result">
       <div class="comparison-price-layout">
         <div class="comparison-price-list">
-          <p class="meta"><strong>${escapeHtml(statsTxt)}</strong> · 같은 제품으로 판별된 매물</p>
-          ${renderComparisonList(allMatched, 8)}
+          <p class="meta"><strong>${escapeHtml(statsTxt)}</strong> · ${escapeHtml(matchNote)}</p>
+          ${renderComparisonList(allMatched, listLimit)}
           <p class="comparison-caution">${escapeHtml(caution)}</p>
         </div>
         ${renderCurrentListingCompareCard(item)}
@@ -6720,7 +7006,7 @@ function renderUsedPriceGuideBlock(item, comps) {
       <article class="mini-card stage-three-card used-price-guide-card is-loading">
         <p class="stage-two-card-label">중고 시세 참고표</p>
         <h4>번개·중고나라 기반 가격표를 정리하는 중입니다...</h4>
-        <p class="mini-muted">검색 결과와 수집 매물을 함께 보고 상태별 참고가를 만듭니다.</p>
+        <p class="mini-muted">자동 매물검색과는 별개로, 제품 정보를 바탕으로 상태별 참고가를 정리합니다.</p>
         ${renderAiLoadingProgress(loadingState, 'usedPriceGuide')}
         <div class="risk-loader"><span></span><span></span><span></span></div>
       </article>
@@ -6740,7 +7026,7 @@ function renderUsedPriceGuideBlock(item, comps) {
       <article class="mini-card stage-three-card used-price-guide-card is-loading">
         <p class="stage-two-card-label">중고 시세 참고표</p>
         <h4>번개·중고나라 기반 가격표를 정리하는 중입니다...</h4>
-        <p class="mini-muted">검색 결과와 수집 매물을 함께 보고 상태별 참고가를 만듭니다.</p>
+        <p class="mini-muted">자동 매물검색과는 별개로, 제품 정보를 바탕으로 상태별 참고가를 정리합니다.</p>
         ${renderAiLoadingProgress(loadingState, 'usedPriceGuide')}
         <div class="risk-loader"><span></span><span></span><span></span></div>
       </article>
@@ -7742,11 +8028,12 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   stageThreeSearchProgresses.set(key, {
     phase: 'collecting',
     startedAt: Date.now(),
-    durationMs: 22000,
+    durationMs: STAGE_THREE_COLLECTION_TIMEOUT_MS,
     startPercent: 0,
     endPercent: 62,
   });
   comps = collectingComparisonComps(item);
+  armStageThreeHardDeadline(item);
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
   for (const filterKey of [...comparisonFilters.keys()]) {
@@ -7768,6 +8055,8 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
     if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
     else refreshStageThreeSection(item);
   }
+  // 중고 시세 참고표는 자동 매물검색과 완전히 독립된 병렬 작업으로, 검색 탭 결과를 기다리지 않고 바로 시작한다.
+  if (selectedKey === key) void ensureUsedPriceGuide(item);
   if (btn) btn.disabled = true;
   window.postMessage({ type: 'MARKET_SCRAPE_OPEN_SEARCH_TABS', query: queryList[0], queries: queryList }, '*');
   if (btn) {
@@ -7800,6 +8089,14 @@ function resetStageThreeComparisonWork(item, opts = {}) {
   }
   for (const filterKey of [...comparisonFilterTimers]) {
     if (filterKey.startsWith(`${key}::`)) comparisonFilterTimers.delete(filterKey);
+  }
+  // 시세표는 매물 단위 안정 키(`${key}::guide`)로 따로 보관되므로 명시적으로 정리한다.
+  if (opts.clearGuide) {
+    usedPriceGuides.delete(usedPriceGuideKey(item));
+    usedPriceGuideProgresses.delete(key);
+  }
+  if (opts.clearReceipt !== false) {
+    purchaseReceiptsForListingClear(key);
   }
 }
 
@@ -7851,11 +8148,15 @@ function bindStageThreeFlow(root, item) {
   });
 }
 
-function maybeAutoRegenerateStageThreeSearchQueries(item) {
+function maybeAutoRegenerateStageThreeSearchQueries(item, reason = '') {
   const key = summaryKey(item);
   if (!key) return false;
   if (searchQueryRegenerations.get(key)?.status === 'loading') return true;
-  return false;
+  const count = stageThreeAutoQueryRetryCounts.get(key) || 0;
+  if (count >= MAX_STAGE_THREE_AUTO_QUERY_RETRIES) return false;
+  stageThreeAutoQueryRetryCounts.set(key, count + 1);
+  void regenerateStageThreeSearchQueries(item, null, { auto: true, reason });
+  return true;
 }
 
 async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
@@ -7864,6 +8165,11 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
   if (!opts.auto) stageThreeAutoQueryRetryCounts.delete(key);
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchSearchQuery !== 'function') {
+    const fallbackQueries = localStageThreeSearchQueries(item, getProductSummaryState(item)?.summary || null);
+    if (fallbackQueries.length) {
+      openRelatedSearchForItem(item, fallbackQueries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
+      return;
+    }
     searchQueryRegenerations.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
     refreshStageThreeSearchCard(item);
     return;
@@ -7879,10 +8185,15 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
       maxQueries: 3,
       apiKey,
     });
-    const queries = splitSearchQueries(data.queries?.length ? data.queries : data.query);
-    if (!queries.length) throw new Error('새 검색어를 만들지 못했습니다.');
     const current = productSummaries.get(key) || { status: 'done', summary: {} };
     const summary = current.summary || {};
+    const aiQueries = splitSearchQueries(data.queries?.length ? data.queries : data.query);
+    const localQueries = localStageThreeSearchQueries(item, summary);
+    const queries = productSummaryQueries(
+      { ...summary, searchQueries: [...aiQueries.slice(0, 2), ...localQueries, ...aiQueries.slice(2)] },
+      item
+    );
+    if (!queries.length) throw new Error('새 검색어를 만들지 못했습니다.');
     productSummaries.set(key, {
       ...current,
       status: 'done',
@@ -7900,6 +8211,14 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
     refreshStageThreeSearchCard(item);
     openRelatedSearchForItem(item, queries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
   } catch (e) {
+    const fallbackQueries = localStageThreeSearchQueries(item, getProductSummaryState(item)?.summary || null);
+    if (fallbackQueries.length) {
+      searchQueryRegenerations.set(key, { status: 'done', completedAt: Date.now(), fallback: true });
+      refreshStageThreeSearchCard(item);
+      searchQueryRegenerations.delete(key);
+      openRelatedSearchForItem(item, fallbackQueries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
+      return;
+    }
     searchQueryRegenerations.set(key, {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
@@ -7987,12 +8306,12 @@ function usedPriceGuidePayload(item, comps) {
 function bindUsedPriceGuide(root, item) {
   root?.querySelectorAll('[data-used-price-guide]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const key = usedPriceGuideKey(item, comps);
-      if (key) {
-        usedPriceGuides.delete(key);
-        usedPriceGuideProgresses.delete(summaryKey(item));
-        purchaseReceipts.delete(key);
-        purchaseReceiptPrintedKeys.delete(key);
+      const key = usedPriceGuideKey(item);
+      const listingKey = summaryKey(item);
+      if (key) usedPriceGuides.delete(key);
+      if (listingKey) {
+        usedPriceGuideProgresses.delete(listingKey);
+        purchaseReceiptsForListingClear(listingKey);
       }
       void ensureUsedPriceGuide(item, { regenerate: true });
     });
@@ -8266,43 +8585,48 @@ async function submitSellerChat(item, opts = {}) {
 
   try {
     const chatHistory = sellerChatHistoryPayload(state.messages);
+    let replyAnalysisForPrompt = state.replyAnalysis?.status === 'done' && state.replyAnalysis?.text
+      ? {
+          status: state.replyAnalysis.status || 'done',
+          text: state.replyAnalysis.text,
+          source: state.replyAnalysis.source || '',
+        }
+      : null;
     if (asSellerReply && typeof globalThis.UlsaAi?.fetchSellerReplyAnalysis === 'function') {
-      void globalThis.UlsaAi.fetchSellerReplyAnalysis({
-        apiKey,
-        sellerReply: payloadMessage,
-        chatHistory,
-        listing: context.item,
-        summary: context.summary,
-        riskAnalysis: context.riskAnalysis,
-        listingTextAnalysis: context.listingTextAnalysis,
-        listingImageAnalysis: context.listingImageAnalysis,
-        usedPriceGuide: context.usedPriceGuide,
-        receipt: context.receipt,
-        comparison: context.comparison,
-      })
-        .then((analysisData) => {
-          const current = getSellerChatState(item);
-          if (!current || selectedKey !== key) return;
-          const text = stripChatMarkdown(analysisData.analysis || analysisData.replyAnalysis?.analysis || '').trim();
-          current.replyAnalysis = text ? { status: 'done', text, source: payloadMessage } : null;
-          refreshSellerChatDynamic(item, { skipThread: true });
-        })
-        .catch(() => {
-          const current = getSellerChatState(item);
-          if (!current || selectedKey !== key) return;
-          current.replyAnalysis = {
-            status: 'error',
-            text: '판매자 답장 해석을 불러오지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도해 주세요.',
-            source: payloadMessage,
-          };
-          refreshSellerChatDynamic(item, { skipThread: true });
+      try {
+        const analysisData = await globalThis.UlsaAi.fetchSellerReplyAnalysis({
+          apiKey,
+          sellerReply: payloadMessage,
+          chatHistory,
+          listing: context.item,
+          summary: context.summary,
+          riskAnalysis: context.riskAnalysis,
+          listingTextAnalysis: context.listingTextAnalysis,
+          listingImageAnalysis: context.listingImageAnalysis,
+          usedPriceGuide: context.usedPriceGuide,
+          receipt: context.receipt,
+          comparison: context.comparison,
         });
+        const text = stripChatMarkdown(analysisData.analysis || analysisData.replyAnalysis?.analysis || '').trim();
+        state.replyAnalysis = text ? { status: 'done', text, source: payloadMessage } : null;
+        replyAnalysisForPrompt = state.replyAnalysis;
+        refreshSellerChatDynamic(item, { skipThread: true });
+      } catch {
+        state.replyAnalysis = {
+          status: 'error',
+          text: '판매자 답장 해석을 불러오지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도해 주세요.',
+          source: payloadMessage,
+        };
+        replyAnalysisForPrompt = null;
+        refreshSellerChatDynamic(item, { skipThread: true });
+      }
     } else if (asSellerReply) {
       state.replyAnalysis = {
         status: 'error',
         text: '판매자 답장 해석 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.',
         source: payloadMessage,
       };
+      replyAnalysisForPrompt = null;
     }
     const data = await globalThis.UlsaAi.fetchSellerChatAssistant({
       apiKey,
@@ -8312,6 +8636,7 @@ async function submitSellerChat(item, opts = {}) {
       toneNote: state.toneNote,
       message: payloadMessage,
       chatHistory,
+      replyAnalysis: replyAnalysisForPrompt,
       listing: context.item,
       summary: context.summary,
       riskAnalysis: context.riskAnalysis,
@@ -8377,8 +8702,13 @@ function bindSellerChatFlow(root, item) {
       const startKey = target.getAttribute('data-stage-five-start') || key;
       if (!startKey) return;
       stageFiveActiveKeys.add(startKey);
+      stageFiveEnteringKeys.add(startKey);
       playStageStartMotion();
       refreshSellerChatSection(item);
+      window.setTimeout(() => {
+        stageFiveEnteringKeys.delete(startKey);
+        if (selectedKey === startKey) refreshSellerChatSection(item);
+      }, 760);
       return;
     }
     if (target.matches('[data-seller-chat-mode]')) {
@@ -8920,6 +9250,7 @@ async function ensureComparisonFilter(item) {
   }
   const candidates = comparisonFilterCandidates(item, comps);
   if (!candidates.length) {
+    if (maybeAutoRegenerateStageThreeSearchQueries(item, 'empty-candidates')) return;
     await completeStageThreeSearchProgress(item, () => {
       if (selectedKey === currentKey) {
         if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
@@ -8931,10 +9262,16 @@ async function ensureComparisonFilter(item) {
   }
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.filterComparisonListings !== 'function') {
-    comparisonFilters.set(filterKey, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    comparisonFilters.set(filterKey, {
+      status: 'done',
+      matches: allComparisonMatches(item, comps),
+      fallback: true,
+      error: 'AI 설정이 없어 수집된 비교 매물을 그대로 표시합니다.',
+    });
     persistAiCaches();
     if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
     else refreshStageThreeSection(item);
+    if (!isolated) void ensureUsedPriceGuide(item);
     return;
   }
 
@@ -8944,16 +9281,23 @@ async function ensureComparisonFilter(item) {
   else refreshStageThreeSection(item);
   try {
     const summary = getProductSummaryState(item)?.summary || null;
-    const data = await globalThis.UlsaAi.filterComparisonListings({
-      title: item.title || '',
-      body: item.body || '',
-      productName: summary?.productName || fallbackSearchQuery(item),
-      summary,
-      candidates,
-      apiKey,
-    });
+    // AI 동일 제품 판별이 지연되어도 멈추지 않도록 타임아웃을 둔다. 시간 초과면 수집 매물을 그대로 출력.
+    const filterPromise = globalThis.UlsaAi
+      .filterComparisonListings({
+        title: item.title || '',
+        body: item.body || '',
+        productName: summary?.productName || fallbackSearchQuery(item),
+        summary,
+        candidates,
+        apiKey,
+      })
+      .catch((err) => ({ __error: err instanceof Error ? err.message : String(err) }));
+    const data = await Promise.race([
+      filterPromise,
+      waitMs(STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS).then(() => ({ __timedOut: true })),
+    ]);
     if (currentKey && runId !== (stageThreeComparisonRunIds.get(currentKey) || 0)) return;
-    const matches = Array.isArray(data.analysis?.matches) ? data.analysis.matches : [];
+    const matches = data?.__timedOut || !Array.isArray(data.analysis?.matches) ? [] : data.analysis.matches;
     if (matches.length && currentKey) stageThreeAutoQueryRetryCounts.delete(currentKey);
     await completeStageThreeSearchProgress(item, () => {
       if (selectedKey === currentKey) {
@@ -8961,7 +9305,13 @@ async function ensureComparisonFilter(item) {
         else refreshStageThreeSection(item);
       }
     });
-    comparisonFilters.set(filterKey, { status: 'done', matches: matches || [] });
+    // AI가 매칭을 비워서 돌려주면(=응답 없음), 수집된 비교 매물을 그대로 출력한다.
+    const fallbackMatches = matches.length ? [] : allComparisonMatches(item, comps);
+    comparisonFilters.set(filterKey, {
+      status: 'done',
+      matches: matches.length ? matches : fallbackMatches,
+      fallback: !matches.length && fallbackMatches.length > 0,
+    });
     persistAiCaches();
     if (selectedKey === currentKey) {
       if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
@@ -8971,8 +9321,11 @@ async function ensureComparisonFilter(item) {
     return;
   } catch (e) {
     if (currentKey && runId !== (stageThreeComparisonRunIds.get(currentKey) || 0)) return;
+    // AI 호출 실패 시에도 수집된 비교 매물을 그대로 출력한다.
     comparisonFilters.set(filterKey, {
-      status: 'error',
+      status: 'done',
+      matches: allComparisonMatches(item, comps),
+      fallback: true,
       error: e instanceof Error ? e.message : String(e),
     });
     persistAiCaches();
@@ -8984,9 +9337,10 @@ async function ensureComparisonFilter(item) {
 }
 
 async function ensureUsedPriceGuide(item, opts = {}) {
-  const stageComps = effectiveStageThreeComps(item);
-  if (!item || !isStepThreeUnlocked(item) || !stageComps || !isCompsCollected(stageComps)) return;
-  const key = usedPriceGuideKey(item, stageComps);
+  // 중고 시세 참고표는 자동 매물검색(comps 수집)과 완전히 독립적인 병렬 작업이다.
+  // 검색이 멈추거나 늦어져도 영향을 받지 않도록 comps 수집 완료를 기다리지 않는다.
+  if (!item || !isStepThreeUnlocked(item)) return;
+  const key = usedPriceGuideKey(item);
   if (!key) return;
   const listingKey = summaryKey(item);
   const existing = usedPriceGuides.get(key);
@@ -8994,8 +9348,7 @@ async function ensureUsedPriceGuide(item, opts = {}) {
   if (opts.regenerate) {
     usedPriceGuides.delete(key);
     usedPriceGuideProgresses.delete(listingKey);
-    purchaseReceipts.delete(key);
-    purchaseReceiptPrintedKeys.delete(key);
+    purchaseReceiptsForListingClear(listingKey);
     persistAiCaches();
   } else if (isStageThreeCacheSettled(existing?.status)) return;
   if (!opts.regenerate && ensureListingStageCacheAlias(usedPriceGuides, listingKey, key)) {
@@ -9014,14 +9367,15 @@ async function ensureUsedPriceGuide(item, opts = {}) {
     return;
   }
 
-  purchaseReceipts.delete(key);
-  purchaseReceiptPrintedKeys.delete(key);
+  // 호출 시점에 이미 수집된 비교 매물이 있으면 참고용으로 활용하되, 없으면 그냥 진행한다.
+  const collectedComps = effectiveStageThreeComps(item);
+  const payloadComps = collectedComps && isCompsCollected(collectedComps) ? collectedComps : emptyComparisonComps(item);
   usedPriceGuideProgressState(item, 'generating');
   usedPriceGuides.set(key, { status: 'loading', startedAt: Date.now() });
   refreshStageThreeSection(item);
   try {
     const data = await globalThis.UlsaAi.fetchUsedPriceGuide({
-      ...usedPriceGuidePayload(item, stageComps),
+      ...usedPriceGuidePayload(item, payloadComps),
       apiKey,
     });
     await completeUsedPriceGuideProgress(item, () => {
@@ -9175,10 +9529,14 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
     existing?.remove();
     return;
   }
-  if (selector === '[data-stage-two-youtube]' && existing) {
-    destroyStageTwoYoutubePlayers(existing);
-  }
   if (existing) {
+    if (shouldKeepExistingLoadingBlock(existing, html)) {
+      updateAiLoadingProgressNodes('', null, existing);
+      return;
+    }
+    if (selector === '[data-stage-two-youtube]') {
+      destroyStageTwoYoutubePlayers(existing);
+    }
     existing.outerHTML = html;
   } else {
     const before = beforeSelector ? grid.querySelector(beforeSelector) : null;
@@ -9223,6 +9581,18 @@ function refreshStageThreeSection(item) {
   if (existing && existing.dataset.stageThreeRenderKey === renderKey) {
     updateStageSlide();
   } else if (existing) {
+    if (shouldKeepExistingLoadingBlock(existing, html)) {
+      // 같은 종류의 로딩 블록은 유지하되, 다음 단계(AI 판별/시세표) 스케줄은 계속 보장한다.
+      updateAiLoadingProgressNodes('', null, existing);
+      updateStageSlide();
+      if (isStepThreeUnlocked(item)) {
+        scheduleComparisonFilter(item);
+        void ensureUsedPriceGuide(item);
+        if (isStepThreeDone(item)) refreshStageFourSection(item);
+      }
+      refreshDirectAiPanelIfOpen();
+      return;
+    }
     existing.outerHTML = html;
     didReplace = true;
   } else {
@@ -9261,6 +9631,11 @@ function refreshStageFourSection(item) {
     return;
   }
   if (existing) {
+    if (shouldKeepExistingLoadingBlock(existing, html)) {
+      updateAiLoadingProgressNodes('', null, existing);
+      updateStageSlide();
+      return;
+    }
     existing.outerHTML = html;
   } else {
     const stageThree = $current.querySelector('[data-stage-three-panel]');
@@ -9283,6 +9658,11 @@ function refreshStageFiveSection(item) {
     return;
   }
   if (existing) {
+    if (shouldKeepExistingLoadingBlock(existing, html)) {
+      updateAiLoadingProgressNodes('', null, existing);
+      updateStageSlide();
+      return;
+    }
     existing.outerHTML = html;
   } else {
     const stageFour = $current.querySelector('[data-stage-four-panel]');
@@ -9305,7 +9685,12 @@ function refreshStageThreeSearchCard(item) {
     refreshStageThreeSection(item);
     return;
   }
-  current.outerHTML = renderStageThreeSearchCard(item, comps);
+  const html = renderStageThreeSearchCard(item, comps);
+  if (shouldKeepExistingLoadingBlock(current, html)) {
+    updateAiLoadingProgressNodes('', null, current);
+    return;
+  }
+  current.outerHTML = html;
   const updated = $current.querySelector('[data-stage-three-search-card]');
   bindStageThreeFlow(updated, item);
   updateStageSlide();
@@ -9317,7 +9702,13 @@ function refreshStageThreeCompsBlock(item, opts = {}) {
     refreshStageThreeSection(item);
     return;
   }
-  target.innerHTML = renderCompsBlock(item, comps);
+  const html = renderCompsBlock(item, comps);
+  if (shouldKeepExistingLoadingBlock(target, html)) {
+    updateAiLoadingProgressNodes('', null, target);
+    if (opts.schedule !== false) scheduleComparisonFilter(item);
+    return;
+  }
+  target.innerHTML = html;
   updateStageSlide();
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   if (opts.schedule !== false) scheduleComparisonFilter(item);
@@ -9375,8 +9766,20 @@ function refreshProductSummaryBlock(item, opts = {}) {
     return;
   }
   if (refreshProductSummary) {
-    current.outerHTML = renderProductSummaryBlock(item);
+    const productHtml = renderProductSummaryBlock(item);
+    const renderKey = productSummaryRenderKey(item);
+    const shouldSkipProductReplace = current.dataset.productSummaryRenderKey === renderKey && !shouldKeepExistingLoadingBlock(current, productHtml);
+    if (shouldSkipProductReplace) {
+      updateAiLoadingProgressNodes('', null, current);
+    } else if (!shouldKeepExistingLoadingBlock(current, productHtml)) {
+      current.outerHTML = productHtml;
+      const replaced = $current.querySelector('[data-product-summary]');
+      if (replaced) replaced.dataset.productSummaryRenderKey = renderKey;
+    } else {
+      updateAiLoadingProgressNodes('', null, current);
+    }
     const updated = $current.querySelector('[data-product-summary]');
+    if (updated) updated.dataset.productSummaryRenderKey = renderKey;
     bindImageZoom(updated);
     bindScrollText(updated);
     bindProductSummaryRetry(updated, item);
@@ -9387,9 +9790,14 @@ function refreshProductSummaryBlock(item, opts = {}) {
     return;
   }
   const stageTwo = $current.querySelector('[data-stage-two-panel]');
+  const stageTwoHtml = renderStageTwoSection(item);
   if (stageTwo) {
+    if (shouldKeepExistingLoadingBlock(stageTwo, stageTwoHtml)) {
+      updateAiLoadingProgressNodes('', null, stageTwo);
+      return;
+    }
     destroyStageTwoYoutubePlayers(stageTwo);
-    stageTwo.outerHTML = renderStageTwoSection(item);
+    stageTwo.outerHTML = stageTwoHtml;
     bindStageTwoFlow($current, item);
     bindImageAnalysisSlider($current, item);
     bindImageZoom($current);
@@ -9398,9 +9806,8 @@ function refreshProductSummaryBlock(item, opts = {}) {
   } else {
     const stageOne = $current.querySelector('[data-stage-one-zone]');
     const product = $current.querySelector('[data-product-summary]');
-    const html = renderStageTwoSection(item);
-    if (html && stageOne) stageOne.insertAdjacentHTML('afterend', html);
-    else if (html && product) product.insertAdjacentHTML('afterend', html);
+    if (stageTwoHtml && stageOne) stageOne.insertAdjacentHTML('afterend', stageTwoHtml);
+    else if (stageTwoHtml && product) product.insertAdjacentHTML('afterend', stageTwoHtml);
     bindStageTwoFlow($current, item);
     bindImageAnalysisSlider($current, item);
     bindImageZoom($current);

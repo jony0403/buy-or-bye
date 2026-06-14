@@ -4,11 +4,78 @@
   box-sizing: border-box;
 }
 body {
+  position: relative;
   margin: 0;
   font-family: Pretendard, system-ui, -apple-system, sans-serif;
-  background: #f5f3ef;
+  min-height: 100svh;
+  background:
+    linear-gradient(135deg, rgba(255, 247, 237, 0.92), rgba(236, 253, 245, 0.82) 48%, rgba(239, 246, 255, 0.9)),
+    #f5f3ef;
   color: #30343b;
   line-height: 1.5;
+}
+body::before,
+body::after {
+  position: fixed;
+  inset: -18vmax;
+  z-index: 0;
+  pointer-events: none;
+  content: '';
+}
+body::before {
+  opacity: 0.42;
+  filter: blur(0.2px);
+  background:
+    radial-gradient(circle at 12% 24%, rgba(255, 111, 15, 0.11) 0 0.42rem, transparent 0.48rem),
+    radial-gradient(circle at 28% 72%, rgba(20, 184, 166, 0.13) 0 0.34rem, transparent 0.42rem),
+    radial-gradient(circle at 54% 18%, rgba(59, 108, 255, 0.1) 0 0.3rem, transparent 0.38rem),
+    radial-gradient(circle at 78% 62%, rgba(255, 111, 15, 0.09) 0 0.38rem, transparent 0.46rem),
+    radial-gradient(circle at 88% 28%, rgba(20, 184, 166, 0.1) 0 0.28rem, transparent 0.36rem);
+  background-size: 24rem 24rem, 28rem 28rem, 22rem 22rem, 30rem 30rem, 26rem 26rem;
+  animation: ambientParticlesDrift 34s linear infinite;
+}
+body::after {
+  opacity: 0.36;
+  filter: blur(18px);
+  background:
+    radial-gradient(circle at 18% 20%, rgba(20, 184, 166, 0.18) 0 10rem, transparent 14rem),
+    radial-gradient(circle at 76% 18%, rgba(255, 111, 15, 0.12) 0 9rem, transparent 13rem),
+    radial-gradient(circle at 62% 78%, rgba(59, 108, 255, 0.12) 0 10rem, transparent 15rem);
+  animation: ambientGlowFloat 46s ease-in-out infinite alternate;
+}
+#appShell,
+.ai-gate,
+.favorite-compare-modal {
+  position: relative;
+  z-index: 1;
+}
+@keyframes ambientParticlesDrift {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+    background-position: 0 0, 7rem 4rem, 2rem 10rem, 11rem 2rem, 5rem 13rem;
+  }
+  50% {
+    transform: translate3d(-1.6rem, 1.1rem, 0) rotate(0.001turn);
+    background-position: 10rem 7rem, 0 13rem, 12rem 3rem, 1rem 9rem, 14rem 1rem;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+    background-position: 24rem 24rem, 35rem 32rem, 24rem 32rem, 41rem 32rem, 31rem 39rem;
+  }
+}
+@keyframes ambientGlowFloat {
+  from {
+    transform: translate3d(-1.2rem, -0.6rem, 0) scale(1);
+  }
+  to {
+    transform: translate3d(1.4rem, 1rem, 0) scale(1.035);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none !important;
+  }
 }
 body.modal-scroll-locked {
   overflow: hidden;
@@ -13011,9 +13078,1057 @@ body.theme-dark .app-shell .ai-loading-progress__bar i {
   background: linear-gradient(90deg, #ff6f0f 0%, #f59e0b 100%) !important;
   box-shadow: none !important;
 }
+body.theme-dark::before {
+  opacity: 0.18;
+  background:
+    radial-gradient(circle at 12% 24%, rgba(255, 111, 15, 0.28) 0 0.42rem, transparent 0.48rem),
+    radial-gradient(circle at 28% 72%, rgba(20, 184, 166, 0.24) 0 0.34rem, transparent 0.42rem),
+    radial-gradient(circle at 54% 18%, rgba(96, 165, 250, 0.2) 0 0.3rem, transparent 0.38rem),
+    radial-gradient(circle at 78% 62%, rgba(255, 111, 15, 0.18) 0 0.38rem, transparent 0.46rem),
+    radial-gradient(circle at 88% 28%, rgba(20, 184, 166, 0.2) 0 0.28rem, transparent 0.36rem);
+  background-size: 24rem 24rem, 28rem 28rem, 22rem 22rem, 30rem 30rem, 26rem 26rem;
+}
+body.theme-dark::after {
+  opacity: 0.2;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(20, 184, 166, 0.22) 0 10rem, transparent 14rem),
+    radial-gradient(circle at 76% 18%, rgba(255, 111, 15, 0.16) 0 9rem, transparent 13rem),
+    radial-gradient(circle at 62% 78%, rgba(96, 165, 250, 0.16) 0 10rem, transparent 15rem);
+}
 body.theme-dark .app-shell .stage-two-youtube-embed,
 body.theme-dark .app-shell .photo-main,
 body.theme-dark .app-shell .product-summary-img,
 body.theme-dark .app-shell .image-analysis-group__thumb {
   background: #141414 !important;
+}
+
+/* Step 5 redesigned split layout */
+body .app-shell .stage-five-zone::before,
+body .app-shell .stage-five-zone::after {
+  display: none !important;
+  background: none !important;
+}
+
+body .app-shell .stage-five-zone {
+  padding-block: 1rem clamp(2rem, 6vh, 4rem) !important;
+  padding-right: 1.2rem !important;
+}
+
+body .app-shell .stage-five-zone-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-auto-rows: auto !important;
+}
+
+body .app-shell .stage-five-card--split,
+body .app-shell .stage-five-card--split:hover {
+  grid-column: 1 / -1 !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+body .app-shell .seller-chat__workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(360px, 1.05fr);
+  gap: clamp(0.9rem, 2vw, 1.35rem);
+  align-items: start;
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+body .app-shell .seller-chat__left-pane,
+body .app-shell .seller-chat__right-pane {
+  min-width: 0;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+}
+
+body .app-shell .seller-chat__left-pane {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: min(720px, calc(100svh - 8rem));
+  min-height: 560px;
+  overflow: hidden;
+}
+
+body .app-shell .seller-chat__right-pane {
+  display: grid;
+  align-content: start;
+  gap: 0.78rem;
+  padding: 0.95rem;
+}
+
+body .app-shell .seller-chat__phone-head {
+  min-height: 4.15rem !important;
+  padding: 0.82rem 0.9rem !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07) !important;
+}
+
+body .app-shell .seller-chat__title strong {
+  color: #0f172a !important;
+  font-size: 0.94rem !important;
+  letter-spacing: -0.02em;
+}
+
+body .app-shell .seller-chat__title span {
+  color: #64748b !important;
+}
+
+body .app-shell .seller-chat__context {
+  margin: 0 !important;
+  padding: 0.82rem 0.95rem !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06) !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+body .app-shell .seller-chat__avatar {
+  background: linear-gradient(135deg, #ff7a1a, #f59e0b) !important;
+  color: #fff !important;
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.22);
+}
+
+body .app-shell .seller-chat__thread {
+  align-content: end !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 1rem !important;
+  overflow: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96)) !important;
+}
+
+body .app-shell .seller-chat__thread::before,
+body .app-shell .seller-chat__thread::after {
+  display: none !important;
+  content: none !important;
+}
+
+body .app-shell .seller-chat__bubble {
+  border: 1px solid rgba(15, 23, 42, 0.07) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08) !important;
+}
+
+body .app-shell .seller-chat__bubble--seller,
+body .app-shell .seller-chat__bubble--assistant {
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+
+body .app-shell .seller-chat__bubble--me {
+  background: linear-gradient(135deg, #ff7a1a, #ff9f43) !important;
+  color: #ffffff !important;
+}
+
+body .app-shell .seller-chat__side-section,
+body .app-shell .seller-chat__reply-insight,
+body .app-shell .seller-chat__suggestions,
+body .app-shell .seller-chat__empty-reply,
+body .app-shell .seller-chat__form {
+  border: 1px solid rgba(15, 23, 42, 0.07) !important;
+  border-radius: 22px !important;
+  background: #ffffff !important;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.07) !important;
+}
+
+body .app-shell .seller-chat__side-section {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.82rem;
+}
+
+body .app-shell .seller-chat__side-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+body .app-shell .seller-chat__side-head .material-symbols-rounded {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  background: rgba(20, 184, 166, 0.1);
+  color: #0f766e;
+  font-size: 1.15rem;
+}
+
+body .app-shell .seller-chat__side-head strong,
+body .app-shell .seller-chat__suggestions-head strong,
+body .app-shell .seller-chat__reply-insight strong {
+  color: #0f172a !important;
+  font-size: 0.86rem;
+  font-weight: 950;
+}
+
+body .app-shell .seller-chat__side-head p,
+body .app-shell .seller-chat__suggestions-head span,
+body .app-shell .seller-chat__reply-insight p,
+body .app-shell .seller-chat__side-empty {
+  margin: 0.12rem 0 0 !important;
+  color: #64748b !important;
+  font-size: 0.74rem !important;
+  line-height: 1.45;
+}
+
+body .app-shell .seller-chat__checklist {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body .app-shell .seller-chat__checklist > .material-symbols-rounded,
+body .app-shell .seller-chat__checklist > strong {
+  display: none !important;
+}
+
+body .app-shell .seller-chat__checklist div {
+  display: grid !important;
+  gap: 0.42rem !important;
+}
+
+body .app-shell .seller-chat__checklist span:not(.material-symbols-rounded) {
+  display: block !important;
+  padding: 0.58rem 0.65rem !important;
+  border: 1px solid rgba(20, 184, 166, 0.12) !important;
+  border-radius: 16px !important;
+  background: rgba(20, 184, 166, 0.06) !important;
+  color: #0f766e !important;
+  font-size: 0.75rem !important;
+  font-weight: 850 !important;
+}
+
+body .app-shell .seller-chat__reply-insight {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 0.65rem !important;
+  padding: 0.82rem !important;
+}
+
+body .app-shell .seller-chat__reply-insight .material-symbols-rounded {
+  color: #2563eb !important;
+  background: rgba(37, 99, 235, 0.09) !important;
+  border-radius: 14px !important;
+  padding: 0.42rem !important;
+}
+
+body .app-shell .seller-chat__tone-row,
+body .app-shell .seller-chat__chips {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 0.42rem !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: transparent !important;
+}
+
+body .app-shell .seller-chat__tone,
+body .app-shell .seller-chat__chip {
+  min-height: 2.05rem !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  border-radius: 999px !important;
+  background: #f8fafc !important;
+  color: #334155 !important;
+  box-shadow: none !important;
+}
+
+body .app-shell .seller-chat__tone.is-active,
+body .app-shell .seller-chat__chip:hover {
+  border-color: rgba(255, 111, 15, 0.26) !important;
+  background: rgba(255, 111, 15, 0.1) !important;
+  color: #c2410c !important;
+}
+
+body .app-shell .seller-chat__note-input,
+body .app-shell .seller-chat__composer {
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  border-radius: 18px !important;
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+body .app-shell .seller-chat__suggestions {
+  display: grid !important;
+  gap: 0.62rem !important;
+  padding: 0.82rem !important;
+}
+
+body .app-shell .seller-chat__suggestion-card {
+  border: 1px solid rgba(15, 23, 42, 0.07) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #ffffff, #f8fafc) !important;
+  box-shadow: none !important;
+}
+
+body .app-shell .seller-chat__suggestion-card:hover,
+body .app-shell .seller-chat__suggestion-card:focus-visible {
+  border-color: rgba(255, 111, 15, 0.24) !important;
+  box-shadow: 0 14px 30px rgba(255, 111, 15, 0.12) !important;
+  transform: translateY(-1px) !important;
+}
+
+body .app-shell .seller-chat__form {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: end !important;
+  gap: 0.55rem !important;
+  padding: 0.82rem !important;
+}
+
+body .app-shell .seller-chat__form-label {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+  color: #64748b !important;
+}
+
+body .app-shell .seller-chat__send,
+body .app-shell .seller-chat__send--reply {
+  border: 0 !important;
+  border-radius: 18px !important;
+  background: linear-gradient(135deg, #ff6f0f, #f59e0b) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(245, 158, 11, 0.22) !important;
+}
+
+body .app-shell .seller-chat__empty-reply {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 0.5rem !important;
+  margin-top: 0.8rem !important;
+  padding: 0.72rem !important;
+}
+
+body .app-shell .seller-chat__empty-reply .seller-chat__form-label {
+  grid-column: 1 / -1;
+}
+
+body .app-shell .seller-chat__reply-dock {
+  padding: 0.72rem 0.86rem 0.86rem !important;
+  border-top: 1px solid rgba(15, 23, 42, 0.07) !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+}
+
+body .app-shell .seller-chat__reply-dock .seller-chat__empty-reply {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: end !important;
+  gap: 0.5rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body .app-shell .seller-chat__reply-dock .seller-chat__form-label {
+  grid-column: 1 / -1;
+  margin: 0 0 0.18rem !important;
+  padding-left: 0.12rem;
+}
+
+body .app-shell .seller-chat__reply-dock .seller-chat__composer--reply {
+  min-height: 2.5rem !important;
+  max-height: 5.5rem !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+}
+
+@media (max-width: 920px) {
+  body .app-shell .seller-chat__workspace {
+    grid-template-columns: 1fr;
+  }
+
+  body .app-shell .seller-chat__left-pane {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    height: min(640px, 72svh);
+    min-height: 460px;
+  }
+}
+
+body.theme-dark .app-shell .seller-chat__left-pane,
+body.theme-dark .app-shell .seller-chat__right-pane,
+body.theme-dark .app-shell .seller-chat__side-section,
+body.theme-dark .app-shell .seller-chat__reply-insight,
+body.theme-dark .app-shell .seller-chat__suggestions,
+body.theme-dark .app-shell .seller-chat__empty-reply,
+body.theme-dark .app-shell .seller-chat__form {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: #181818 !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .seller-chat__phone-head,
+body.theme-dark .app-shell .seller-chat__context,
+body.theme-dark .app-shell .seller-chat__thread {
+  background: #141414 !important;
+}
+
+/* Step 5: show only after receipt print, then animate in from CTA */
+body .app-shell .stage-five-zone.is-active:has(.stage-five-start-card) .stage-five-zone-grid {
+  isolation: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body .app-shell .stage-five-zone.is-active:has(.stage-five-start-card) .stage-five-zone-grid::before,
+body .app-shell .stage-five-zone.is-active:has(.stage-five-start-card) .stage-five-zone-grid::after,
+body .app-shell .stage-five-panel .seller-chat__workspace::before,
+body .app-shell .stage-five-panel .seller-chat__workspace::after,
+body .app-shell .stage-five-panel .seller-chat__left-pane::before,
+body .app-shell .stage-five-panel .seller-chat__left-pane::after,
+body .app-shell .stage-five-panel .seller-chat__phone::before,
+body .app-shell .stage-five-panel .seller-chat__phone::after,
+body .app-shell .stage-five-panel .seller-chat__thread::before,
+body .app-shell .stage-five-panel .seller-chat__thread::after {
+  display: none !important;
+  content: none !important;
+  background: none !important;
+}
+
+body .app-shell .stage-five-panel .seller-chat__left-pane,
+body .app-shell .stage-five-panel .seller-chat__thread {
+  background-image: none !important;
+}
+
+body .app-shell .stage-five-panel .seller-chat__thread {
+  background: #f4faf8 !important;
+}
+
+body .app-shell .stage-five-card--split.is-stage-five-entering {
+  animation: stageFiveCtaEnter 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+body .app-shell .stage-five-card--split.is-stage-five-entering .seller-chat__left-pane {
+  animation: stageFivePaneEnter 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+body .app-shell .stage-five-card--split.is-stage-five-entering .seller-chat__right-pane {
+  animation: stageFivePaneEnter 700ms cubic-bezier(0.16, 1, 0.3, 1) 70ms both;
+}
+
+/* Absolute final override: Step 5 chat background must not have circle decorations. */
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread,
+body .app-shell .stage-five-card--split .seller-chat__thread,
+body .app-shell .stage-five-panel .seller-chat__thread {
+  background: #f4faf8 !important;
+  background-image: none !important;
+}
+
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread::before,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__thread::after,
+body .app-shell .stage-five-card--split .seller-chat__thread::before,
+body .app-shell .stage-five-card--split .seller-chat__thread::after,
+body .app-shell .stage-five-panel .seller-chat__thread::before,
+body .app-shell .stage-five-panel .seller-chat__thread::after {
+  display: none !important;
+  content: none !important;
+  background: none !important;
+  background-image: none !important;
+}
+
+/* Visible ambient page background + dark-mode polish. Keep this near EOF so older overrides cannot hide it. */
+#appShell {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(135deg, rgba(255, 247, 237, 0.78), rgba(236, 253, 245, 0.66) 46%, rgba(239, 246, 255, 0.72)) !important;
+}
+
+#appShell::before,
+#appShell::after {
+  position: fixed;
+  inset: -18vmax;
+  z-index: 0;
+  pointer-events: none;
+  content: '';
+}
+
+#appShell > :not(#btnDirectAi):not(#directAiPanel):not(#recentDrawer):not(#drawerBackdrop):not(#favoriteCompareModal):not(#lightbox) {
+  position: relative;
+  z-index: 1;
+}
+
+#appShell::before {
+  opacity: 0.58;
+  background:
+    radial-gradient(circle at 12% 24%, rgba(255, 111, 15, 0.14) 0 0.42rem, transparent 0.5rem),
+    radial-gradient(circle at 28% 72%, rgba(20, 184, 166, 0.16) 0 0.34rem, transparent 0.44rem),
+    radial-gradient(circle at 54% 18%, rgba(59, 108, 255, 0.12) 0 0.3rem, transparent 0.4rem),
+    radial-gradient(circle at 78% 62%, rgba(255, 111, 15, 0.12) 0 0.38rem, transparent 0.48rem),
+    radial-gradient(circle at 88% 28%, rgba(20, 184, 166, 0.13) 0 0.28rem, transparent 0.38rem);
+  background-size: 24rem 24rem, 28rem 28rem, 22rem 22rem, 30rem 30rem, 26rem 26rem;
+  animation: ambientParticlesDrift 34s linear infinite;
+}
+
+#appShell::after {
+  opacity: 0.5;
+  filter: blur(20px);
+  background:
+    radial-gradient(circle at 18% 20%, rgba(20, 184, 166, 0.16) 0 10rem, transparent 14rem),
+    radial-gradient(circle at 76% 18%, rgba(255, 111, 15, 0.11) 0 9rem, transparent 13rem),
+    radial-gradient(circle at 62% 78%, rgba(59, 108, 255, 0.1) 0 10rem, transparent 15rem);
+  animation: ambientGlowFloat 46s ease-in-out infinite alternate;
+}
+
+body.theme-dark {
+  --dark-bg: #0b1018;
+  --dark-surface: #151b26;
+  --dark-surface-2: #1b2330;
+  --dark-surface-3: #202a38;
+  --dark-border: rgba(148, 163, 184, 0.18);
+  --dark-text: #f1f5f9;
+  --dark-muted: #a8b3c4;
+  --dark-soft: rgba(20, 184, 166, 0.12);
+  --dark-accent: #2dd4bf;
+  --dark-orange: #fb923c;
+  background: #0b1018 !important;
+}
+
+body.theme-dark #appShell {
+  background:
+    linear-gradient(135deg, #0b1018 0%, #101826 48%, #0c121d 100%) !important;
+}
+
+body.theme-dark #appShell::before {
+  opacity: 0.32;
+  background:
+    radial-gradient(circle at 12% 24%, rgba(251, 146, 60, 0.22) 0 0.42rem, transparent 0.5rem),
+    radial-gradient(circle at 28% 72%, rgba(45, 212, 191, 0.22) 0 0.34rem, transparent 0.44rem),
+    radial-gradient(circle at 54% 18%, rgba(96, 165, 250, 0.18) 0 0.3rem, transparent 0.4rem),
+    radial-gradient(circle at 78% 62%, rgba(251, 146, 60, 0.16) 0 0.38rem, transparent 0.48rem),
+    radial-gradient(circle at 88% 28%, rgba(45, 212, 191, 0.18) 0 0.28rem, transparent 0.38rem);
+  background-size: 24rem 24rem, 28rem 28rem, 22rem 22rem, 30rem 30rem, 26rem 26rem;
+}
+
+body.theme-dark #appShell::after {
+  opacity: 0.34;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(45, 212, 191, 0.2) 0 10rem, transparent 14rem),
+    radial-gradient(circle at 76% 18%, rgba(251, 146, 60, 0.14) 0 9rem, transparent 13rem),
+    radial-gradient(circle at 62% 78%, rgba(96, 165, 250, 0.14) 0 10rem, transparent 15rem);
+}
+
+body.theme-dark .app-shell .stage-zone::before {
+  border: 1px solid var(--dark-border) !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34) !important;
+  backdrop-filter: blur(14px);
+}
+
+body.theme-dark .app-shell .mini-card,
+body.theme-dark .app-shell .stage-two-card,
+body.theme-dark .app-shell .stage-two-risk-card,
+body.theme-dark .app-shell .stage-three-card,
+body.theme-dark .app-shell .current-price-card,
+body.theme-dark .app-shell .comparison-filter-result,
+body.theme-dark .app-shell .comparison-price-list,
+body.theme-dark .app-shell .used-price-guide-card,
+body.theme-dark .app-shell .purchase-receipt-card:not(.stage-start-card),
+body.theme-dark .app-shell .seller-chat__left-pane,
+body.theme-dark .app-shell .seller-chat__right-pane,
+body.theme-dark .app-shell .seller-chat__side-section,
+body.theme-dark .app-shell .seller-chat__suggestions,
+body.theme-dark .app-shell .seller-chat__reply-insight,
+body.theme-dark .app-shell .seller-chat__form,
+body.theme-dark .app-shell .seller-chat__empty-reply {
+  border-color: var(--dark-border) !important;
+  background: rgba(21, 27, 38, 0.94) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28) !important;
+}
+
+body.theme-dark .app-shell .comparison-caution {
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+  border-radius: 18px !important;
+  background: rgba(148, 163, 184, 0.11) !important;
+  color: #cbd5e1 !important;
+}
+
+body.theme-dark .app-shell .stage-three-actions .chip-btn,
+body.theme-dark .app-shell .stage-three-actions .chip-btn--ghost,
+body.theme-dark .app-shell .stage-three-actions .price-source-link,
+body.theme-dark .app-shell .chip-btn:not(.direct-chat-command-chip) {
+  border: 1px solid rgba(45, 212, 191, 0.22) !important;
+  background: rgba(45, 212, 191, 0.14) !important;
+  color: #b9fff6 !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .stage-three-actions .chip-btn:hover,
+body.theme-dark .app-shell .stage-three-actions .chip-btn--ghost:hover,
+body.theme-dark .app-shell .stage-three-actions .price-source-link:hover,
+body.theme-dark .app-shell .chip-btn:not(.direct-chat-command-chip):hover {
+  background: rgba(45, 212, 191, 0.24) !important;
+  color: #ffffff !important;
+}
+
+body.theme-dark .app-shell .stage-three-actions .chip-btn *,
+body.theme-dark .app-shell .stage-three-actions .chip-btn--ghost *,
+body.theme-dark .app-shell .stage-three-actions .price-source-link *,
+body.theme-dark .app-shell .chip-btn:not(.direct-chat-command-chip) * {
+  color: inherit !important;
+}
+
+body.theme-dark .app-shell .current-price-card__placeholder,
+body.theme-dark .app-shell .product-image-placeholder,
+body.theme-dark .app-shell .photo-main,
+body.theme-dark .app-shell .stage-two-youtube-embed,
+body.theme-dark .app-shell .image-analysis-group__thumb {
+  background: #0f172a !important;
+  color: var(--dark-muted) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__thread {
+  background: #101826 !important;
+  background-image: none !important;
+}
+
+body.theme-dark .app-shell .seller-chat__phone-head,
+body.theme-dark .app-shell .seller-chat__context,
+body.theme-dark .app-shell .seller-chat__reply-dock {
+  border-color: var(--dark-border) !important;
+  background: #151b26 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__bubble--seller,
+body.theme-dark .app-shell .seller-chat__bubble--assistant {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  background: #1b2330 !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell input,
+body.theme-dark .app-shell textarea,
+body.theme-dark .app-shell select {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: #0f172a !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell input::placeholder,
+body.theme-dark .app-shell textarea::placeholder {
+  color: #718096 !important;
+}
+
+body.theme-dark .app-shell h1,
+body.theme-dark .app-shell h2,
+body.theme-dark .app-shell h3,
+body.theme-dark .app-shell h4,
+body.theme-dark .app-shell strong,
+body.theme-dark .app-shell .item-title,
+body.theme-dark .app-shell .price,
+body.theme-dark .app-shell .mini-value,
+body.theme-dark .app-shell .block-label {
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell p,
+body.theme-dark .app-shell .meta,
+body.theme-dark .app-shell .mini-muted,
+body.theme-dark .app-shell .hist-meta,
+body.theme-dark .sub {
+  color: var(--dark-muted) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #appShell::before,
+  #appShell::after {
+    animation: none !important;
+  }
+}
+
+/* Step 5 dark-mode color correction: neutral panels, no blue wash, consistent teal actions. */
+body.theme-dark .app-shell .stage-five-zone::before {
+  border-color: rgba(148, 163, 184, 0.14) !important;
+  background: rgba(10, 14, 20, 0.78) !important;
+}
+
+body.theme-dark .app-shell .stage-five-card--split,
+body.theme-dark .app-shell .stage-five-card--split:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .seller-chat__left-pane,
+body.theme-dark .app-shell .seller-chat__right-pane {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  background: #111820 !important;
+  color: #eef4f8 !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__left-pane {
+  background: #101720 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__phone-head,
+body.theme-dark .app-shell .seller-chat__context,
+body.theme-dark .app-shell .seller-chat__reply-dock {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: #151d27 !important;
+  color: #eef4f8 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__thread {
+  background: #101720 !important;
+  background-image: none !important;
+}
+
+body.theme-dark .app-shell .seller-chat__title strong,
+body.theme-dark .app-shell .seller-chat__seller strong,
+body.theme-dark .app-shell .seller-chat__side-head strong,
+body.theme-dark .app-shell .seller-chat__suggestions-head strong,
+body.theme-dark .app-shell .seller-chat__reply-insight strong {
+  color: #f8fafc !important;
+}
+
+body.theme-dark .app-shell .seller-chat__title span,
+body.theme-dark .app-shell .seller-chat__seller p,
+body.theme-dark .app-shell .seller-chat__side-head p,
+body.theme-dark .app-shell .seller-chat__suggestions-head span,
+body.theme-dark .app-shell .seller-chat__reply-insight p {
+  color: #9aa8b8 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__bubble--assistant,
+body.theme-dark .app-shell .seller-chat__bubble--seller {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: #1a2430 !important;
+  color: #e5edf5 !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__bubble--me {
+  border-color: rgba(45, 212, 191, 0.34) !important;
+  background: linear-gradient(135deg, #0f766e, #14b8a6) !important;
+  color: #f8fffd !important;
+  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.18) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__reply-dock .seller-chat__empty-reply,
+body.theme-dark .app-shell .seller-chat__empty-reply {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .seller-chat__reply-dock .seller-chat__composer--reply,
+body.theme-dark .app-shell .seller-chat__note-input,
+body.theme-dark .app-shell .seller-chat__composer {
+  border-color: rgba(148, 163, 184, 0.2) !important;
+  background: #0c121a !important;
+  color: #eef4f8 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__reply-dock .seller-chat__composer--reply::placeholder,
+body.theme-dark .app-shell .seller-chat__note-input::placeholder,
+body.theme-dark .app-shell .seller-chat__composer::placeholder {
+  color: #738196 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__side-section,
+body.theme-dark .app-shell .seller-chat__reply-insight,
+body.theme-dark .app-shell .seller-chat__suggestions,
+body.theme-dark .app-shell .seller-chat__form {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: #151d27 !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__side-section--checklist,
+body.theme-dark .app-shell .seller-chat__side-section:has(.seller-chat__checklist) {
+  background: #141f24 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__side-head .material-symbols-rounded,
+body.theme-dark .app-shell .seller-chat__reply-insight .material-symbols-rounded {
+  background: rgba(45, 212, 191, 0.12) !important;
+  color: #5eead4 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__checklist span:not(.material-symbols-rounded) {
+  border-color: rgba(45, 212, 191, 0.18) !important;
+  background: rgba(45, 212, 191, 0.1) !important;
+  color: #c7fff7 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__tone,
+body.theme-dark .app-shell .seller-chat__chip {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: #202a38 !important;
+  color: #cbd5e1 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__tone.is-active,
+body.theme-dark .app-shell .seller-chat__chip:hover {
+  border-color: rgba(45, 212, 191, 0.36) !important;
+  background: rgba(45, 212, 191, 0.18) !important;
+  color: #e6fffb !important;
+}
+
+body.theme-dark .app-shell .seller-chat__suggestion-card {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: #1a2430 !important;
+  color: #eef4f8 !important;
+}
+
+body.theme-dark .app-shell .seller-chat__suggestion-card:hover,
+body.theme-dark .app-shell .seller-chat__suggestion-card:focus-visible {
+  border-color: rgba(45, 212, 191, 0.32) !important;
+  box-shadow: 0 16px 34px rgba(20, 184, 166, 0.12) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__send,
+body.theme-dark .app-shell .seller-chat__send--reply,
+body.theme-dark .app-shell .seller-chat__regen {
+  border: 0 !important;
+  background: linear-gradient(135deg, #14b8a6, #2dd4bf) !important;
+  color: #06231f !important;
+  box-shadow: 0 12px 24px rgba(20, 184, 166, 0.18) !important;
+}
+
+body.theme-dark .app-shell .seller-chat__send:hover,
+body.theme-dark .app-shell .seller-chat__send--reply:hover,
+body.theme-dark .app-shell .seller-chat__regen:hover {
+  filter: brightness(1.06);
+}
+
+/* Direct AI must stay fixed; ambient background z-index rules must not pull it into layout. */
+body .app-shell #btnDirectAi.direct-chat-fab {
+  position: fixed !important;
+  right: calc(1.15rem + env(safe-area-inset-right)) !important;
+  bottom: calc(1.2rem + env(safe-area-inset-bottom)) !important;
+  left: auto !important;
+  top: auto !important;
+  z-index: 235 !important;
+}
+
+body .app-shell #btnDirectAi.direct-chat-fab.is-active {
+  right: calc(1.35rem + env(safe-area-inset-right)) !important;
+  bottom: calc(1.35rem + env(safe-area-inset-bottom)) !important;
+  z-index: 233 !important;
+}
+
+body .app-shell #directAiPanel.direct-chat-popover {
+  position: fixed !important;
+  top: max(0.75rem, env(safe-area-inset-top)) !important;
+  right: calc(1.15rem + env(safe-area-inset-right)) !important;
+  bottom: calc(4.9rem + env(safe-area-inset-bottom)) !important;
+  left: auto !important;
+  z-index: 234 !important;
+}
+
+/* Recent drawer must float beside the rail, independent of page scroll. */
+body .app-shell #recentDrawer.recent-drawer {
+  position: fixed !important;
+  top: max(0.75rem, env(safe-area-inset-top)) !important;
+  bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+  left: calc(5.85rem + env(safe-area-inset-left)) !important;
+  right: auto !important;
+  z-index: 220 !important;
+  width: min(24rem, calc(100vw - 7.4rem)) !important;
+  height: auto !important;
+  max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  overflow: auto !important;
+  transform: translate3d(-1rem, 0, 0) scale(0.985) !important;
+  opacity: 0 !important;
+  border: 1px solid rgba(231, 226, 220, 0.9) !important;
+  border-radius: 26px !important;
+  box-shadow: 0 24px 70px rgba(17, 24, 39, 0.18) !important;
+  transition: opacity 180ms ease, transform 180ms ease !important;
+}
+
+body .app-shell #recentDrawer.recent-drawer.open {
+  transform: translate3d(0, 0, 0) scale(1) !important;
+  opacity: 1 !important;
+}
+
+body .app-shell #drawerBackdrop.drawer-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 210 !important;
+}
+
+body.theme-dark .app-shell #recentDrawer.recent-drawer {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  background: rgba(21, 27, 38, 0.96) !important;
+  color: var(--dark-text) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42) !important;
+}
+
+body.theme-dark .app-shell #recentDrawer .history button {
+  border-color: rgba(148, 163, 184, 0.18) !important;
+  background: #111827 !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell #recentDrawer .history button:hover,
+body.theme-dark .app-shell #recentDrawer .history button.active {
+  border-color: rgba(45, 212, 191, 0.32) !important;
+  background: #1b2330 !important;
+}
+
+@media (max-width: 760px) {
+  body .app-shell #recentDrawer.recent-drawer {
+    top: 0.75rem !important;
+    right: 0.75rem !important;
+    bottom: 0.75rem !important;
+    left: 0.75rem !important;
+    width: auto !important;
+  }
+}
+
+/* Final performance/color pass: lightweight aurora background, no circle particles. */
+body::before,
+body::after {
+  display: none !important;
+  animation: none !important;
+}
+
+#appShell::before {
+  inset: -24vmax !important;
+  opacity: 0.38 !important;
+  filter: none !important;
+  background:
+    linear-gradient(115deg, transparent 0 18%, rgba(20, 184, 166, 0.13) 28%, transparent 42%),
+    linear-gradient(72deg, transparent 0 34%, rgba(255, 111, 15, 0.1) 48%, transparent 62%),
+    linear-gradient(155deg, transparent 0 44%, rgba(59, 108, 255, 0.1) 58%, transparent 74%) !important;
+  background-size: auto !important;
+  will-change: transform;
+  animation: ambientAuroraDrift 38s ease-in-out infinite alternate !important;
+}
+
+#appShell::after {
+  inset: 0 !important;
+  opacity: 0.16 !important;
+  filter: none !important;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 18px) !important;
+  will-change: auto;
+  animation: none !important;
+}
+
+body.theme-dark #appShell::before {
+  opacity: 0.24 !important;
+  background:
+    linear-gradient(115deg, transparent 0 18%, rgba(45, 212, 191, 0.18) 28%, transparent 42%),
+    linear-gradient(72deg, transparent 0 34%, rgba(251, 146, 60, 0.12) 48%, transparent 62%),
+    linear-gradient(155deg, transparent 0 44%, rgba(96, 165, 250, 0.12) 58%, transparent 74%) !important;
+}
+
+body.theme-dark #appShell::after {
+  opacity: 0.08 !important;
+  background:
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 20px) !important;
+}
+
+@keyframes ambientAuroraDrift {
+  from {
+    transform: translate3d(-3.5rem, -1.5rem, 0) rotate(-1deg);
+  }
+  to {
+    transform: translate3d(3rem, 1.4rem, 0) rotate(1deg);
+  }
+}
+
+body.theme-dark .app-shell .seller-chat__side-section--checklist,
+body.theme-dark .app-shell .seller-chat__side-section:has(.seller-chat__checklist) {
+  background: #151d27 !important;
+  background-image: none !important;
+}
+
+body.theme-dark .app-shell .seller-chat__checklist,
+body.theme-dark .app-shell .seller-chat__checklist div {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+body.theme-dark .app-shell .seller-chat__checklist span:not(.material-symbols-rounded) {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: #202a38 !important;
+  color: #dbeafe !important;
+}
+
+body.theme-dark .app-shell .badge.bunjang {
+  background: rgba(248, 113, 113, 0.14) !important;
+  color: #fecaca !important;
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.28) !important;
+}
+
+/* Keep Step 4 stage background on the same neutral glass panel as the other stages. */
+body .app-shell .stage-four-zone::before {
+  border: 1px solid rgba(15, 23, 42, 0.06) !important;
+  background: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 20px 60px rgba(17, 24, 39, 0.06) !important;
+  backdrop-filter: blur(10px);
+}
+
+body.theme-dark .app-shell .stage-four-zone::before {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34) !important;
+}
+
+/* YouTube cards have dense text; scaling the whole card makes text rasterization look blurry. */
+body .app-shell .stage-two-youtube-item,
+body .app-shell .stage-two-youtube-card {
+  transform: none !important;
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+body .app-shell .stage-two-youtube-item:hover,
+body .app-shell .stage-two-youtube-card:hover {
+  transform: translate3d(0, -2px, 0) !important;
+  box-shadow: 0 18px 42px rgba(17, 24, 39, 0.1) !important;
+}
+
+body .app-shell .stage-two-youtube-item:hover *,
+body .app-shell .stage-two-youtube-card:hover * {
+  filter: none !important;
+  text-shadow: none !important;
+}
+
+@keyframes stageFiveCtaEnter {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes stageFivePaneEnter {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

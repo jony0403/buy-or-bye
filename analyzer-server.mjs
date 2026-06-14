@@ -2076,6 +2076,7 @@ function buildSellerChatAssistantPrompt(payload) {
     toneNote: String(payload.toneNote || '').trim() || '(없음)',
     userText: String(payload.message || payload.userText || '').trim() || '(없음)',
     chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
+    replyAnalysisJson: JSON.stringify(payload.replyAnalysis || null),
     listingJson: JSON.stringify(payload.listing || null),
     summaryJson: JSON.stringify(payload.summary || null),
     riskAnalysisJson: JSON.stringify(payload.riskAnalysis || null),

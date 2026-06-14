@@ -713,13 +713,13 @@
     if (flags.at && Date.now() - flags.at > 3 * 60 * 1000) return;
 
     let items = [];
-    const firstWaitMs = ad.id === 'daangn' ? 3500 : 2000;
-    const retryWaitMs = ad.id === 'daangn' ? 2000 : 1500;
-    for (let i = 0; i < 5; i += 1) {
+    const firstWaitMs = ad.id === 'daangn' ? 1800 : 1000;
+    const retryWaitMs = ad.id === 'daangn' ? 900 : 700;
+    for (let i = 0; i < 3; i += 1) {
       await new Promise((r) => setTimeout(r, i === 0 ? firstWaitMs : retryWaitMs));
       items = ad.harvestSearchListings();
       const withImage = items.filter((item) => item.imageUrl).length;
-      if (items.length && (ad.id !== 'daangn' || withImage > 0 || i >= 4)) break;
+      if (items.length && (ad.id !== 'daangn' || withImage > 0 || i >= 2)) break;
     }
     const q =
       new URL(location.href).searchParams.get('q') ||
