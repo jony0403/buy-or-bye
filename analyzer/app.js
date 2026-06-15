@@ -1192,9 +1192,15 @@ function maybeMarkStageTwoComplete(item) {
 function ensureCachedStageTwoFollowups(item) {
   const key = summaryKey(item);
   if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
+  ensureStageTwoFollowups(item);
+}
+
+function ensureStageTwoFollowups(item) {
+  const key = summaryKey(item);
+  if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
   void ensureProductRiskYoutube(item);
-  void ensureListingTextAnalysis(item);
-  void ensureListingImageAnalysis(item);
+  void ensureListingTextAnalysis(item, { skipFollowups: true });
+  void ensureListingImageAnalysis(item, { skipFollowups: true });
   void ensureAccessoryCheck(item);
 }
 
@@ -3030,7 +3036,7 @@ const DIRECT_AI_ACTIONS = [
     async run(item) {
       invalidateAnalysisPart(item, 'listingText');
       if (selectedKey === summaryKey(item)) refreshListingTextAnalysisCard(item);
-      await ensureListingTextAnalysis(item);
+      await ensureListingTextAnalysis(item, { skipFollowups: true });
       refreshDirectAiPanelIfOpen();
       return { message: '판매글 분석을 다시 생성합니다.' };
     },
@@ -3051,7 +3057,7 @@ const DIRECT_AI_ACTIONS = [
     async run(item) {
       invalidateAnalysisPart(item, 'listingImage');
       if (selectedKey === summaryKey(item)) refreshListingImageAnalysisCard(item);
-      await ensureListingImageAnalysis(item);
+      await ensureListingImageAnalysis(item, { skipFollowups: true });
       refreshDirectAiPanelIfOpen();
       return { message: '판매자 이미지 분석을 다시 생성합니다.' };
     },
@@ -10847,9 +10853,7 @@ async function ensureProductRisk(item) {
   const existing = productRiskAnalyses.get(key);
   if (existing?.status === 'loading') return;
   if (existing?.status === 'done') {
-    void ensureProductRiskYoutube(item);
-    void ensureListingTextAnalysis(item);
-    void ensureListingImageAnalysis(item);
+    ensureStageTwoFollowups(item);
     return;
   }
 
@@ -10902,9 +10906,7 @@ async function ensureProductRisk(item) {
     refreshProductSummaryBlock(item);
   }
   if (productRiskAnalyses.get(key)?.status === 'done') {
-    void ensureProductRiskYoutube(item);
-    void ensureListingTextAnalysis(item);
-    void ensureListingImageAnalysis(item);
+    ensureStageTwoFollowups(item);
   }
 }
 
@@ -10974,20 +10976,20 @@ async function ensureProductRiskYoutube(item) {
   if (selectedKey === key) refreshProductRiskYoutubeCard(item);
 }
 
-async function ensureListingTextAnalysis(item) {
+async function ensureListingTextAnalysis(item, opts = {}) {
   const key = summaryKey(item);
   if (!key) return;
   const existing = listingTextAnalyses.get(key);
   if (existing?.status === 'loading') return;
   if (existing?.status === 'done' && existing.source === 'ai' && hasListingTextAnalysisContent(existing.analysis)) {
-    void ensureAccessoryCheck(item);
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
   if (existing?.status === 'done') listingTextAnalyses.delete(key);
 
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchListingTextAnalysis !== 'function') {
-    void ensureAccessoryCheck(item);
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
 
@@ -11029,7 +11031,6 @@ async function ensureListingTextAnalysis(item) {
     }, 'listingText');
     persistAiCaches();
     if (selectedKey === key) {
-      playAiResultMotion();
       refreshListingTextAnalysisCard(item);
     }
   } catch (e) {
@@ -11040,18 +11041,13 @@ async function ensureListingTextAnalysis(item) {
   } finally {
     aiScope.release();
   }
-  void ensureAccessoryCheck(item);
+  if (!opts.skipFollowups) ensureStageTwoFollowups(item);
 }
 
 async function ensureAccessoryCheck(item) {
   const key = summaryKey(item);
   if (!key) return;
   if (productRiskAnalyses.get(key)?.status !== 'done') return;
-  const textState = listingTextAnalyses.get(key);
-  const imageState = listingImageAnalyses.get(key);
-  const textSettled = !textState || textState.status === 'done' || textState.status === 'error';
-  const imageSettled = imageState?.status === 'done' || imageState?.status === 'error';
-  if (!textSettled || !imageSettled) return;
 
   const existing = accessoryChecks.get(key);
   if (existing?.status === 'loading') return;
@@ -11107,7 +11103,6 @@ async function ensureAccessoryCheck(item) {
     invalidatePurchaseReceiptCaches(item);
     persistAiCaches();
     if (selectedKey === key) {
-      playAiResultMotion();
       refreshAccessoryCheckCard(item);
     }
   } catch (e) {
@@ -11123,7 +11118,7 @@ async function ensureAccessoryCheck(item) {
   }
 }
 
-async function ensureListingImageAnalysis(item) {
+async function ensureListingImageAnalysis(item, opts = {}) {
   const key = summaryKey(item);
   if (!key) return;
   const existing = listingImageAnalyses.get(key);
@@ -11133,7 +11128,7 @@ async function ensureListingImageAnalysis(item) {
       refreshListingImageAnalysisCard(item);
       previewListingImageAnalysis(item);
     }
-    void ensureAccessoryCheck(item);
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
   if (existing?.status === 'done') listingImageAnalyses.delete(key);
@@ -11141,8 +11136,8 @@ async function ensureListingImageAnalysis(item) {
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchListingImageAnalysis !== 'function') {
     listingImageAnalyses.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
-    if (selectedKey === key) refreshProductSummaryBlock(item);
-    void ensureAccessoryCheck(item);
+    if (selectedKey === key) refreshListingImageAnalysisCard(item);
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
 
@@ -11154,7 +11149,7 @@ async function ensureListingImageAnalysis(item) {
     });
     persistAiCaches();
     if (selectedKey === key) refreshListingImageAnalysisCard(item);
-    void ensureAccessoryCheck(item);
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
 
@@ -11183,7 +11178,6 @@ async function ensureListingImageAnalysis(item) {
     }, 'listingImage');
     persistAiCaches();
     if (selectedKey === key) {
-      playAiResultMotion();
       refreshListingImageAnalysisCard(item);
       previewListingImageAnalysis(item, { allowScroll: true });
     }
@@ -11198,7 +11192,7 @@ async function ensureListingImageAnalysis(item) {
   } finally {
     aiScope.release();
   }
-  void ensureAccessoryCheck(item);
+  if (!opts.skipFollowups) ensureStageTwoFollowups(item);
 }
 
 function applyPayload(payload, opts = {}) {

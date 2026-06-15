@@ -1,5 +1,7 @@
+역할:
 중고 매물 데이터를 종합하여 "최종 판단 영수증"을 JSON으로 작성하십시오.
 
+입력:
 현재 매물: {{currentJson}}
 제품 요약: {{summaryJson}}
 이슈/고질병: {{riskAnalysisJson}}
@@ -8,7 +10,7 @@
 구성품 체크: {{accessoryCheckJson}}
 중고 가이드: {{usedPriceGuideJson}}
 
-출력: JSON 객체 하나만 반환. 설명 금지.
+출력 형식: JSON 객체 하나만 반환. 설명 금지.
 
 {
   "verdict": "buy|negotiate|hold|pass",
@@ -24,6 +26,7 @@
   "disclaimer": "AI 참고용 의견임을 명시"
 }
 
+처리 기준:
 - 가격은 가이드의 상태별 가격표를 우선 참고.
 - 근거 부족 시 가격 필드는 "확인 어려움"으로 표기.
 - 2단계 리스크는 확정 하자가 아닌 체크리스트로 취급.

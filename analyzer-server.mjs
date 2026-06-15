@@ -1772,7 +1772,9 @@ async function runProductIdentify(apiKey, model, title, body, inlineParts) {
 async function runProductInfoLookup(apiKey, model, productName) {
   const name = String(productName || '').trim();
   if (!name) return '';
-  const prompt = renderPrompt(PROMPTS.productInfoLookup, { productName: name });
+  const prompt = renderPrompt(PROMPTS.productInfoLookup, {
+    productName: name,
+  });
   return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
     useGoogleSearch: true,
     temperature: 0.15,

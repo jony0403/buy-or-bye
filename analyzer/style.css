@@ -4346,6 +4346,11 @@ body {
   background: var(--stage-soft);
   color: var(--stage-accent-strong);
 }
+.listing-head .badge {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
 .app-shell--slide[data-stage-slide-index="0"] .product-summary-text {
   grid-template-rows: auto minmax(76px, auto);
   overflow: visible;

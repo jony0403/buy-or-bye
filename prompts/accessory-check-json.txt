@@ -1,5 +1,7 @@
+역할:
 조사 메모와 판매글·사진 분석을 대조해 구성품 체크 결과를 JSON으로 만드세요.
 
+입력:
 제품명: {{productName}}
 조사 메모:
 {{researchText}}
@@ -13,7 +15,7 @@
 본문 분석(JSON): {{listingTextAnalysisJson}}
 사진 분석(JSON): {{listingImageAnalysisJson}}
 
-규칙:
+처리 기준:
 - items[].status 값은 아래 중 하나만 사용하세요.
   - confirmed: 해당 구성품이 포함되어 있다고 본문에 명시되었거나 사진에 보인다고 실제로 확인됨
   - body_only: 본문에는 포함/구성이라고 명시되었지만 사진으로는 확인 안 됨
@@ -34,6 +36,7 @@
 - summary: 1~2문장, 존댓말
 - items는 3~8개, 중요한 required 항목을 우선 포함하세요.
 
+출력 형식:
 반드시 JSON만 출력하세요:
 {
   "summary": "충전기는 사진에서 확인되지 않아 거래 전 확인이 필요합니다.",
