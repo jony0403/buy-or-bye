@@ -14165,3 +14165,470 @@ body .app-shell .stage-two-youtube-card:hover .stage-two-youtube-open {
     transform: translateY(0);
   }
 }
+
+/* Final neutral dark pass: keep dark mode charcoal/gray, not navy. */
+body.theme-dark {
+  --dark-bg: #101010;
+  --dark-bg-soft: #141414;
+  --dark-panel: #181818;
+  --dark-panel-2: #1f1f1f;
+  --dark-panel-3: #242424;
+  --dark-line: rgba(255, 255, 255, 0.1);
+  --dark-line-soft: rgba(255, 255, 255, 0.07);
+  --dark-text: #f2f2f2;
+  --dark-muted: #ababab;
+  --modern-bg: var(--dark-bg) !important;
+  --modern-surface: var(--dark-panel) !important;
+  --modern-shadow: 0 18px 48px rgba(0, 0, 0, 0.38) !important;
+  --modern-shadow-hover: 0 22px 58px rgba(0, 0, 0, 0.48) !important;
+  --clean-shadow: var(--modern-shadow) !important;
+  --clean-shadow-hover: var(--modern-shadow-hover) !important;
+  background: #101010 !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark #appShell {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.055), transparent 34rem),
+    linear-gradient(180deg, #111 0%, #0f0f0f 100%) !important;
+}
+
+body.theme-dark #appShell::before,
+body.theme-dark #appShell::after {
+  opacity: 0 !important;
+  background: none !important;
+  animation: none !important;
+}
+
+body.theme-dark .top,
+body.theme-dark .brand,
+body.theme-dark .url-import,
+body.theme-dark .top-actions,
+body.theme-dark .stage-slide-controls {
+  border-color: var(--dark-line-soft) !important;
+  background: rgba(20, 20, 20, 0.92) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28) !important;
+}
+
+body.theme-dark .app-shell .stage-zone::before,
+body.theme-dark .app-shell .stage-four-zone::before,
+body.theme-dark .app-shell .stage-five-zone::before {
+  border-color: var(--dark-line-soft) !important;
+  background: rgba(18, 18, 18, 0.88) !important;
+  background-image: none !important;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.34) !important;
+}
+
+body.theme-dark .app-shell .stage-zone-label {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell .mini-card,
+body.theme-dark .app-shell .mini-card--product,
+body.theme-dark .app-shell .stage-two-card,
+body.theme-dark .app-shell .stage-two-risk-card,
+body.theme-dark .app-shell .stage-three-card,
+body.theme-dark .app-shell .stage-two-mini,
+body.theme-dark .app-shell .stage-two-youtube-card,
+body.theme-dark .app-shell .image-analysis-group,
+body.theme-dark .app-shell .used-price-guide-card,
+body.theme-dark .app-shell .comparison-price-table-wrap,
+body.theme-dark .app-shell .comparison-filter-result,
+body.theme-dark .app-shell .current-price-card,
+body.theme-dark .app-shell .listing-image-card,
+body.theme-dark .app-shell .listing-image-panel,
+body.theme-dark .app-shell .listing-image-carousel,
+body.theme-dark .app-shell .seller-chat__phone,
+body.theme-dark .app-shell .seller-chat__thread,
+body.theme-dark .app-shell .purchase-receipt-card:not(.stage-start-card):not(:has(.purchase-receipt-paper)) {
+  border-color: var(--dark-line-soft) !important;
+  background: var(--dark-panel) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28) !important;
+}
+
+body.theme-dark .app-shell .mini-card--accent,
+body.theme-dark .app-shell .mini-card--hero,
+body.theme-dark .app-shell .stage-two-card--listing-text,
+body.theme-dark .app-shell .stage-two-card--image-analysis,
+body.theme-dark .app-shell .stage-two-card--youtube,
+body.theme-dark .app-shell .stage-two-youtube-list,
+body.theme-dark .app-shell .product-summary-layout,
+body.theme-dark .app-shell .listing-cluster,
+body.theme-dark .app-shell .image-gallery,
+body.theme-dark .app-shell .image-gallery-main,
+body.theme-dark .app-shell .image-gallery-viewport,
+body.theme-dark .app-shell .image-gallery-thumbs {
+  border-color: var(--dark-line-soft) !important;
+  background: var(--dark-panel-2) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell .stage-two-mini,
+body.theme-dark .app-shell .stage-two-card--listing-text .stage-two-mini,
+body.theme-dark .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini,
+body.theme-dark .app-shell .seller-chat__side-section,
+body.theme-dark .app-shell .seller-chat__checklist span:not(.material-symbols-rounded) {
+  border-color: var(--dark-line-soft) !important;
+  background: var(--dark-panel-2) !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell .url-import__input,
+body.theme-dark .app-shell textarea,
+body.theme-dark .app-shell input,
+body.theme-dark .app-shell select,
+body.theme-dark .app-shell .ai-gate__input,
+body.theme-dark .app-shell .ai-gate__select,
+body.theme-dark .app-shell .direct-chat-form textarea {
+  border-color: var(--dark-line) !important;
+  background: #151515 !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell .product-desc,
+body.theme-dark .app-shell .mini-muted,
+body.theme-dark .app-shell .listing-mini-meta,
+body.theme-dark .app-shell .listing-footer,
+body.theme-dark .app-shell .stage-two-verdict,
+body.theme-dark .app-shell .stage-two-youtube-insight,
+body.theme-dark .app-shell .sub,
+body.theme-dark .app-shell .empty-sub {
+  color: var(--dark-muted) !important;
+}
+
+body.theme-dark .app-shell h1,
+body.theme-dark .app-shell h2,
+body.theme-dark .app-shell h3,
+body.theme-dark .app-shell .item-title,
+body.theme-dark .app-shell .price,
+body.theme-dark .app-shell .mini-value,
+body.theme-dark .app-shell .stage-two-card-title,
+body.theme-dark .app-shell .stage-two-youtube-title {
+  color: var(--dark-text) !important;
+}
+
+body.theme-dark .app-shell .dashboard-rail,
+body.theme-dark .app-shell .dashboard-rail-panel,
+body.theme-dark .app-shell #recentDrawer.recent-drawer,
+body.theme-dark .app-shell #directAiPanel.direct-chat-popover,
+body.theme-dark .app-shell .direct-chat-card {
+  border-color: var(--dark-line-soft) !important;
+  background: #181818 !important;
+  background-image: none !important;
+  color: var(--dark-text) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4) !important;
+}
+
+body.theme-dark .app-shell .chip-btn:not(.direct-chat-command-chip),
+body.theme-dark .app-shell .image-refresh-btn,
+body.theme-dark .app-shell .wrong-product-btn,
+body.theme-dark .app-shell .icon-btn,
+body.theme-dark .app-shell .btn-secondary {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: #232323 !important;
+  background-image: none !important;
+  color: #f0f0f0 !important;
+}
+
+body.theme-dark .app-shell .chip-btn:not(.direct-chat-command-chip):hover,
+body.theme-dark .app-shell .image-refresh-btn:hover,
+body.theme-dark .app-shell .wrong-product-btn:hover,
+body.theme-dark .app-shell .icon-btn:hover,
+body.theme-dark .app-shell .btn-secondary:hover {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  background: #2b2b2b !important;
+  color: #fff !important;
+}
+
+/* Loading states: no nested boxes or visible skeleton borders in dark mode. */
+body.theme-dark .app-shell .stage-two-risk-card.is-loading,
+body.theme-dark .app-shell .stage-two-card.is-loading,
+body.theme-dark .app-shell .mini-card--loading,
+body.theme-dark .app-shell .mini-card--product.mini-card--loading,
+body.theme-dark .app-shell .stage-three-card.is-loading,
+body.theme-dark .app-shell .purchase-receipt-card.is-loading {
+  border-color: var(--dark-line-soft) !important;
+  background: #1a1a1a !important;
+  background-image: none !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24) !important;
+}
+
+body.theme-dark .app-shell .stage-two-risk-card.is-loading .stage-two-card-head,
+body.theme-dark .app-shell .stage-two-card.is-loading .stage-two-card-head,
+body.theme-dark .app-shell .mini-card--loading > *,
+body.theme-dark .app-shell .summary-loading,
+body.theme-dark .app-shell .summary-loading--skeleton,
+body.theme-dark .app-shell .comparison-loading,
+body.theme-dark .app-shell .risk-loader {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .risk-loader span,
+body.theme-dark .app-shell .skeleton-line,
+body.theme-dark .app-shell .seller-chat__skeleton-line,
+body.theme-dark .app-shell .ai-loading-progress__bar {
+  border: 0 !important;
+  outline: 0 !important;
+  background: #2c2c2c !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .risk-loader span::before,
+body.theme-dark .app-shell .risk-loader span::after,
+body.theme-dark .app-shell .skeleton-line::before,
+body.theme-dark .app-shell .skeleton-line::after,
+body.theme-dark .app-shell .seller-chat__skeleton-line::before,
+body.theme-dark .app-shell .seller-chat__skeleton-line::after {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Dark mode background cleanup: remove the large wrapper panels behind cards. */
+body.theme-dark .app-shell .stage-zone,
+body.theme-dark .app-shell .stage-zone.is-active,
+body.theme-dark .app-shell .stage-one-zone,
+body.theme-dark .app-shell .stage-two-zone,
+body.theme-dark .app-shell .stage-three-zone,
+body.theme-dark .app-shell .stage-four-zone,
+body.theme-dark .app-shell .stage-five-zone {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .stage-zone::before,
+body.theme-dark .app-shell .stage-zone::after,
+body.theme-dark .app-shell .stage-one-zone::before,
+body.theme-dark .app-shell .stage-one-zone::after,
+body.theme-dark .app-shell .stage-two-zone::before,
+body.theme-dark .app-shell .stage-two-zone::after,
+body.theme-dark .app-shell .stage-three-zone::before,
+body.theme-dark .app-shell .stage-three-zone::after,
+body.theme-dark .app-shell .stage-four-zone::before,
+body.theme-dark .app-shell .stage-four-zone::after,
+body.theme-dark .app-shell .stage-five-zone::before,
+body.theme-dark .app-shell .stage-five-zone::after {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+body.theme-dark .app-shell .listing-cluster:has(.stage-zone),
+body.theme-dark .app-shell .stage-zone-grid,
+body.theme-dark .app-shell .stage-one-zone .stage-zone-grid,
+body.theme-dark .app-shell .stage-two-zone .stage-zone-grid,
+body.theme-dark .app-shell .stage-three-zone .stage-zone-grid,
+body.theme-dark .app-shell .stage-four-zone .stage-zone-grid,
+body.theme-dark .app-shell .stage-five-zone .stage-zone-grid {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* Prevent browser caret browsing from drawing a text cursor on non-input UI. */
+body,
+#appShell,
+#appShell *:not(input):not(textarea):not(select):not([contenteditable="true"]):not([contenteditable=""]) {
+  caret-color: transparent;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable=""] {
+  caret-color: auto;
+}
+
+/* Direct AI dark mode: one readable neutral surface with no split-color bands. */
+body.theme-dark .app-shell #directAiPanel.direct-chat-popover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-card {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: #181818 !important;
+  background-image: none !important;
+  color: #f3f3f3 !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.46) !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-head,
+body.theme-dark .app-shell #directAiPanel .direct-chat-commands,
+body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions,
+body.theme-dark .app-shell #directAiPanel .direct-chat-log,
+body.theme-dark .app-shell #directAiPanel .direct-chat-form {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: #181818 !important;
+  background-image: none !important;
+  color: #f3f3f3 !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-log {
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-head h3,
+body.theme-dark .app-shell #directAiPanel .direct-chat-empty strong {
+  color: #f5f5f5 !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-head span:not(.material-symbols-rounded),
+body.theme-dark .app-shell #directAiPanel .direct-chat-commands > span,
+body.theme-dark .app-shell #directAiPanel .direct-chat-suggestion-group > span,
+body.theme-dark .app-shell #directAiPanel .direct-chat-empty,
+body.theme-dark .app-shell #directAiPanel .direct-chat-empty p,
+body.theme-dark .app-shell #directAiPanel .direct-chat-msg span {
+  color: #b5b5b5 !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-empty,
+body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions p,
+body.theme-dark .app-shell #directAiPanel .direct-chat-msg--ai p,
+body.theme-dark .app-shell #directAiPanel .direct-chat-msg--loading p {
+  border: 0 !important;
+  background: #222 !important;
+  background-image: none !important;
+  color: #e8e8e8 !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-msg--user p {
+  background: #ea6b16 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-actions .chip-btn,
+body.theme-dark .app-shell #directAiPanel .direct-chat-command-chip,
+body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: #2a2a2a !important;
+  color: #f2f2f2 !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-actions .chip-btn:hover,
+body.theme-dark .app-shell #directAiPanel .direct-chat-command-chip:hover,
+body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button:hover {
+  background: #333 !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-form textarea {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: #101010 !important;
+  color: #f2f2f2 !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-form textarea::placeholder {
+  color: #8e8e8e !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-form textarea:focus {
+  border-color: rgba(255, 111, 15, 0.5) !important;
+  box-shadow: 0 0 0 3px rgba(255, 111, 15, 0.12) !important;
+}
+
+body.theme-dark .app-shell #directAiPanel .direct-chat-form .btn {
+  background: #7c3aed !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+/* Empty dark screen should not show a separate black slab behind the Step label. */
+body.theme-dark .app-shell.is-empty-state,
+body.theme-dark .app-shell.is-empty-state .analysis-board,
+body.theme-dark .app-shell.is-empty-state .listing-cluster,
+body.theme-dark .app-shell.is-empty-state .stage-zone,
+body.theme-dark .app-shell.is-empty-state .stage-zone-grid {
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* Absolute final dark background normalization: remove gradient/content edge seams. */
+html.theme-dark,
+html.theme-dark body,
+body.theme-dark,
+body.theme-dark #appShell,
+body.theme-dark .app-shell,
+body.theme-dark .analysis-board,
+body.theme-dark .listing-cluster,
+body.theme-dark #current,
+body.theme-dark main,
+body.theme-dark .app-shell.is-empty-state,
+body.theme-dark .app-shell.is-empty-state .analysis-board,
+body.theme-dark .app-shell.is-empty-state .listing-cluster {
+  background: #101010 !important;
+  background-color: #101010 !important;
+  background-image: none !important;
+}
+
+html.theme-dark::before,
+html.theme-dark::after,
+body.theme-dark::before,
+body.theme-dark::after,
+body.theme-dark #appShell::before,
+body.theme-dark #appShell::after,
+body.theme-dark .app-shell::before,
+body.theme-dark .app-shell::after,
+body.theme-dark .analysis-board::before,
+body.theme-dark .analysis-board::after,
+body.theme-dark .listing-cluster::before,
+body.theme-dark .listing-cluster::after,
+body.theme-dark #current::before,
+body.theme-dark #current::after {
+  opacity: 0 !important;
+  display: none !important;
+  content: none !important;
+  border: 0 !important;
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  animation: none !important;
+}
+
+body.theme-dark .app-shell .stage-zone,
+body.theme-dark .app-shell .stage-zone.is-active,
+body.theme-dark .app-shell .stage-zone-grid,
+body.theme-dark .app-shell .stage-one-zone,
+body.theme-dark .app-shell .stage-two-zone,
+body.theme-dark .app-shell .stage-three-zone,
+body.theme-dark .app-shell .stage-four-zone,
+body.theme-dark .app-shell .stage-five-zone,
+body.theme-dark .app-shell .stage-one-zone.is-active,
+body.theme-dark .app-shell .stage-two-zone.is-active,
+body.theme-dark .app-shell .stage-three-zone.is-active,
+body.theme-dark .app-shell .stage-four-zone.is-active,
+body.theme-dark .app-shell .stage-five-zone.is-active {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
