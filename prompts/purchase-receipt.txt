@@ -5,6 +5,7 @@
 이슈/고질병: {{riskAnalysisJson}}
 본문 분석: {{listingTextAnalysisJson}}
 사진 분석: {{listingImageAnalysisJson}}
+구성품 체크: {{accessoryCheckJson}}
 중고 가이드: {{usedPriceGuideJson}}
 
 출력: JSON 객체 하나만 반환. 설명 금지.
@@ -26,3 +27,4 @@
 - 가격은 가이드의 상태별 가격표를 우선 참고.
 - 근거 부족 시 가격 필드는 "확인 어려움"으로 표기.
 - 2단계 리스크는 확정 하자가 아닌 체크리스트로 취급.
+- 구성품 체크에서 판매자가 없다고 밝힌 항목이나 본문·사진 모두에서 확인 불가한 missing_or_unconfirmed 항목은 cautions에 반영하세요. body_only는 본문상 포함 확인으로 보고, 필요하면 "사진으로는 추가 확인 필요" 정도로만 약하게 언급하세요.

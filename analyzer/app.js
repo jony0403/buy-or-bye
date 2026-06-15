@@ -16,6 +16,7 @@ const $urlImportForm = document.getElementById('urlImportForm');
 const $urlImportInput = document.getElementById('urlImportInput');
 const $urlImportStatus = document.getElementById('urlImportStatus');
 const $btnUrlImport = document.getElementById('btnUrlImport');
+const $autoRunToggle = document.getElementById('autoRunToggle');
 const $dashboardRail = document.querySelector('.dashboard-rail');
 const $railPanel = document.querySelector('[data-rail-panel]');
 const $shortcutPanel = document.querySelector('[data-shortcut-panel]');
@@ -56,6 +57,7 @@ const productRiskAnalyses = new Map();
 const productRiskYoutubeAnalyses = new Map();
 const listingTextAnalyses = new Map();
 const listingImageAnalyses = new Map();
+const accessoryChecks = new Map();
 const comparisonFilters = new Map();
 const comparisonFilterTimers = new Set();
 const stageThreeComparisonSkippedKeys = new Set();
@@ -85,11 +87,8 @@ const sellerChatStates = new Map();
 const favoriteListingKeys = new Set();
 const sellerChatToneOptions = [
   { value: 'polite', label: '공손하게' },
-  { value: 'warm', label: '부드럽게' },
-  { value: 'friendly', label: '넵!! 밝게^^' },
+  { value: 'friendly', label: '밝게' },
   { value: 'firm', label: '단호하게' },
-  { value: 'short', label: '짧게' },
-  { value: 'negotiate', label: '가격협상' },
 ];
 const APP_SHORTCUT_GROUPS = [
   {
@@ -140,6 +139,7 @@ let stageSlideAnimationTimer = 0;
 let stageStartMotionTimer = 0;
 let aiResultMotionTimer = 0;
 let sellerChatToastTimer = 0;
+let autoRunTimer = 0;
 let favoriteCompareOpen = false;
 let lastStageThreeCompsRenderKey = '';
 let activeAiRunId = 0;
@@ -155,6 +155,7 @@ const LISTING_IMAGE_OVERLAY_VERSION = 25;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
+const AUTO_RUN_STORAGE_KEY = 'ulsa_auto_run_next_steps';
 const FAVORITE_LISTINGS_STORAGE_KEY = 'ulsa_favorite_listing_keys_v1';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v3',
@@ -331,6 +332,7 @@ function persistAiCaches() {
         productRiskYoutubeAnalyses: mapToPersistableObject(productRiskYoutubeAnalyses),
         listingTextAnalyses: mapToPersistableObject(listingTextAnalyses),
         listingImageAnalyses: mapToPersistableObject(listingImageAnalyses),
+        accessoryChecks: mapToPersistableObject(accessoryChecks),
         comparisonFilters: mapToPersistableObject(comparisonFilters),
         stageThreeComparisonSkippedKeys: setToPersistableArray(stageThreeComparisonSkippedKeys),
         usedPriceGuides: mapToPersistableObject(usedPriceGuides),
@@ -360,6 +362,7 @@ function loadAiCaches() {
         parsed.listingImageAnalyses,
         (state) => state?.status !== 'done' || Number(state.overlayVersion) >= LISTING_IMAGE_OVERLAY_VERSION
       );
+      restorePersistedMap(accessoryChecks, parsed.accessoryChecks);
       restorePersistedMap(comparisonFilters, parsed.comparisonFilters);
       restorePersistedSet(stageThreeComparisonSkippedKeys, parsed.stageThreeComparisonSkippedKeys);
       restorePersistedMap(usedPriceGuides, parsed.usedPriceGuides);
@@ -408,6 +411,7 @@ function persistFavoriteListings() {
 
 loadFavoriteListings();
 setLayoutMode(readLayoutMode(), { persist: false });
+setAutoRunMode(readAutoRunMode(), { persist: false });
 
 function readLayoutMode() {
   try {
@@ -439,6 +443,35 @@ function setLayoutMode(mode, opts = {}) {
   updateRailLayoutToggle();
   updateStageSlide();
   requestAnimationFrame(() => bindScrollText($current));
+}
+
+function readAutoRunMode() {
+  try {
+    return localStorage.getItem(AUTO_RUN_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function isAutoRunEnabled() {
+  return Boolean($autoRunToggle?.checked);
+}
+
+function setAutoRunMode(enabled, opts = {}) {
+  const on = enabled === true;
+  if ($autoRunToggle) {
+    $autoRunToggle.checked = on;
+    $autoRunToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  $appShell?.classList.toggle('is-auto-run-enabled', on);
+  if (opts.persist !== false) {
+    try {
+      localStorage.setItem(AUTO_RUN_STORAGE_KEY, on ? '1' : '0');
+    } catch {
+      /* localStorage may be unavailable */
+    }
+  }
+  if (on) scheduleAutoRunNextStep();
 }
 
 function storedThemeMode() {
@@ -507,6 +540,7 @@ const AI_LOADING_DURATIONS = {
   productRiskYoutube: 30000,
   listingText: 7000,
   listingImage: 18000,
+  accessoryCheck: 24000,
   searchQuery: 8000,
   comparisonFilter: 11000,
   usedPriceGuide: 9000,
@@ -635,6 +669,7 @@ function hasVisibleAiLoading(item = currentRenderedItem()) {
       productRiskYoutubeAnalyses.get(key)?.status === 'loading' ||
       listingTextAnalyses.get(key)?.status === 'loading' ||
       listingImageAnalyses.get(key)?.status === 'loading' ||
+      accessoryChecks.get(key)?.status === 'loading' ||
       searchQueryRegenerations.get(key)?.status === 'loading' ||
       (filterKey && comparisonFilters.get(filterKey)?.status === 'loading') ||
       (filterKey && usedPriceGuides.get(filterKey)?.status === 'loading') ||
@@ -825,7 +860,8 @@ function refreshVisibleAiLoadingCards(item = currentRenderedItem()) {
     productSummaries.get(key)?.status === 'loading' ||
     productRiskAnalyses.get(key)?.status === 'loading' ||
     listingTextAnalyses.get(key)?.status === 'loading' ||
-    listingImageAnalyses.get(key)?.status === 'loading'
+    listingImageAnalyses.get(key)?.status === 'loading' ||
+    accessoryChecks.get(key)?.status === 'loading'
   ) {
     updateAiLoadingProgressNodes();
     refreshed = true;
@@ -1003,7 +1039,9 @@ function isStepTwoFlowComplete(item) {
   const imageState = listingImageAnalyses.get(key);
   const textSettled = !textState || textState.status === 'done' || textState.status === 'error';
   const imageSettled = imageState?.status === 'done' || imageState?.status === 'error';
-  return Boolean(riskDone && textSettled && imageSettled);
+  const accessoryState = accessoryChecks.get(key);
+  const accessorySettled = !accessoryState || accessoryState.status === 'done' || accessoryState.status === 'error';
+  return Boolean(riskDone && textSettled && imageSettled && accessorySettled);
 }
 
 function isStepTwoDone(item) {
@@ -1157,6 +1195,7 @@ function ensureCachedStageTwoFollowups(item) {
   void ensureProductRiskYoutube(item);
   void ensureListingTextAnalysis(item);
   void ensureListingImageAnalysis(item);
+  void ensureAccessoryCheck(item);
 }
 
 function syncStagePanels(item) {
@@ -1191,6 +1230,7 @@ function updateStageSlide() {
     stageSlideIndex -= 1;
   }
   $appShell?.setAttribute('data-stage-slide-index', String(stageSlideIndex));
+  scheduleAutoRunNextStep();
   const controls = $current?.querySelector('[data-stage-slide-controls]');
   if (!controls) return;
   const prev = controls.querySelector('[data-stage-slide-prev]');
@@ -1232,6 +1272,75 @@ function playStageStartMotion() {
     $appShell?.classList.remove('is-stage-starting');
     stageStartMotionTimer = 0;
   }, 900);
+}
+
+function startStageTwo(item, key = summaryKey(item)) {
+  if (!item || !key) return false;
+  if (!isStepOneDone(item)) return false;
+  if (productRiskAnalyses.get(key)?.status === 'loading') return false;
+  const shouldRetry = productRiskAnalyses.get(key)?.status === 'error';
+  stageTwoActiveKeys.add(key);
+  if (shouldRetry) {
+    productRiskAnalyses.delete(key);
+    productRiskYoutubeAnalyses.delete(key);
+    accessoryChecks.delete(key);
+  }
+  playStageStartMotion();
+  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
+  void ensureProductRisk(item);
+  return true;
+}
+
+function startStageThree(item, btn = null, key = summaryKey(item)) {
+  if (!item || !key || !isStepTwoDone(item)) return false;
+  if (stageThreeActiveKeys.has(key) && relatedRequestedKeys.has(key)) return false;
+  stageThreeActiveKeys.add(key);
+  relatedRequestedKeys.add(key);
+  persistAiCaches();
+  playStageStartMotion();
+  openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn);
+  return true;
+}
+
+function startStageFive(item, key = sellerChatKey(item)) {
+  if (!item || !key || !isPurchaseReceiptPrinted(item)) return false;
+  if (stageFiveActiveKeys.has(key)) return false;
+  stageFiveActiveKeys.add(key);
+  stageFiveEnteringKeys.add(key);
+  playStageStartMotion();
+  refreshSellerChatSection(item);
+  window.setTimeout(() => {
+    stageFiveEnteringKeys.delete(key);
+    if (selectedKey === key) refreshSellerChatSection(item);
+  }, 760);
+  return true;
+}
+
+function scheduleAutoRunNextStep(item = currentRenderedItem()) {
+  if (!isAutoRunEnabled() || autoRunTimer) return;
+  autoRunTimer = window.setTimeout(() => {
+    autoRunTimer = 0;
+    runAutoNextStep(item || currentRenderedItem());
+  }, 90);
+}
+
+function runAutoNextStep(item = currentRenderedItem()) {
+  if (!isAutoRunEnabled() || !item) return false;
+  const key = summaryKey(item);
+  if (!key || selectedKey !== key) return false;
+  if (!isStepOneDone(item)) return false;
+  if (!isStepTwoStarted(item)) return startStageTwo(item, key);
+  if (!isStepTwoDone(item)) return false;
+  if (!isStepThreeUnlocked(item)) return startStageThree(item, null, key);
+  if (!isStepThreeDone(item)) return false;
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const { state: receiptState } = stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
+  if (receiptState?.status !== 'done') {
+    if (receiptState?.status !== 'loading') void ensurePurchaseReceipt(item);
+    return true;
+  }
+  if (!isPurchaseReceiptPrinted(item, stageComps)) return false;
+  return startStageFive(item, key);
 }
 
 function playAiResultMotion(duration = 560) {
@@ -2350,6 +2459,148 @@ function renderListingImageGroupsCard(item) {
   `;
 }
 
+function accessoryStatusLabel(entry) {
+  const kind = typeof entry === 'string' ? '' : accessoryStatusKind(entry);
+  const evidence = typeof entry === 'string' ? '' : accessoryEvidenceText(entry);
+  if (kind === 'missing') return '없음';
+  if (kind === 'confirmed') {
+    if (/(사진|이미지)\S{0,20}(?:보임|보입니다|확인|식별)/i.test(evidence)) return '사진 확인';
+    if (/(본문|판매글|글|설명)\S{0,20}(?:포함|있음|있습니다|있다고|명시|언급|기재|구성)/i.test(evidence)) return '본문 확인';
+    return '확인됨';
+  }
+  return '확인 필요';
+}
+
+function accessoryStatusLevel(entry) {
+  const kind = typeof entry === 'string' ? '' : accessoryStatusKind(entry);
+  if (kind === 'missing') return 'risk';
+  if (kind === 'confirmed') return 'safe';
+  return 'caution';
+}
+
+function accessoryEvidenceText(entry) {
+  return `${entry?.name || ''} ${entry?.status || ''} ${entry?.evidence || ''} ${entry?.question || ''}`
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function accessoryEvidenceSaysMissing(entry) {
+  const evidence = accessoryEvidenceText(entry);
+  const onlyVisibilityMissing = /(언급|확인|보이|보임|식별|사진|이미지)\S{0,14}(?:없|않|어렵|불가|안\s*됨|되지)/i.test(evidence);
+  const explicitMissing =
+    /(?:미포함|불포함|제외|별도\s*구매|구성품\s*아님|포함\s*(?:안|되지\s*않)|없다고|없습니다|없음|없는\s*(?:상태|구성|것)|없다(?:고)?)/i.test(evidence) ||
+    /(?:판매자|판매글|본문|글|설명|매물)\S{0,35}(?:없다고|없습니다|없음|없다|미포함|불포함|제외|별도\s*구매)/i.test(evidence);
+  return explicitMissing && !onlyVisibilityMissing;
+}
+
+function accessoryEvidenceSaysIncluded(entry) {
+  const status = String(entry?.status || '').trim();
+  const evidence = accessoryEvidenceText(entry);
+  if (status === 'confirmed' || status === 'body_only') return true;
+  if (/본체|기기\s*본체|노트북\s*본체|제품\s*본체|device|unit/i.test(String(entry?.name || ''))) return true;
+  return (
+    /(사진|이미지)\S{0,25}(?:보임|보입니다|확인|식별|나옴|나옵니다)/i.test(evidence) ||
+    /(본문|판매글|글|설명|매물)\S{0,35}(?:포함|있음|있습니다|있다고|동봉|구성|명시|언급|기재|풀박스)/i.test(evidence) ||
+    /(?:포함|있음|있습니다|있다고|동봉|구성|명시|언급|기재|풀박스)\S{0,35}(?:본문|판매글|글|설명|매물|사진|이미지)/i.test(evidence)
+  );
+}
+
+function accessoryStatusKind(entry) {
+  if (accessoryEvidenceSaysMissing(entry)) return 'missing';
+  if (accessoryEvidenceSaysIncluded(entry)) return 'confirmed';
+  return 'unknown';
+}
+
+function accessoryStatusIcon(entry) {
+  const kind = accessoryStatusKind(entry);
+  const icon = kind === 'confirmed' ? 'check' : kind === 'missing' ? 'close' : 'warning';
+  const label = kind === 'confirmed' ? '확인됨' : kind === 'missing' ? '없음/누락 의심' : '확인 필요';
+  return `
+    <span class="accessory-status accessory-status--${escapeAttr(kind)}" title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
+      <span class="material-symbols-rounded" aria-hidden="true">${icon}</span>
+    </span>
+  `;
+}
+
+function accessoryItemIconName(name) {
+  const value = String(name || '').toLowerCase();
+  if (/충전|어댑터|전원|파워|charger|adapter|power/.test(value)) return 'power';
+  if (/케이블|선\b|usb|hdmi|젠더|동글|어댑터|cable|dongle/.test(value)) return 'cable';
+  if (/박스|상자|패키지|케이스|파우치|box|case|pouch/.test(value)) return 'inventory_2';
+  if (/보증|영수증|구매내역|구매\s*내역|증빙|receipt|warranty/.test(value)) return 'receipt_long';
+  if (/설명서|매뉴얼|가이드|안내서|manual|guide/.test(value)) return 'menu_book';
+  if (/펜|스타일러스|s펜|애플펜슬|pencil|stylus|pen/.test(value)) return 'stylus';
+  if (/리모컨|컨트롤러|패드|조이콘|remote|controller|joy/.test(value)) return 'sports_esports';
+  if (/배터리|건전지|battery/.test(value)) return 'battery_full';
+  if (/스트랩|밴드|끈|strap|band/.test(value)) return 'watch';
+  if (/스탠드|거치대|독\b|dock|stand/.test(value)) return 'view_in_ar';
+  if (/본체|기기|제품|device|unit/.test(value)) return 'devices';
+  return 'category';
+}
+
+function renderAccessoryMini(entry) {
+  const statusText = accessoryStatusLabel(entry);
+  const evidence = String(entry.evidence || '').trim();
+  return `
+    <div class="stage-two-mini accessory-mini risk-${escapeAttr(accessoryStatusLevel(entry))}">
+      <div class="stage-two-mini-top accessory-mini__head">
+        <b><span class="material-symbols-rounded" aria-hidden="true">${escapeHtml(accessoryItemIconName(entry.name))}</span></b>
+        <strong>${escapeHtml(entry.name)}</strong>
+      </div>
+      <span>${escapeHtml([statusText, evidence].filter(Boolean).join(' · '))}</span>
+      ${accessoryStatusIcon(entry)}
+    </div>
+  `;
+}
+
+function renderAccessoryCheckCard(item) {
+  const key = summaryKey(item);
+  const state = key ? accessoryChecks.get(key) : null;
+  if (state?.status === 'loading') {
+    return renderAnalysisLoadingCard(
+      '구성품 체크',
+      '제품 기본 구성품을 조사한 뒤 본문·사진과 대조합니다.',
+      'stage-two-card--accessory-check',
+      840,
+      state,
+      'accessoryCheck'
+    ).replace('<article ', '<article data-accessory-check ');
+  }
+  if (state?.status === 'error') {
+    return `
+      <article class="mini-card stage-two-card stage-two-card--error stage-two-card--accessory-check" data-accessory-check>
+        <p class="stage-two-card-label">AI 분석 실패</p>
+        <h3>구성품 체크</h3>
+        <p>${escapeHtml(state.error || '구성품 체크를 불러오지 못했습니다.')}</p>
+      </article>
+    `;
+  }
+  const analysis = state?.analysis;
+  if (!analysis || state?.status !== 'done') return '';
+  const items = (Array.isArray(analysis.items) ? analysis.items : [])
+    .filter((entry) => entry?.name && entry.status !== 'not_applicable')
+    .slice(0, 6);
+  if (!items.length && !analysis.summary) return '';
+  const summary =
+    String(analysis.summary || '').trim() ||
+    '기본 구성품 대비 본문·사진에서 확인되지 않은 항목이 있습니다.';
+  const overallLevel = String(analysis.overallLevel || 'caution');
+  return `
+    <article class="mini-card stage-two-card stage-two-card--accessory-check" data-accessory-check style="--stage-delay:840ms">
+      <div class="stage-two-card-head">
+        <p class="stage-two-card-label">구성품 체크</p>
+        <h3>${escapeHtml(summary)}</h3>
+      </div>
+      <div class="stage-two-mini-list">
+        ${items
+          .map((entry) => renderAccessoryMini(entry))
+          .join('')}
+        ${overallLevel === 'risk' ? renderStageTwoMini('주의', '거래 전 구성품 사진·포함 여부를 꼭 확인하세요.', 'risk') : ''}
+      </div>
+    </article>
+  `;
+}
+
 function directAiStepLabel(item) {
   if (!item) return '매물 대기';
   if (isStepFourDone(item)) return 'Step 4 최종 판단까지 반영';
@@ -2401,6 +2652,7 @@ function invalidateStepTwoCaches(key) {
   productRiskYoutubeAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
+  accessoryChecks.delete(key);
   stageTwoCompletedKeys.delete(key);
 }
 
@@ -2430,6 +2682,7 @@ function invalidateAnalysisPart(item, target) {
     case 'productRisk':
       productRiskAnalyses.delete(key);
       productRiskYoutubeAnalyses.delete(key);
+      accessoryChecks.delete(key);
       invalidatePurchaseReceiptCaches(item);
       break;
     case 'productRiskYoutube':
@@ -2437,11 +2690,17 @@ function invalidateAnalysisPart(item, target) {
       break;
     case 'listingText':
       listingTextAnalyses.delete(key);
+      accessoryChecks.delete(key);
       invalidatePurchaseReceiptCaches(item);
       break;
     case 'listingImage':
       listingImageAnalyses.delete(key);
+      accessoryChecks.delete(key);
       imageAnalysisPreviewedKeys.delete(key);
+      invalidatePurchaseReceiptCaches(item);
+      break;
+    case 'accessoryCheck':
+      accessoryChecks.delete(key);
       invalidatePurchaseReceiptCaches(item);
       break;
     case 'searchQuery':
@@ -2473,6 +2732,8 @@ function isDirectAiPartLoading(item, target) {
       return listingTextAnalyses.get(key)?.status === 'loading';
     case 'listingImage':
       return listingImageAnalyses.get(key)?.status === 'loading';
+    case 'accessoryCheck':
+      return accessoryChecks.get(key)?.status === 'loading';
     case 'searchQuery':
       return searchQueryRegenerations.get(key)?.status === 'loading';
     case 'usedPriceGuide': {
@@ -2511,7 +2772,8 @@ function directAiEarlierStageBlock(item, requiredStep) {
       productRiskAnalyses.get(key)?.status === 'loading' ||
       productRiskYoutubeAnalyses.get(key)?.status === 'loading' ||
       listingTextAnalyses.get(key)?.status === 'loading' ||
-      listingImageAnalyses.get(key)?.status === 'loading';
+      listingImageAnalyses.get(key)?.status === 'loading' ||
+      accessoryChecks.get(key)?.status === 'loading';
     return loading
       ? 'Step 2 리스크 판별이 진행 중입니다. 이전 단계가 마무리된 뒤 다시 실행할 수 있습니다.'
       : 'Step 2 리스크 판별이 끝난 뒤 실행할 수 있습니다.';
@@ -2593,21 +2855,14 @@ function directAiPdfCompletionWarning(item) {
 function startStageTwoFromAssistant(item) {
   const key = summaryKey(item);
   if (!key) return '먼저 분석할 매물을 불러와 주세요.';
-  stageTwoActiveKeys.add(key);
-  playStageStartMotion();
-  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
-  void ensureProductRisk(item);
+  startStageTwo(item, key);
   return 'Step 2 리스크 판별을 시작했습니다.';
 }
 
 function startStageThreeFromAssistant(item) {
   const key = summaryKey(item);
   if (!key) return '먼저 분석할 매물을 불러와 주세요.';
-  stageThreeActiveKeys.add(key);
-  relatedRequestedKeys.add(key);
-  persistAiCaches();
-  playStageStartMotion();
-  openRelatedSearchForItem(item, stageThreeSearchQueries(item), null);
+  startStageThree(item, null, key);
   return 'Step 3 가격 참고자료 수집을 시작했습니다.';
 }
 
@@ -2799,6 +3054,32 @@ const DIRECT_AI_ACTIONS = [
       await ensureListingImageAnalysis(item);
       refreshDirectAiPanelIfOpen();
       return { message: '판매자 이미지 분석을 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.accessoryCheck',
+    label: '구성품 체크 다시 생성',
+    risk: 'safe',
+    chipLabel: '구성품 체크 다시',
+    aliases: ['구성품', '구성품 체크', '구성 체크', '부속품', '악세사리', '액세서리'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 2);
+      if (block) return { ok: false, message: block };
+      const key = summaryKey(item);
+      if (productRiskAnalyses.get(key)?.status !== 'done') return { ok: false, message: 'Step 2 리스크 판별이 끝난 뒤 구성품 체크를 다시 실행할 수 있습니다.' };
+      const imageState = listingImageAnalyses.get(key);
+      if (imageState?.status === 'loading') return { ok: false, message: '이미지 분석이 끝난 뒤 구성품 체크를 다시 실행할 수 있습니다.' };
+      if (imageState && imageState.status !== 'done' && imageState.status !== 'error') return { ok: false, message: '이미지 분석 결과가 준비된 뒤 구성품 체크를 다시 실행할 수 있습니다.' };
+      if (isDirectAiPartLoading(item, 'accessoryCheck')) return { ok: false, message: '구성품 체크가 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      invalidateAnalysisPart(item, 'accessoryCheck');
+      if (selectedKey === summaryKey(item)) refreshAccessoryCheckCard(item);
+      await ensureAccessoryCheck(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: '구성품 체크를 다시 생성합니다.' };
     },
   },
   {
@@ -3176,6 +3457,7 @@ function getDirectAiSuggestedCommands(item = currentRenderedItem()) {
   const preferred = [
     'stage.next',
     'regen.listingImage',
+    'regen.accessoryCheck',
     'regen.usedPriceGuide',
     'regen.purchaseReceipt',
     'ui.pdf',
@@ -3194,7 +3476,7 @@ function getDirectAiSuggestedCommands(item = currentRenderedItem()) {
 }
 
 const DIRECT_AI_COMMAND_VERBS =
-  /(?:다시\s*(?:만들|생성|해|분석|검색|정리|실행|돌려)?|재생성|refresh|regenerate|만들(?:어|기)?|생성|실행|시작|출력|저장|해\s*줘|실행해|저장해|열어|열어줘|켜줘|켜|보여줘|스킵|skip)/i;
+  /(?:다시\s*(?:만들|생성|해|분석|검색|정리|실행|돌려)?|재생성|refresh|regenerate|만들(?:어|기)?|생성|실행|시작|출력|저장|체크|확인|해\s*줘|실행해|저장해|열어|열어줘|켜줘|켜|보여줘|스킵|skip)/i;
 
 function normalizeDirectAiCommandText(text) {
   return String(text || '')
@@ -3265,6 +3547,7 @@ function matchDirectAiCommandRules(message) {
     { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode).*(꺼|꺼줘|off|해제|비활성)|라이트\s*모드|밝은\s*모드/, actionId: 'ui.darkModeOff', confidence: 0.96 },
     { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode)(?:\s*(?:실행|켜|켜줘|on|적용|활성|해줘|해|전환|바꿔)?)?$/, actionId: 'ui.darkModeOn', confidence: 0.96 },
     { pattern: /url\s*불러|링크\s*불러|매물\s*url/, actionId: 'ui.openImport', confidence: 0.88 },
+    { pattern: /(구성품|구성\s*체크|부속품|악세사리|액세서리)\s*(다시\s*)?(체크|재분석|분석|생성|확인)/, actionId: 'regen.accessoryCheck', confidence: 0.95 },
     { pattern: /(이미지|사진)\s*분석/, actionId: 'regen.listingImage', confidence: 0.93 },
     { pattern: /(본문|판매글|텍스트|글)\s*(다시\s*)?(분석|재분석|체크|검토)/, actionId: 'regen.listingText', confidence: 0.95 },
     { pattern: /유튜브/, actionId: 'regen.productRiskYoutube', confidence: 0.9 },
@@ -3626,6 +3909,7 @@ function directAiContext(item = currentRenderedItem(), opts = {}) {
     youtube: includeStep2 && productRiskYoutubeAnalyses.get(key)?.status === 'done' ? productRiskYoutubeAnalyses.get(key)?.analysis || null : null,
     listingTextAnalysis: includeStep2 && listingTextAnalyses.get(key)?.status === 'done' ? listingTextAnalyses.get(key)?.analysis || null : null,
     listingImageAnalysis: includeStep2 && listingImageAnalyses.get(key)?.status === 'done' ? listingImageAnalyses.get(key)?.analysis || null : null,
+    accessoryCheck: includeStep2 && accessoryChecks.get(key)?.status === 'done' ? accessoryChecks.get(key)?.analysis || null : null,
     comparison:
       includeStep3 && stageComps && isCompsCollected(stageComps)
         ? {
@@ -3702,6 +3986,7 @@ function directAiKeywordStageSignature(item = currentRenderedItem(), stage = cur
     productRiskYoutubeAnalyses.get(key)?.status || 'none',
     listingTextAnalyses.get(key)?.status || 'none',
     listingImageAnalyses.get(key)?.status || 'none',
+    accessoryChecks.get(key)?.status || 'none',
     stageComps && isCompsCollected(stageComps) ? 'comps-done' : 'comps-none',
     stageComps ? resolvedUsedPriceGuideState(item, stageComps).state?.status || 'guide-none' : 'guide-none',
     receiptKey ? purchaseReceipts.get(receiptKey)?.status || 'receipt-none' : 'receipt-none',
@@ -3973,6 +4258,11 @@ function sellerChatKey(item) {
   return summaryKey(item);
 }
 
+function normalizeSellerChatTone(value) {
+  const raw = String(value || 'polite');
+  return sellerChatToneOptions.some((opt) => opt.value === raw) ? raw : 'polite';
+}
+
 function defaultSellerChatState() {
   return {
     mode: 'first',
@@ -3994,7 +4284,9 @@ function getSellerChatState(item) {
   const key = sellerChatKey(item);
   if (!key) return null;
   if (!sellerChatStates.has(key)) sellerChatStates.set(key, defaultSellerChatState());
-  return sellerChatStates.get(key);
+  const state = sellerChatStates.get(key);
+  state.tone = normalizeSellerChatTone(state.tone);
+  return state;
 }
 
 function updateSellerChatState(item, patch = {}) {
@@ -4005,7 +4297,7 @@ function updateSellerChatState(item, patch = {}) {
 }
 
 function sellerChatToneLabel(value) {
-  return sellerChatToneOptions.find((opt) => opt.value === value)?.label || '공손하게';
+  return sellerChatToneOptions.find((opt) => opt.value === normalizeSellerChatTone(value))?.label || '공손하게';
 }
 
 function sellerChatContext(item, comps) {
@@ -4015,6 +4307,7 @@ function sellerChatContext(item, comps) {
   const riskAnalysis = key ? productRiskAnalyses.get(key)?.analysis || null : null;
   const listingTextAnalysis = key ? listingTextAnalyses.get(key)?.analysis || null : null;
   const listingImageAnalysis = key ? listingImageAnalyses.get(key)?.analysis || null : null;
+  const accessoryCheck = key && accessoryChecks.get(key)?.status === 'done' ? accessoryChecks.get(key)?.analysis || null : null;
   const { state: receiptState } = key && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
   const { state: usedGuideState } = key && stageComps ? resolvedUsedPriceGuideState(item, stageComps) : { state: null };
   const receipt = receiptState?.status === 'done' ? receiptState.receipt || null : null;
@@ -4036,6 +4329,7 @@ function sellerChatContext(item, comps) {
     riskAnalysis,
     listingTextAnalysis,
     listingImageAnalysis,
+    accessoryCheck,
     receipt,
     usedPriceGuide,
     comparison: {
@@ -4492,7 +4786,14 @@ function renderSellerChatPanel(item, comps) {
           <span>거래 메시지</span>
         </aside>
         <div class="stage-zone-grid stage-five-zone-grid">
-          <button type="button" class="stage-five-start-card stage-start-card" data-stage-five-start="${escapeAttr(key)}">
+          ${
+            isAutoRunEnabled()
+              ? renderAutoRunWaitCard(
+                  '영수증 출력 후 판매자 대화 도우미를 자동으로 준비합니다.',
+                  '확인할 구성품·하자·가격 질문을 이어서 추천합니다.',
+                  'stage-five-start-card'
+                )
+              : `<button type="button" class="stage-five-start-card stage-start-card" data-stage-five-start="${escapeAttr(key)}">
             <div class="stage-two-ready">
               <div>
                 <p class="stage-two-card-label">판매자 대화 준비</p>
@@ -4501,7 +4802,8 @@ function renderSellerChatPanel(item, comps) {
                 <span class="stage-start-card__cta">거래 메시지 만들기</span>
               </div>
             </div>
-          </button>
+          </button>`
+          }
         </div>
       </section>
     `;
@@ -4665,6 +4967,21 @@ function renderStageTwoSimple(title, desc, delay = 0) {
   `;
 }
 
+function renderAutoRunWaitCard(title, desc, className = 'stage-two-card') {
+  return `
+    <article class="mini-card ${escapeAttr(className)} stage-start-card auto-run-wait-card" aria-live="polite">
+      <div class="stage-two-ready">
+        <div>
+          <p class="stage-two-card-label">자동 진행</p>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(desc)}</p>
+          <span class="stage-start-card__cta">자동으로 시작합니다</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function renderStageTwoSection(item) {
   if (!item) return '';
   const key = summaryKey(item);
@@ -4696,8 +5013,9 @@ function renderStageTwoSection(item) {
 
   const followupHtml =
     isActive && riskState?.status === 'done'
-      ? `${renderListingTextAnalysisCard(item)}${renderListingImageAnalysisCard(item)}${renderListingImageGroupsCard(item)}`
+      ? `${renderListingTextAnalysisCard(item)}${renderListingImageAnalysisCard(item)}${renderListingImageGroupsCard(item)}${renderAccessoryCheckCard(item)}`
       : '';
+  const youtubeHtml = isActive && riskState?.status === 'done' ? renderStageTwoYoutubePanel(item, analysis) : '';
   return `
     <section class="stage-two-panel stage-zone stage-two-zone is-active" data-stage-panel data-stage-two-panel>
       <aside class="stage-zone-label">
@@ -4707,7 +5025,13 @@ function renderStageTwoSection(item) {
       <div class="stage-zone-grid stage-two-zone-grid">
         ${
           !isActive
-            ? `<button type="button" class="mini-card stage-two-card stage-two-card--ready stage-start-card" data-stage-two-start="${escapeAttr(key)}">
+            ? isAutoRunEnabled()
+              ? renderAutoRunWaitCard(
+                  '매물 정리 완료 후 리스크 판별을 자동으로 시작합니다.',
+                  '고질병·본문 누락·사진 상태 분석을 순서대로 실행합니다.',
+                  'stage-two-card stage-two-card--ready'
+                )
+              : `<button type="button" class="mini-card stage-two-card stage-two-card--ready stage-start-card" data-stage-two-start="${escapeAttr(key)}">
                   <div class="stage-two-ready">
                     <div>
                       <p class="stage-two-card-label">다음 단계 대기</p>
@@ -4725,10 +5049,11 @@ function renderStageTwoSection(item) {
                   <button type="button" class="chip-btn stage-two-start-btn" data-stage-two-start="${escapeAttr(key)}">다시 분석</button>
                 </article>`
             : riskState?.status === 'done'
-              ? `${renderStageTwoRiskCards(analysis, item)}${renderStageTwoYoutubePanel(item, analysis)}`
+              ? renderStageTwoRiskCards(analysis, item)
               : renderStageTwoLoadingCards(item)
         }
         ${followupHtml}
+        ${youtubeHtml}
       </div>
     </section>
   `;
@@ -4759,7 +5084,14 @@ function renderStageThreeSection(item, comps) {
           <span>가격 참고</span>
         </aside>
         <div class="stage-zone-grid stage-three-zone-grid">
-          <button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}">
+          ${
+            isAutoRunEnabled()
+              ? renderAutoRunWaitCard(
+                  '리스크 판별이 끝나면 가격 참고자료 수집을 자동으로 시작합니다.',
+                  '신품가·비교 매물·시세 참고표를 바로 모읍니다.',
+                  'stage-three-card stage-three-card--ready'
+                )
+              : `<button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}">
             <div class="stage-two-ready">
               <div>
                 <p class="stage-two-card-label">다음 단계 대기</p>
@@ -4768,7 +5100,8 @@ function renderStageThreeSection(item, comps) {
                 <span class="stage-start-card__cta">버튼 클릭으로 시작</span>
               </div>
             </div>
-          </button>
+          </button>`
+          }
         </div>
       </section>
     `;
@@ -6813,6 +7146,13 @@ function renderPurchaseReceiptBlock(item, comps) {
       </article>
     `;
   }
+  if (isAutoRunEnabled()) {
+    return renderAutoRunWaitCard(
+      '가격 참고자료가 준비되면 최종 판단 영수증을 자동으로 만듭니다.',
+      'Step 1~3 분석과 구성품 체크를 종합해 구매 판단을 생성합니다.',
+      'stage-three-card purchase-receipt-card stage-four-start-card'
+    );
+  }
   return `
     <button type="button" class="mini-card stage-three-card purchase-receipt-card stage-start-card stage-four-start-card" data-purchase-receipt="${escapeAttr(key)}">
       <div class="stage-two-ready">
@@ -7992,16 +8332,7 @@ function bindStageTwoFlow(root, item) {
   root?.querySelectorAll('[data-stage-two-start]').forEach((el) => {
     const start = () => {
       const key = el.getAttribute('data-stage-two-start') || summaryKey(item);
-      if (!key) return;
-      const shouldRetry = productRiskAnalyses.get(key)?.status === 'error';
-      stageTwoActiveKeys.add(key);
-      if (shouldRetry) {
-        productRiskAnalyses.delete(key);
-        productRiskYoutubeAnalyses.delete(key);
-      }
-      playStageStartMotion();
-      if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
-      void ensureProductRisk(item);
+      startStageTwo(item, key);
     };
     el.addEventListener('click', start);
     if (el.tagName !== 'BUTTON') {
@@ -8120,12 +8451,7 @@ function bindStageThreeFlow(root, item) {
   root?.querySelectorAll('[data-stage-three-start]').forEach((el) => {
     const start = () => {
       const key = el.getAttribute('data-stage-three-start') || summaryKey(item);
-      if (!key) return;
-      stageThreeActiveKeys.add(key);
-      relatedRequestedKeys.add(key);
-      persistAiCaches();
-      playStageStartMotion();
-      openRelatedSearchForItem(item, stageThreeSearchQueries(item), el);
+      startStageThree(item, el, key);
     };
     el.addEventListener('click', start);
     if (el.tagName !== 'BUTTON') {
@@ -8603,6 +8929,7 @@ async function submitSellerChat(item, opts = {}) {
           riskAnalysis: context.riskAnalysis,
           listingTextAnalysis: context.listingTextAnalysis,
           listingImageAnalysis: context.listingImageAnalysis,
+          accessoryCheck: context.accessoryCheck,
           usedPriceGuide: context.usedPriceGuide,
           receipt: context.receipt,
           comparison: context.comparison,
@@ -8642,6 +8969,7 @@ async function submitSellerChat(item, opts = {}) {
       riskAnalysis: context.riskAnalysis,
       listingTextAnalysis: context.listingTextAnalysis,
       listingImageAnalysis: context.listingImageAnalysis,
+      accessoryCheck: context.accessoryCheck,
       usedPriceGuide: context.usedPriceGuide,
       receipt: context.receipt,
       comparison: context.comparison,
@@ -8700,15 +9028,7 @@ function bindSellerChatFlow(root, item) {
 
     if (target.matches('[data-stage-five-start]')) {
       const startKey = target.getAttribute('data-stage-five-start') || key;
-      if (!startKey) return;
-      stageFiveActiveKeys.add(startKey);
-      stageFiveEnteringKeys.add(startKey);
-      playStageStartMotion();
-      refreshSellerChatSection(item);
-      window.setTimeout(() => {
-        stageFiveEnteringKeys.delete(startKey);
-        if (selectedKey === startKey) refreshSellerChatSection(item);
-      }, 760);
+      startStageFive(item, startKey);
       return;
     }
     if (target.matches('[data-seller-chat-mode]')) {
@@ -8718,7 +9038,7 @@ function bindSellerChatFlow(root, item) {
       return;
     }
     if (target.matches('[data-seller-chat-tone]')) {
-      currentState.tone = String(target.getAttribute('data-seller-chat-tone') || 'polite');
+      currentState.tone = normalizeSellerChatTone(target.getAttribute('data-seller-chat-tone') || 'polite');
       currentState.error = '';
       refreshSellerChatDynamic(item);
       return;
@@ -9054,6 +9374,7 @@ function clearProductSummaryCaches(key) {
   productRiskYoutubeAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
+  accessoryChecks.delete(key);
   stageTwoActiveKeys.delete(key);
   stageThreeActiveKeys.delete(key);
   stageFiveActiveKeys.delete(key);
@@ -9449,6 +9770,7 @@ async function ensurePurchaseReceipt(item, opts = {}) {
       riskAnalysis: productRiskAnalyses.get(summaryKey(item))?.analysis || null,
       listingTextAnalysis: listingTextAnalyses.get(summaryKey(item))?.analysis || null,
       listingImageAnalysis: listingImageAnalyses.get(summaryKey(item))?.analysis || null,
+      accessoryCheck: accessoryChecks.get(summaryKey(item))?.status === 'done' ? accessoryChecks.get(summaryKey(item))?.analysis || null : null,
       usedPriceGuide: resolvedUsedPriceGuideState(item, stageComps).state?.status === 'done' ? resolvedUsedPriceGuideState(item, stageComps).state?.guide || null : null,
       comparison: purchaseReceiptComparisonPayload(item, stageComps),
       apiKey,
@@ -9520,7 +9842,8 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
   const isFollowupCard =
     selector === '[data-listing-text-analysis]' ||
     selector === '[data-listing-image-analysis]' ||
-    selector === '[data-listing-image-groups]';
+    selector === '[data-listing-image-groups]' ||
+    selector === '[data-accessory-check]';
   if (isFollowupCard && (panel.querySelector('[data-stage-two-start]') || !canRenderStageTwoFollowups(item))) {
     existing?.remove();
     return;
@@ -9557,14 +9880,14 @@ function canRenderStageTwoFollowups(item) {
 
 function removeStageTwoFollowupCards() {
   $current
-    .querySelectorAll('[data-listing-text-analysis], [data-listing-image-analysis], [data-listing-image-groups]')
+    .querySelectorAll('[data-listing-text-analysis], [data-listing-image-analysis], [data-listing-image-groups], [data-accessory-check]')
     .forEach((el) => el.remove());
 }
 
 function refreshProductRiskYoutubeCard(item) {
   const key = summaryKey(item);
   if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
-  upsertStageTwoCard(item, '[data-stage-two-youtube]', renderStageTwoYoutubePanel(item), '[data-listing-text-analysis]');
+  upsertStageTwoCard(item, '[data-stage-two-youtube]', renderStageTwoYoutubePanel(item));
 }
 
 function refreshStageThreeSection(item) {
@@ -9723,7 +10046,7 @@ function refreshListingTextAnalysisCard(item) {
     item,
     '[data-listing-text-analysis]',
     renderListingTextAnalysisCard(item),
-    '[data-listing-image-analysis]'
+    '[data-listing-image-analysis], [data-accessory-check], [data-stage-two-youtube]'
   );
   maybeMarkStageTwoComplete(item);
   refreshStageThreeSection(item);
@@ -9734,8 +10057,18 @@ function refreshListingImageAnalysisCard(item) {
     removeStageTwoFollowupCards();
     return;
   }
-  upsertStageTwoCard(item, '[data-listing-image-analysis]', renderListingImageAnalysisCard(item));
-  upsertStageTwoCard(item, '[data-listing-image-groups]', renderListingImageGroupsCard(item));
+  upsertStageTwoCard(
+    item,
+    '[data-listing-image-analysis]',
+    renderListingImageAnalysisCard(item),
+    '[data-accessory-check], [data-stage-two-youtube]'
+  );
+  upsertStageTwoCard(
+    item,
+    '[data-listing-image-groups]',
+    renderListingImageGroupsCard(item),
+    '[data-accessory-check], [data-stage-two-youtube]'
+  );
   const panel = $current.querySelector('[data-stage-two-panel]');
   bindImageAnalysisSlider(panel, item);
   bindImageZoom(panel);
@@ -9743,10 +10076,22 @@ function refreshListingImageAnalysisCard(item) {
   refreshStageThreeSection(item);
 }
 
-function previewListingImageAnalysis(item) {
+function refreshAccessoryCheckCard(item) {
+  if (!canRenderStageTwoFollowups(item)) {
+    removeStageTwoFollowupCards();
+    return;
+  }
+  upsertStageTwoCard(item, '[data-accessory-check]', renderAccessoryCheckCard(item), '[data-stage-two-youtube]');
+  maybeMarkStageTwoComplete(item);
+  refreshStageThreeSection(item);
+}
+
+function previewListingImageAnalysis(item, opts = {}) {
   const key = summaryKey(item);
   if (!key || imageAnalysisPreviewedKeys.has(key)) return;
-  if (!$appShell?.classList.contains('app-shell--slide') || stageSlideIndex !== 1) return;
+  const isSlide = $appShell?.classList.contains('app-shell--slide');
+  if (isSlide && stageSlideIndex !== 1) return;
+  if (!isSlide && opts.allowScroll !== true) return;
   if (!isStepTwoStarted(item)) return;
   if (!$current.querySelector('[data-listing-image-analysis]')) return;
   const images = imageAnalysisEntries(item);
@@ -9889,6 +10234,7 @@ $btnHistoryClear?.addEventListener('click', () => {
   productRiskYoutubeAnalyses.clear();
   listingTextAnalyses.clear();
   listingImageAnalyses.clear();
+  accessoryChecks.clear();
   comparisonFilters.clear();
   usedPriceGuides.clear();
   purchaseReceipts.clear();
@@ -10633,11 +10979,15 @@ async function ensureListingTextAnalysis(item) {
   if (!key) return;
   const existing = listingTextAnalyses.get(key);
   if (existing?.status === 'loading') return;
-  if (existing?.status === 'done' && existing.source === 'ai' && hasListingTextAnalysisContent(existing.analysis)) return;
+  if (existing?.status === 'done' && existing.source === 'ai' && hasListingTextAnalysisContent(existing.analysis)) {
+    void ensureAccessoryCheck(item);
+    return;
+  }
   if (existing?.status === 'done') listingTextAnalyses.delete(key);
 
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchListingTextAnalysis !== 'function') {
+    void ensureAccessoryCheck(item);
     return;
   }
 
@@ -10690,6 +11040,87 @@ async function ensureListingTextAnalysis(item) {
   } finally {
     aiScope.release();
   }
+  void ensureAccessoryCheck(item);
+}
+
+async function ensureAccessoryCheck(item) {
+  const key = summaryKey(item);
+  if (!key) return;
+  if (productRiskAnalyses.get(key)?.status !== 'done') return;
+  const textState = listingTextAnalyses.get(key);
+  const imageState = listingImageAnalyses.get(key);
+  const textSettled = !textState || textState.status === 'done' || textState.status === 'error';
+  const imageSettled = imageState?.status === 'done' || imageState?.status === 'error';
+  if (!textSettled || !imageSettled) return;
+
+  const existing = accessoryChecks.get(key);
+  if (existing?.status === 'loading') return;
+  if (existing?.status === 'done') return;
+
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchAccessoryCheck !== 'function') {
+    accessoryChecks.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    if (selectedKey === key) refreshAccessoryCheckCard(item);
+    return;
+  }
+
+  const summary = getProductSummaryState(item)?.summary || null;
+  const riskAnalysis = productRiskAnalyses.get(key)?.analysis || null;
+  const listingTextAnalysis = listingTextAnalyses.get(key)?.analysis || null;
+  const listingImageAnalysis = listingImageAnalyses.get(key)?.analysis || null;
+  accessoryChecks.set(key, {
+    status: 'loading',
+    startedAt: Date.now(),
+    durationMs: AI_LOADING_DURATIONS.accessoryCheck,
+    startPercent: 6,
+    endPercent: 96,
+  });
+  if (selectedKey === key) refreshAccessoryCheckCard(item);
+
+  const aiScope = createAiRequestScope();
+  try {
+    const data = await globalThis.UlsaAi.fetchAccessoryCheck({
+      title: item.title || '',
+      body: item.body || '',
+      productName: summary?.productName || fallbackSearchQuery(item),
+      summary,
+      riskAnalysis,
+      listingTextAnalysis,
+      listingImageAnalysis,
+      apiKey,
+      signal: aiScope.signal,
+    });
+    if (shouldIgnoreAiScope(aiScope)) return;
+    const analysis = data.analysis?.parseOk ? data.analysis : null;
+    if (!analysis) {
+      await showAiLoadingComplete(accessoryChecks, key, () => {
+        if (selectedKey === key) refreshAccessoryCheckCard(item);
+      }, 'accessoryCheck');
+      accessoryChecks.set(key, { status: 'error', error: '구성품 체크 결과를 해석하지 못했습니다.' });
+      persistAiCaches();
+      if (selectedKey === key) refreshAccessoryCheckCard(item);
+      return;
+    }
+    await finishAiLoadingState(accessoryChecks, key, { status: 'done', analysis }, () => {
+      if (selectedKey === key) refreshAccessoryCheckCard(item);
+    }, 'accessoryCheck');
+    invalidatePurchaseReceiptCaches(item);
+    persistAiCaches();
+    if (selectedKey === key) {
+      playAiResultMotion();
+      refreshAccessoryCheckCard(item);
+    }
+  } catch (e) {
+    if (shouldIgnoreAiScope(aiScope, e)) return;
+    accessoryChecks.set(key, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+    persistAiCaches();
+    if (selectedKey === key) refreshAccessoryCheckCard(item);
+  } finally {
+    aiScope.release();
+  }
 }
 
 async function ensureListingImageAnalysis(item) {
@@ -10702,6 +11133,7 @@ async function ensureListingImageAnalysis(item) {
       refreshListingImageAnalysisCard(item);
       previewListingImageAnalysis(item);
     }
+    void ensureAccessoryCheck(item);
     return;
   }
   if (existing?.status === 'done') listingImageAnalyses.delete(key);
@@ -10710,6 +11142,7 @@ async function ensureListingImageAnalysis(item) {
   if (!apiKey || typeof globalThis.UlsaAi?.fetchListingImageAnalysis !== 'function') {
     listingImageAnalyses.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
     if (selectedKey === key) refreshProductSummaryBlock(item);
+    void ensureAccessoryCheck(item);
     return;
   }
 
@@ -10721,6 +11154,7 @@ async function ensureListingImageAnalysis(item) {
     });
     persistAiCaches();
     if (selectedKey === key) refreshListingImageAnalysisCard(item);
+    void ensureAccessoryCheck(item);
     return;
   }
 
@@ -10751,7 +11185,7 @@ async function ensureListingImageAnalysis(item) {
     if (selectedKey === key) {
       playAiResultMotion();
       refreshListingImageAnalysisCard(item);
-      previewListingImageAnalysis(item);
+      previewListingImageAnalysis(item, { allowScroll: true });
     }
   } catch (e) {
     if (shouldIgnoreAiScope(aiScope, e)) return;
@@ -10764,6 +11198,7 @@ async function ensureListingImageAnalysis(item) {
   } finally {
     aiScope.release();
   }
+  void ensureAccessoryCheck(item);
 }
 
 function applyPayload(payload, opts = {}) {
@@ -10917,6 +11352,10 @@ function initMain() {
   $railImportForm?.addEventListener('submit', (e) => {
     e.preventDefault();
     requestListingUrlImport($railUrlInput?.value || '');
+  });
+
+  $autoRunToggle?.addEventListener('change', () => {
+    setAutoRunMode($autoRunToggle.checked);
   });
 
   $btnRefresh.addEventListener('click', () => {

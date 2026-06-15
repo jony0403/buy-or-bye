@@ -239,6 +239,28 @@
   };
 
   /**
+   * @param {{ title: string, body?: string, productName?: string, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, apiKey: string, model?: string }} p
+   * @returns {Promise<{ analysis: { summary: string, overallLevel?: string, items: Array<object>, parseOk?: boolean } }>}
+   */
+  UlsaAi.fetchAccessoryCheck = async (p) => {
+    const res = await postJson(
+      '/api/accessory-check',
+      p,
+      {
+        title: p.title || '',
+        body: p.body || '',
+        productName: p.productName || '',
+        summary: p.summary || null,
+        riskAnalysis: p.riskAnalysis || null,
+        listingTextAnalysis: p.listingTextAnalysis || null,
+        listingImageAnalysis: p.listingImageAnalysis || null,
+      }
+    );
+    const text = await res.text();
+    return parseJsonResponse(res, text);
+  };
+
+  /**
    * @param {{ title: string, body?: string, productName?: string, summary?: object, candidates: object[], apiKey: string, model?: string }} p
    * @returns {Promise<{ analysis: { matches: Array<{ key: string, reason?: string }>, rejected?: Array<object> } }>}
    */
@@ -307,7 +329,7 @@
   };
 
   /**
-   * @param {{ current: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, usedPriceGuide?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @param {{ current: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, accessoryCheck?: object, usedPriceGuide?: object, comparison?: object, apiKey: string, model?: string }} p
    * @returns {Promise<{ receipt: object }>}
    */
   UlsaAi.fetchPurchaseReceipt = async (p) => {
@@ -326,6 +348,7 @@
         riskAnalysis: p.riskAnalysis || null,
         listingTextAnalysis: p.listingTextAnalysis || null,
         listingImageAnalysis: p.listingImageAnalysis || null,
+        accessoryCheck: p.accessoryCheck || null,
         usedPriceGuide: p.usedPriceGuide || null,
         comparison: p.comparison || null,
       }),
@@ -375,7 +398,7 @@
   };
 
   /**
-   * @param {{ mode: string, tone: string, toneLabel?: string, toneNote?: string, message?: string, chatHistory?: object[], replyAnalysis?: object, listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @param {{ mode: string, tone: string, toneLabel?: string, toneNote?: string, message?: string, chatHistory?: object[], replyAnalysis?: object, listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, accessoryCheck?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
    * @returns {Promise<{ assistant: object, model: string, pipeline: string }>}
    */
   UlsaAi.fetchSellerChatAssistant = async (p) => {
@@ -401,6 +424,7 @@
         riskAnalysis: p.riskAnalysis || null,
         listingTextAnalysis: p.listingTextAnalysis || null,
         listingImageAnalysis: p.listingImageAnalysis || null,
+        accessoryCheck: p.accessoryCheck || null,
         usedPriceGuide: p.usedPriceGuide || null,
         receipt: p.receipt || null,
         comparison: p.comparison || null,
@@ -420,7 +444,7 @@
   };
 
   /**
-   * @param {{ sellerReply: string, chatHistory?: object[], listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @param {{ sellerReply: string, chatHistory?: object[], listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, accessoryCheck?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
    * @returns {Promise<{ analysis: string, replyAnalysis: object, model: string, pipeline: string }>}
    */
   UlsaAi.fetchSellerReplyAnalysis = async (p) => {
@@ -441,6 +465,7 @@
         riskAnalysis: p.riskAnalysis || null,
         listingTextAnalysis: p.listingTextAnalysis || null,
         listingImageAnalysis: p.listingImageAnalysis || null,
+        accessoryCheck: p.accessoryCheck || null,
         usedPriceGuide: p.usedPriceGuide || null,
         receipt: p.receipt || null,
         comparison: p.comparison || null,

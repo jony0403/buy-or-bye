@@ -39,6 +39,8 @@ const PROMPTS = {
   productRiskYoutubeComment: await loadPrompt('product-risk-youtube-comment.txt'),
   productInfoLookup: await loadPrompt('product-info-lookup.txt'),
   listingTextAnalysis: await loadPrompt('listing-text-analysis.txt'),
+  accessoryCheckResearch: await loadPrompt('accessory-check-research.txt'),
+  accessoryCheckJson: await loadPrompt('accessory-check-json.txt'),
   comparisonFilter: await loadPrompt('comparison-filter.txt'),
   usedPriceGuide: await loadPrompt('used-price-guide.txt'),
   purchaseReceipt: await loadPrompt('purchase-receipt.txt'),
@@ -1833,6 +1835,87 @@ async function runListingTextAnalysis(apiKey, model, payload) {
   });
 }
 
+function buildAccessoryCheckResearchPrompt(payload) {
+  return renderPrompt(PROMPTS.accessoryCheckResearch, {
+    productName: payload.productName || '',
+    summaryJson: JSON.stringify(payload.summary || null),
+    title: payload.title || '',
+    body: String(payload.body || '').slice(0, 4000),
+  });
+}
+
+function buildAccessoryCheckJsonPrompt(payload, researchText) {
+  return renderPrompt(PROMPTS.accessoryCheckJson, {
+    productName: payload.productName || '',
+    researchText: String(researchText || '').trim() || '(조사 메모 없음)',
+    title: payload.title || '',
+    body: String(payload.body || '').slice(0, 4000),
+    summaryJson: JSON.stringify(payload.summary || null),
+    riskAnalysisJson: JSON.stringify(payload.riskAnalysis || null),
+    listingTextAnalysisJson: JSON.stringify(payload.listingTextAnalysis || null),
+    listingImageAnalysisJson: JSON.stringify(payload.listingImageAnalysis || null),
+  });
+}
+
+function normalizeAccessoryStatus(raw) {
+  const status = String(raw || 'missing_or_unconfirmed').trim();
+  if (['confirmed', 'body_only', 'missing_or_unconfirmed', 'not_applicable'].includes(status)) return status;
+  return 'missing_or_unconfirmed';
+}
+
+function normalizeAccessoryImportance(raw) {
+  const importance = String(raw || 'unknown').trim();
+  if (['required', 'optional', 'unknown'].includes(importance)) return importance;
+  return 'unknown';
+}
+
+function normalizeAccessoryLevel(raw) {
+  const level = String(raw || 'caution').trim();
+  if (['safe', 'caution', 'risk'].includes(level)) return level;
+  return 'caution';
+}
+
+function parseAccessoryCheck(text) {
+  const parsed = parseJsonObject(text);
+  const items = (Array.isArray(parsed.items) ? parsed.items : [])
+    .map((item) => ({
+      name: String(item?.name || '').replace(/\s+/g, ' ').trim(),
+      importance: normalizeAccessoryImportance(item?.importance),
+      status: normalizeAccessoryStatus(item?.status),
+      evidence: String(item?.evidence || '').replace(/\s+/g, ' ').trim(),
+      question: String(item?.question || '').replace(/\s+/g, ' ').trim(),
+    }))
+    .filter((item) => item.name)
+    .slice(0, 10);
+  const summary = String(parsed.summary || recoverJsonStringField(text, 'summary') || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return {
+    summary,
+    overallLevel: normalizeAccessoryLevel(parsed.overallLevel),
+    items,
+    parseOk: Boolean(summary || items.length),
+  };
+}
+
+async function runAccessoryCheck(apiKey, model, payload) {
+  const researchPrompt = buildAccessoryCheckResearchPrompt(payload);
+  const researchText = await geminiGenerateFromParts(apiKey, model, [{ text: researchPrompt }], {
+    useGoogleSearch: true,
+    temperature: 0.25,
+    maxOutputTokens: 1400,
+    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+  });
+  const jsonPrompt = buildAccessoryCheckJsonPrompt(payload, researchText);
+  const jsonText = await geminiGenerateFromParts(apiKey, model, [{ text: jsonPrompt }], {
+    responseMimeType: 'application/json',
+    temperature: 0.05,
+    maxOutputTokens: 1600,
+    timeoutMs: GEMINI_FAST_TIMEOUT_MS,
+  });
+  return { researchText, jsonText };
+}
+
 async function runComparisonFilter(apiKey, model, payload) {
   const candidates = (Array.isArray(payload.candidates) ? payload.candidates : [])
     .slice(0, 16)
@@ -2003,12 +2086,14 @@ async function runPurchaseReceipt(apiKey, model, payload) {
   const listingImageAnalysis = payload.listingImageAnalysis || null;
   const usedPriceGuide = payload.usedPriceGuide || null;
   const comparison = payload.comparison || {};
+  const accessoryCheck = payload.accessoryCheck || null;
   const prompt = renderPrompt(PROMPTS.purchaseReceipt, {
     currentJson: JSON.stringify(current),
     summaryJson: JSON.stringify(summary),
     riskAnalysisJson: JSON.stringify(riskAnalysis),
     listingTextAnalysisJson: JSON.stringify(listingTextAnalysis),
     listingImageAnalysisJson: JSON.stringify(listingImageAnalysis),
+    accessoryCheckJson: JSON.stringify(accessoryCheck),
     usedPriceGuideJson: JSON.stringify(usedPriceGuide),
     comparisonJson: JSON.stringify(comparison),
   });
@@ -2085,6 +2170,7 @@ function buildSellerChatAssistantPrompt(payload) {
     riskAnalysisJson: JSON.stringify(payload.riskAnalysis || null),
     listingTextAnalysisJson: JSON.stringify(payload.listingTextAnalysis || null),
     listingImageAnalysisJson: JSON.stringify(payload.listingImageAnalysis || null),
+    accessoryCheckJson: JSON.stringify(payload.accessoryCheck || null),
     usedPriceGuideJson: JSON.stringify(payload.usedPriceGuide || null),
     receiptJson: JSON.stringify(payload.receipt || null),
     comparisonJson: JSON.stringify(payload.comparison || null),
@@ -2112,6 +2198,7 @@ function buildSellerReplyAnalysisPrompt(payload) {
     riskAnalysisJson: JSON.stringify(payload.riskAnalysis || null),
     listingTextAnalysisJson: JSON.stringify(payload.listingTextAnalysis || null),
     listingImageAnalysisJson: JSON.stringify(payload.listingImageAnalysis || null),
+    accessoryCheckJson: JSON.stringify(payload.accessoryCheck || null),
     usedPriceGuideJson: JSON.stringify(payload.usedPriceGuide || null),
     receiptJson: JSON.stringify(payload.receipt || null),
     comparisonJson: JSON.stringify(payload.comparison || null),
@@ -2442,6 +2529,48 @@ const server = http.createServer(async (req, res) => {
         rawText: rawOut,
         model,
         pipeline: 'gemini_listing_text_analysis_json',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/accessory-check') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
+      const result = await runAccessoryCheck(apiKey, model, {
+        productName,
+        title: body.title || '',
+        body: body.body || '',
+        summary: body.summary || null,
+        riskAnalysis: body.riskAnalysis || null,
+        listingTextAnalysis: body.listingTextAnalysis || null,
+        listingImageAnalysis: body.listingImageAnalysis || null,
+      });
+      json(res, 200, {
+        analysis: parseAccessoryCheck(result.jsonText),
+        researchText: result.researchText,
+        rawText: result.jsonText,
+        model,
+        pipeline: 'gemini_accessory_check_json',
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });

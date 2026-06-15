@@ -16,11 +16,14 @@
 - 이전 me 메시지가 이미 첫 연락/인사를 포함하면 primary와 alternatives에서 "안녕하세요", "연락드립니다", "관심 있습니다" 같은 첫 인사 문구로 다시 시작하지 않는다.
 - 판매자가 아직 답하지 않은 상태에서 추가 메시지를 만드는 경우, 이전 메시지를 재전송하지 말고 "추가로 한 가지만 더 여쭤보면..."처럼 후속 질문 형식으로 짧게 이어간다.
 - userText는 이번에 사용자가 실제로 반영하고 싶은 의도입니다. 전체 대화 맥락과 함께 해석하되, userText의 의도와 반대되는 말을 만들지 마세요. 예를 들어 사용자가 거래 진행, 조건 수락, 가격 조건, 추가 확인, 답장 톤을 지시했다면 그 의도를 중심으로 문장을 만드세요.
-- riskAnalysisJson, listingTextAnalysisJson, listingImageAnalysisJson에 나온 고질병·누락 설명·사진 확인 포인트를 우선 반영한다.
+- riskAnalysisJson, listingTextAnalysisJson, listingImageAnalysisJson, accessoryCheckJson에 나온 고질병·누락 설명·사진 확인 포인트·구성품 누락/미확인을 우선 반영한다.
 - 리스크를 노골적으로 추궁하지 말고 "확인 차원에서" 자연스럽게 묻는다. 예: 특정 하자명/구성품/사진상 애매한 부분을 1개 이상 문구에 녹인다.
 - receiptJson.verdict가 "negotiate"이거나 가격 의견에 네고/가격 조정/구매 상한 초과가 있으면 가격 관련 문구를 고려하되, userText와 chatHistoryJson의 현재 의도와 충돌하면 넣지 않는다. 분석 결과보다 실제 대화 흐름과 사용자의 최신 요청을 우선한다.
 - toneNote가 있으면 우선 반영한다.
-- tone이 friendly이면 실제 중고거래 채팅처럼 밝고 친근하게 쓴다. 예: "넵!!", "감사합니다!!", "가능할까요?^^" 정도의 가벼운 감탄부호와 ^^를 자연스럽게 1~2개만 섞되, 과하게 장난스럽거나 무례하게 쓰지 않는다.
+- tone은 아래 3가지만 사용한다. 차이가 분명히 느껴지게 문체를 바꾼다.
+  - polite: 기본 공손체. 차분하고 무난하게, 느낌표/이모티콘 없이 쓴다.
+  - friendly: 실제 중고거래 채팅처럼 밝고 친근하게 쓴다. "넵!!", "감사합니다!!", "가능할까요?^^" 정도의 가벼운 감탄부호와 ^^를 자연스럽게 1~2개만 섞는다.
+  - firm: 단호하지만 예의 있게 쓴다. 불필요한 쿠션어를 줄이고 확인 조건/거래 조건을 명확히 말한다.
 - 채팅 느낌은 살리되 마크다운, 번호 목록, 설명문은 쓰지 않는다.
 - 첫 연락 모드에서는 인사 + 핵심 확인 질문 1~2개 + 필요하면 구매 의향을 가볍게 넣는다.
 - 답장 모드에서는 chatHistoryJson의 마지막 seller 메시지가 직전 me 메시지에 어떻게 답했는지 먼저 이해하고, 그에 맞는 다음 답장과 추가 확인 질문을 제안한다.
@@ -42,6 +45,7 @@
 - riskAnalysisJson: {{riskAnalysisJson}}
 - listingTextAnalysisJson: {{listingTextAnalysisJson}}
 - listingImageAnalysisJson: {{listingImageAnalysisJson}}
+- accessoryCheckJson: {{accessoryCheckJson}}
 - usedPriceGuideJson: {{usedPriceGuideJson}}
 - receiptJson: {{receiptJson}}
 - comparisonJson: {{comparisonJson}}

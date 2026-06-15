@@ -354,10 +354,15 @@ h1 {
   align-content: start;
   padding-top: clamp(1.75rem, 4.5svh, 3.5rem);
 }
+.app-shell--slide[data-stage-slide-index="5"] .analysis-board {
+  align-content: start;
+  padding-top: clamp(1.75rem, 4.5svh, 3.5rem);
+}
 .app-shell--slide[data-stage-slide-index="1"] .analysis-board:has(.stage-start-card),
 .app-shell--slide[data-stage-slide-index="2"] .analysis-board:has(.stage-start-card),
 .app-shell--slide[data-stage-slide-index="3"] .analysis-board:has(.stage-start-card),
-.app-shell--slide[data-stage-slide-index="4"] .analysis-board:has(.stage-start-card) {
+.app-shell--slide[data-stage-slide-index="4"] .analysis-board:has(.stage-start-card),
+.app-shell--slide[data-stage-slide-index="5"] .analysis-board:has(.stage-start-card) {
   align-content: center;
   padding-top: clamp(1rem, 4svh, 3rem);
 }
@@ -2548,6 +2553,60 @@ h1 {
   font-size: 0.7rem;
   line-height: 1.35;
 }
+.stage-two-card--accessory-check .stage-two-mini-list {
+  gap: 0.52rem;
+}
+.accessory-mini {
+  display: grid;
+  grid-template-columns: minmax(6.4rem, 0.58fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
+  padding: 0.58rem 0.72rem;
+}
+.accessory-mini .accessory-mini__head {
+  min-width: 0;
+}
+.accessory-mini .stage-two-mini-top b {
+  background: #17191f;
+}
+.accessory-mini .stage-two-mini-top b .material-symbols-rounded {
+  font-size: 1rem;
+}
+.accessory-mini strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.accessory-mini > span:not(.accessory-status) {
+  overflow-wrap: anywhere;
+}
+.accessory-status {
+  display: inline-flex;
+  width: 1.72rem;
+  height: 1.72rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: rgba(100, 116, 139, 0.1);
+  color: #64748b;
+}
+.accessory-status .material-symbols-rounded {
+  font-size: 1.08rem;
+  font-weight: 700;
+}
+.accessory-status--confirmed {
+  background: rgba(35, 134, 84, 0.12);
+  color: #238654;
+}
+.accessory-status--missing {
+  background: rgba(216, 0, 39, 0.1);
+  color: #d80027;
+}
+.accessory-status--unknown {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
 .risk-loader {
   display: grid;
   gap: 0.5rem;
@@ -4309,11 +4368,11 @@ body {
 }
 
 .url-import {
-  flex: 1 1 30rem;
-  width: min(560px, 100%);
-  max-width: 620px;
+  flex: 1 1 38rem;
+  width: min(720px, 100%);
+  max-width: 760px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.5rem;
   padding: 0.32rem 0.36rem 0.32rem 0.62rem;
@@ -4357,6 +4416,55 @@ body {
   white-space: nowrap;
   min-height: 2.12rem;
   padding-inline: 0.9rem;
+}
+.auto-run-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  min-height: 2.12rem;
+  padding: 0 0.52rem 0 0.42rem;
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+.auto-run-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.auto-run-toggle__track {
+  display: inline-flex;
+  width: 2.05rem;
+  height: 1.16rem;
+  align-items: center;
+  padding: 0.12rem;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.2s ease;
+}
+.auto-run-toggle__track i {
+  display: block;
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+  transition: transform 0.2s ease;
+}
+.auto-run-toggle input:checked + .auto-run-toggle__track {
+  background: #14b8a6;
+}
+.auto-run-toggle input:checked + .auto-run-toggle__track i {
+  transform: translateX(0.89rem);
+}
+.auto-run-toggle:has(input:checked) {
+  background: rgba(20, 184, 166, 0.1);
+  color: #0f766e;
 }
 .url-import__status {
   display: none;
@@ -7291,7 +7399,7 @@ h1 {
 .top .url-import {
   position: static !important;
   display: grid !important;
-  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  grid-template-columns: auto minmax(0, 1fr) auto auto !important;
   align-items: center !important;
   width: 100% !important;
   min-width: 0 !important;
@@ -11397,6 +11505,146 @@ body .app-shell .stage-two-risk-card p:not(.stage-two-card-label) {
   font-size: 0.7rem !important;
   line-height: 1.38 !important;
 }
+body .app-shell .stage-two-card--accessory-check,
+body .app-shell .stage-two-card[data-accessory-check] {
+  grid-column: 1 / -1 !important;
+  align-self: start !important;
+  min-height: 0 !important;
+  padding: clamp(1rem, 1.6vw, 1.28rem) !important;
+}
+body .app-shell .stage-two-card--accessory-check .stage-two-card-head,
+body .app-shell .stage-two-card[data-accessory-check] .stage-two-card-head {
+  max-width: 58rem !important;
+}
+body .app-shell .stage-two-card--accessory-check .stage-two-card-head h3,
+body .app-shell .stage-two-card[data-accessory-check] .stage-two-card-head h3 {
+  font-size: clamp(0.86rem, 1.05vw, 0.98rem) !important;
+  line-height: 1.38 !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+}
+body .app-shell .stage-two-card--accessory-check .stage-two-mini-list,
+body .app-shell .stage-two-card[data-accessory-check] .stage-two-mini-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+  gap: clamp(0.68rem, 1vw, 0.9rem) !important;
+  margin-top: 0.82rem !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-mini,
+body .app-shell .stage-two-card[data-accessory-check] .accessory-mini {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-areas:
+    "head status"
+    "detail status" !important;
+  align-content: start !important;
+  align-items: center !important;
+  gap: 0.58rem 0.78rem !important;
+  min-height: 6.1rem !important;
+  padding: 0.88rem 0.92rem !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  border-radius: 1.18rem !important;
+  background: #fff !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07) !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-mini__head,
+body .app-shell .stage-two-card[data-accessory-check] .accessory-mini__head {
+  grid-area: head !important;
+  min-width: 0 !important;
+  gap: 0.54rem !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-mini .stage-two-mini-top b,
+body .app-shell .stage-two-card[data-accessory-check] .accessory-mini .stage-two-mini-top b {
+  width: 2rem !important;
+  height: 2rem !important;
+  border-radius: 0.78rem !important;
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-mini .stage-two-mini-top b .material-symbols-rounded,
+body .app-shell .stage-two-card[data-accessory-check] .accessory-mini .stage-two-mini-top b .material-symbols-rounded {
+  font-size: 1.18rem !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-mini strong,
+body .app-shell .stage-two-card[data-accessory-check] .accessory-mini strong {
+  flex: 1 1 auto !important;
+  color: #1f2937 !important;
+  font-size: 0.86rem !important;
+  line-height: 1.28 !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-mini > span:not(.accessory-status),
+body .app-shell .stage-two-card[data-accessory-check] .accessory-mini > span:not(.accessory-status) {
+  grid-area: detail !important;
+  color: #64748b !important;
+  font-size: 0.76rem !important;
+  line-height: 1.45 !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-status,
+body .app-shell .stage-two-card[data-accessory-check] .accessory-status {
+  grid-area: status !important;
+  width: 2.2rem !important;
+  height: 2.2rem !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.04) !important;
+}
+body .app-shell .stage-two-card--accessory-check .accessory-status .material-symbols-rounded,
+body .app-shell .stage-two-card[data-accessory-check] .accessory-status .material-symbols-rounded {
+  font-size: 1.28rem !important;
+}
+body.theme-dark .app-shell .stage-two-card--accessory-check .accessory-mini,
+body.theme-dark .app-shell .stage-two-card[data-accessory-check] .accessory-mini {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+  background: #151b23 !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24) !important;
+}
+body.theme-dark .app-shell .stage-two-card--accessory-check .accessory-mini .stage-two-mini-top b,
+body.theme-dark .app-shell .stage-two-card[data-accessory-check] .accessory-mini .stage-two-mini-top b {
+  background: #1f2937 !important;
+  color: #dbe4ee !important;
+}
+body.theme-dark .app-shell .stage-two-card--accessory-check .accessory-mini strong,
+body.theme-dark .app-shell .stage-two-card[data-accessory-check] .accessory-mini strong {
+  color: #f0f6fc !important;
+}
+body.theme-dark .app-shell .stage-two-card--accessory-check .accessory-mini > span:not(.accessory-status),
+body.theme-dark .app-shell .stage-two-card[data-accessory-check] .accessory-mini > span:not(.accessory-status) {
+  color: #9da7b5 !important;
+}
+body .app-shell .auto-run-wait-card {
+  cursor: default !important;
+  pointer-events: none !important;
+  background: linear-gradient(135deg, #14b8a6 0%, #22c55e 100%) !important;
+  box-shadow: 0 18px 42px rgba(20, 184, 166, 0.22) !important;
+}
+body .app-shell .auto-run-wait-card::after {
+  content: "sync" !important;
+  animation: autoRunSpin 1.2s linear infinite;
+}
+@keyframes autoRunSpin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+body .app-shell.app-shell--slide[data-stage-slide-index="4"] .stage-five-zone.is-active {
+  display: grid !important;
+}
+body .app-shell.app-shell--slide.is-stage-sliding[data-stage-slide-dir="next"] .stage-four-zone.is-active,
+body .app-shell.app-shell--slide.is-stage-sliding[data-stage-slide-dir="next"] .stage-four-zone.is-active:has(.purchase-receipt-stage),
+body .app-shell.app-shell--slide.is-stage-sliding[data-stage-slide-dir="next"] .stage-five-zone.is-active {
+  animation: stageSlideInNext 0.52s cubic-bezier(0.22, 0.9, 0.26, 1) both !important;
+  clip-path: none !important;
+}
+body .app-shell.app-shell--slide.is-stage-sliding[data-stage-slide-dir="prev"] .stage-three-zone.is-active,
+body .app-shell.app-shell--slide.is-stage-sliding[data-stage-slide-dir="prev"] .stage-four-zone.is-active,
+body .app-shell.app-shell--slide.is-stage-sliding[data-stage-slide-dir="prev"] .stage-four-zone.is-active:has(.purchase-receipt-stage),
+body .app-shell.app-shell--slide.is-stage-sliding[data-stage-slide-dir="prev"] .stage-five-zone.is-active {
+  animation: stageSlideInPrev 0.52s cubic-bezier(0.22, 0.9, 0.26, 1) both !important;
+  clip-path: none !important;
+}
+body .app-shell.app-shell--slide.is-stage-sliding .stage-four-zone.is-active .purchase-receipt-stage,
+body .app-shell.app-shell--slide.is-stage-sliding .stage-five-zone.is-active .stage-five-card,
+body .app-shell.app-shell--slide.is-stage-sliding .stage-five-zone.is-active .stage-five-start-card {
+  animation: stageCardCascade 0.5s cubic-bezier(0.22, 0.9, 0.26, 1) both !important;
+}
 
 @media (min-width: 901px) {
   body .app-shell .stage-two-zone-grid {
@@ -11864,32 +12112,48 @@ body .app-shell button.purchase-report-pdf-btn {
   font-weight: 950 !important;
 }
 
-/* Keep the seller/body analysis card from overpowering the Step 2 layout. */
+/* Seller/body analysis card: keep rows readable and visually centered. */
 body .app-shell .stage-two-card--listing-text .stage-two-mini,
 body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini {
-  grid-template-columns: 4.7rem minmax(0, 1fr) !important;
-  align-items: start !important;
+  grid-template-columns: 6.4rem minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 0.78rem !important;
+  min-height: 5.7rem !important;
+  padding: 0.82rem 0.92rem !important;
+}
+body .app-shell .stage-two-card--listing-text .stage-two-mini-top,
+body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini-top {
+  align-self: center !important;
   gap: 0.5rem !important;
-  padding: 0.48rem 0.62rem !important;
+}
+body .app-shell .stage-two-card--listing-text .stage-two-mini-top b,
+body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini-top b {
+  width: 2rem !important;
+  height: 2rem !important;
+}
+body .app-shell .stage-two-card--listing-text .stage-two-mini-top b svg,
+body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini-top b svg {
+  width: 1.58rem !important;
+  height: 1.58rem !important;
 }
 body .app-shell .stage-two-card--listing-text .stage-two-mini strong,
 body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini strong {
-  font-size: 0.68rem !important;
+  font-size: 0.82rem !important;
   line-height: 1.25 !important;
-  font-weight: 850 !important;
+  font-weight: 900 !important;
 }
 body .app-shell .stage-two-card--listing-text .stage-two-mini span,
 body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini span {
-  align-self: start !important;
+  align-self: center !important;
   color: #4f5867 !important;
-  font-size: 0.68rem !important;
-  font-weight: 650 !important;
-  line-height: 1.38 !important;
+  font-size: 0.84rem !important;
+  font-weight: 700 !important;
+  line-height: 1.52 !important;
 }
 @media (min-width: 901px) {
   body .app-shell .stage-two-card--listing-text .stage-two-mini,
   body .app-shell .stage-two-card[data-listing-text-analysis] .stage-two-mini {
-    padding-block: 0.52rem !important;
+    padding-block: 0.92rem !important;
   }
 }
 
@@ -14631,4 +14895,31 @@ body.theme-dark .app-shell .stage-five-zone.is-active {
   background-image: none !important;
   border-color: transparent !important;
   box-shadow: none !important;
+}
+
+/* Step 5 seller context: prevent the source-link button from overlapping seller text. */
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__context {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  column-gap: 0.7rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__seller {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__seller > div {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__seller p {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__listing-link {
+  justify-self: end !important;
+  max-width: 6.2rem !important;
+  white-space: nowrap !important;
 }
