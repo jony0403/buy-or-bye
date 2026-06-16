@@ -14142,6 +14142,67 @@ body .app-shell .stage-two-youtube-card:hover .stage-two-youtube-open {
   text-shadow: none !important;
 }
 
+/* Final performance mode: remove ambient backgrounds and promote only safe leaf panels. */
+html,
+body {
+  background: #f5f7fb !important;
+  background-image: none !important;
+}
+
+body::before,
+body::after,
+#appShell::before,
+#appShell::after {
+  display: none !important;
+  content: none !important;
+  background: none !important;
+  background-image: none !important;
+  animation: none !important;
+  filter: none !important;
+}
+
+#appShell {
+  background: #f5f7fb !important;
+  background-image: none !important;
+}
+
+body.theme-dark,
+body.theme-dark #appShell {
+  background: #0f141d !important;
+  background-image: none !important;
+}
+
+body .app-shell .mini-card,
+body .app-shell .stage-two-card,
+body .app-shell .stage-two-risk-card,
+body .app-shell .stage-three-card,
+body .app-shell .current-price-card,
+body .app-shell .used-price-guide-card,
+body .app-shell .purchase-receipt-paper,
+body .app-shell .seller-chat__left-pane,
+body .app-shell .seller-chat__right-pane,
+body .app-shell #recentDrawer.recent-drawer,
+body .app-shell #directAiPanel.direct-chat-popover {
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+body .app-shell .seller-chat__thread,
+body .app-shell .direct-chat-log,
+body .app-shell #recentDrawer.recent-drawer,
+body .app-shell .comparison-price-table-wrap,
+body .app-shell .used-price-guide-table-wrap {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Demo-critical: keep the receipt print animation even on classroom PCs with reduced motion enabled. */
+@media (prefers-reduced-motion: reduce) {
+  body .app-shell .receipt-paper-reveal.is-printing {
+    animation: receiptPrintOut 6.6s linear both !important;
+  }
+}
+
 @keyframes stageFiveCtaEnter {
   from {
     opacity: 0;

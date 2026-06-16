@@ -8372,19 +8372,6 @@ function followPurchaseReceiptPrint(root = $current) {
   reveal.style.maxHeight = '';
   reveal.style.minHeight = '0px';
 
-  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-  if (prefersReducedMotion) {
-    reveal.style.height = 'auto';
-    reveal.style.minHeight = `${printHeight}px`;
-    if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
-    revealPurchaseReportPdfButton(root);
-    if (item) refreshStageFiveSection(item);
-    if (!$appShell?.classList.contains('app-shell--slide')) {
-      reveal.scrollIntoView({ block: 'end', behavior: 'auto' });
-    }
-    return;
-  }
-
   reveal.addEventListener(
     'animationend',
     () => {
