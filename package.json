@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prestart": "node scripts/ensure-deps.mjs",
     "start": "node analyzer-server.mjs",
     "start:analyzer": "node analyzer-server.mjs",
     "start:images": "node server.mjs",

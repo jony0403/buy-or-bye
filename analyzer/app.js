@@ -16,6 +16,7 @@ const $urlImportForm = document.getElementById('urlImportForm');
 const $urlImportInput = document.getElementById('urlImportInput');
 const $urlImportStatus = document.getElementById('urlImportStatus');
 const $btnUrlImport = document.getElementById('btnUrlImport');
+const $autoRunToggle = document.getElementById('autoRunToggle');
 const $dashboardRail = document.querySelector('.dashboard-rail');
 const $railPanel = document.querySelector('[data-rail-panel]');
 const $shortcutPanel = document.querySelector('[data-shortcut-panel]');
@@ -56,6 +57,7 @@ const productRiskAnalyses = new Map();
 const productRiskYoutubeAnalyses = new Map();
 const listingTextAnalyses = new Map();
 const listingImageAnalyses = new Map();
+const accessoryChecks = new Map();
 const comparisonFilters = new Map();
 const comparisonFilterTimers = new Set();
 const stageThreeComparisonSkippedKeys = new Set();
@@ -85,11 +87,8 @@ const sellerChatStates = new Map();
 const favoriteListingKeys = new Set();
 const sellerChatToneOptions = [
   { value: 'polite', label: '공손하게' },
-  { value: 'warm', label: '부드럽게' },
-  { value: 'friendly', label: '넵!! 밝게^^' },
+  { value: 'friendly', label: '밝게' },
   { value: 'firm', label: '단호하게' },
-  { value: 'short', label: '짧게' },
-  { value: 'negotiate', label: '가격협상' },
 ];
 const APP_SHORTCUT_GROUPS = [
   {
@@ -108,6 +107,7 @@ const APP_SHORTCUT_GROUPS = [
       ['L', '스크롤식/슬라이드식 전환'],
       ['D', '다크모드 전환'],
       ['H', '최근 매물 열기/닫기'],
+      ['T', '자동진행 켜기/끄기'],
       ['S', 'AI 설정 열기'],
     ],
   },
@@ -139,7 +139,9 @@ let stageSlideIndex = 0;
 let stageSlideAnimationTimer = 0;
 let stageStartMotionTimer = 0;
 let aiResultMotionTimer = 0;
+let appToastTimer = 0;
 let sellerChatToastTimer = 0;
+let autoRunTimer = 0;
 let favoriteCompareOpen = false;
 let lastStageThreeCompsRenderKey = '';
 let activeAiRunId = 0;
@@ -155,6 +157,7 @@ const LISTING_IMAGE_OVERLAY_VERSION = 25;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
+const AUTO_RUN_STORAGE_KEY = 'ulsa_auto_run_next_steps';
 const FAVORITE_LISTINGS_STORAGE_KEY = 'ulsa_favorite_listing_keys_v1';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v3',
@@ -218,6 +221,88 @@ function restoreDirectAiChatStates(raw) {
   for (const [key, state] of Object.entries(raw)) {
     const cleaned = directAiChatStateToPersistable(state);
     if (key && cleaned) directAiChatStates.set(key, cleaned);
+  }
+}
+
+function sellerChatStateToPersistable(state, key = '') {
+  if (!state || typeof state !== 'object') return null;
+  const messages = Array.isArray(state.messages)
+    ? state.messages
+        .map((msg) => ({
+          role: msg?.role === 'seller' ? 'seller' : msg?.role === 'me' ? 'me' : 'assistant',
+          text: String(msg?.text || '').slice(0, 4000),
+        }))
+        .filter((msg) => msg.text)
+        .slice(-60)
+    : [];
+  const quickReplies = Array.isArray(state.quickReplies)
+    ? state.quickReplies.map((chip) => String(chip || '').trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const alternatives = Array.isArray(state.lastSuggestion?.alternatives)
+    ? state.lastSuggestion.alternatives.map((text) => String(text || '').slice(0, 2000)).filter(Boolean).slice(0, 5)
+    : [];
+  const followUps = Array.isArray(state.lastSuggestion?.followUps)
+    ? state.lastSuggestion.followUps.map((text) => String(text || '').slice(0, 1000)).filter(Boolean).slice(0, 3)
+    : [];
+  const lastSuggestion =
+    state.lastSuggestion && (state.lastSuggestion.primary || alternatives.length || followUps.length)
+      ? {
+          primary: String(state.lastSuggestion.primary || '').slice(0, 2000),
+          alternatives,
+          followUps,
+          summary: String(state.lastSuggestion.summary || '').slice(0, 1000),
+        }
+      : null;
+  const replyAnalysis = state.replyAnalysis?.text && state.replyAnalysis.status !== 'loading'
+    ? {
+        status: state.replyAnalysis.status === 'error' ? 'error' : 'done',
+        text: String(state.replyAnalysis.text || '').slice(0, 2000),
+        source: String(state.replyAnalysis.source || '').slice(0, 2000),
+      }
+    : null;
+  const hasContent =
+    messages.length ||
+    quickReplies.length ||
+    lastSuggestion ||
+    replyAnalysis ||
+    state.input ||
+    state.sellerReply ||
+    state.toneNote ||
+    stageFiveActiveKeys.has(key);
+  if (!hasContent) return null;
+  return {
+    mode: state.mode === 'reply' ? 'reply' : 'first',
+    tone: normalizeSellerChatTone(state.tone),
+    toneNote: String(state.toneNote || '').slice(0, 1000),
+    input: String(state.input || '').slice(0, 2000),
+    sellerReply: String(state.sellerReply || '').slice(0, 4000),
+    replyAnalysis,
+    status: state.status === 'loading' ? 'idle' : state.status === 'error' ? 'error' : 'idle',
+    loadingTarget: '',
+    messages,
+    lastSuggestion,
+    quickReplies,
+    selectedKeyword: String(state.selectedKeyword || '').slice(0, 200),
+    lastRequestMessage: String(state.lastRequestMessage || '').slice(0, 4000),
+    lastRequestWasSellerReply: state.lastRequestWasSellerReply === true,
+    lastRequestKind: String(state.lastRequestKind || 'initial').slice(0, 80),
+    error: state.status === 'error' ? String(state.error || '').slice(0, 1000) : '',
+  };
+}
+
+function sellerChatStatesToPersistableObject() {
+  return Object.fromEntries(
+    [...sellerChatStates.entries()]
+      .map(([key, state]) => [key, sellerChatStateToPersistable(state, key)])
+      .filter(([, state]) => state)
+  );
+}
+
+function restoreSellerChatStates(raw) {
+  if (!raw || typeof raw !== 'object') return;
+  for (const [key, state] of Object.entries(raw)) {
+    const cleaned = sellerChatStateToPersistable(state, key);
+    if (key && cleaned) sellerChatStates.set(key, { ...defaultSellerChatState(), ...cleaned });
   }
 }
 
@@ -326,16 +411,19 @@ function persistAiCaches() {
       JSON.stringify({
         relatedRequestedKeys: setToPersistableArray(relatedRequestedKeys),
         stageThreeActiveKeys: setToPersistableArray(stageThreeActiveKeys),
+        stageFiveActiveKeys: setToPersistableArray(stageFiveActiveKeys),
         productSummaries: mapToPersistableObject(productSummaries),
         productRiskAnalyses: mapToPersistableObject(productRiskAnalyses),
         productRiskYoutubeAnalyses: mapToPersistableObject(productRiskYoutubeAnalyses),
         listingTextAnalyses: mapToPersistableObject(listingTextAnalyses),
         listingImageAnalyses: mapToPersistableObject(listingImageAnalyses),
+        accessoryChecks: mapToPersistableObject(accessoryChecks),
         comparisonFilters: mapToPersistableObject(comparisonFilters),
         stageThreeComparisonSkippedKeys: setToPersistableArray(stageThreeComparisonSkippedKeys),
         usedPriceGuides: mapToPersistableObject(usedPriceGuides),
         purchaseReceipts: mapToPersistableObject(purchaseReceipts),
         directAiChatStates: directAiChatStatesToPersistableObject(),
+        sellerChatStates: sellerChatStatesToPersistableObject(),
       })
     );
   } catch {
@@ -351,6 +439,7 @@ function loadAiCaches() {
       const parsed = JSON.parse(raw);
       restorePersistedSet(relatedRequestedKeys, parsed.relatedRequestedKeys);
       restorePersistedSet(stageThreeActiveKeys, parsed.stageThreeActiveKeys);
+      restorePersistedSet(stageFiveActiveKeys, parsed.stageFiveActiveKeys);
       restorePersistedMap(productSummaries, parsed.productSummaries);
       restorePersistedMap(productRiskAnalyses, parsed.productRiskAnalyses);
       restorePersistedMap(productRiskYoutubeAnalyses, parsed.productRiskYoutubeAnalyses);
@@ -360,11 +449,13 @@ function loadAiCaches() {
         parsed.listingImageAnalyses,
         (state) => state?.status !== 'done' || Number(state.overlayVersion) >= LISTING_IMAGE_OVERLAY_VERSION
       );
+      restorePersistedMap(accessoryChecks, parsed.accessoryChecks);
       restorePersistedMap(comparisonFilters, parsed.comparisonFilters);
       restorePersistedSet(stageThreeComparisonSkippedKeys, parsed.stageThreeComparisonSkippedKeys);
       restorePersistedMap(usedPriceGuides, parsed.usedPriceGuides);
       restorePersistedMap(purchaseReceipts, parsed.purchaseReceipts);
       restoreDirectAiChatStates(parsed.directAiChatStates);
+      restoreSellerChatStates(parsed.sellerChatStates);
     } catch {
       /* ignore stale cache */
     }
@@ -408,6 +499,7 @@ function persistFavoriteListings() {
 
 loadFavoriteListings();
 setLayoutMode(readLayoutMode(), { persist: false });
+setAutoRunMode(readAutoRunMode(), { persist: false });
 
 function readLayoutMode() {
   try {
@@ -439,6 +531,56 @@ function setLayoutMode(mode, opts = {}) {
   updateRailLayoutToggle();
   updateStageSlide();
   requestAnimationFrame(() => bindScrollText($current));
+}
+
+function readAutoRunMode() {
+  try {
+    return localStorage.getItem(AUTO_RUN_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function isAutoRunEnabled() {
+  return Boolean($autoRunToggle?.checked);
+}
+
+function setAutoRunMode(enabled, opts = {}) {
+  const on = enabled === true;
+  if ($autoRunToggle) {
+    $autoRunToggle.checked = on;
+    $autoRunToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  $appShell?.classList.toggle('is-auto-run-enabled', on);
+  if (opts.persist !== false) {
+    try {
+      localStorage.setItem(AUTO_RUN_STORAGE_KEY, on ? '1' : '0');
+    } catch {
+      /* localStorage may be unavailable */
+    }
+  }
+  if (on) scheduleAutoRunNextStep();
+}
+
+function showAppToast(message = '') {
+  const text = String(message || '').trim();
+  if (!text) return;
+  let toast = document.querySelector('[data-app-toast]');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.className = 'app-toast';
+    toast.setAttribute('data-app-toast', '');
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toast);
+  }
+  toast.textContent = text;
+  toast.classList.add('is-visible');
+  if (appToastTimer) window.clearTimeout(appToastTimer);
+  appToastTimer = window.setTimeout(() => {
+    toast.classList.remove('is-visible');
+    appToastTimer = 0;
+  }, 1800);
 }
 
 function storedThemeMode() {
@@ -507,11 +649,14 @@ const AI_LOADING_DURATIONS = {
   productRiskYoutube: 30000,
   listingText: 7000,
   listingImage: 18000,
+  accessoryCheck: 24000,
   searchQuery: 8000,
   comparisonFilter: 11000,
   usedPriceGuide: 9000,
   purchaseReceipt: 8500,
   sellerChat: 7000,
+  sellerChatKeywords: 5500,
+  sellerChatMessages: 7000,
 };
 const AI_LOADING_FINISH_RAMP_MS = 520;
 const AI_LOADING_FINISH_MS = 850;
@@ -635,6 +780,7 @@ function hasVisibleAiLoading(item = currentRenderedItem()) {
       productRiskYoutubeAnalyses.get(key)?.status === 'loading' ||
       listingTextAnalyses.get(key)?.status === 'loading' ||
       listingImageAnalyses.get(key)?.status === 'loading' ||
+      accessoryChecks.get(key)?.status === 'loading' ||
       searchQueryRegenerations.get(key)?.status === 'loading' ||
       (filterKey && comparisonFilters.get(filterKey)?.status === 'loading') ||
       (filterKey && usedPriceGuides.get(filterKey)?.status === 'loading') ||
@@ -825,7 +971,8 @@ function refreshVisibleAiLoadingCards(item = currentRenderedItem()) {
     productSummaries.get(key)?.status === 'loading' ||
     productRiskAnalyses.get(key)?.status === 'loading' ||
     listingTextAnalyses.get(key)?.status === 'loading' ||
-    listingImageAnalyses.get(key)?.status === 'loading'
+    listingImageAnalyses.get(key)?.status === 'loading' ||
+    accessoryChecks.get(key)?.status === 'loading'
   ) {
     updateAiLoadingProgressNodes();
     refreshed = true;
@@ -1003,7 +1150,9 @@ function isStepTwoFlowComplete(item) {
   const imageState = listingImageAnalyses.get(key);
   const textSettled = !textState || textState.status === 'done' || textState.status === 'error';
   const imageSettled = imageState?.status === 'done' || imageState?.status === 'error';
-  return Boolean(riskDone && textSettled && imageSettled);
+  const accessoryState = accessoryChecks.get(key);
+  const accessorySettled = !accessoryState || accessoryState.status === 'done' || accessoryState.status === 'error';
+  return Boolean(riskDone && textSettled && imageSettled && accessorySettled);
 }
 
 function isStepTwoDone(item) {
@@ -1154,9 +1303,16 @@ function maybeMarkStageTwoComplete(item) {
 function ensureCachedStageTwoFollowups(item) {
   const key = summaryKey(item);
   if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
+  ensureStageTwoFollowups(item);
+}
+
+function ensureStageTwoFollowups(item) {
+  const key = summaryKey(item);
+  if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
   void ensureProductRiskYoutube(item);
-  void ensureListingTextAnalysis(item);
-  void ensureListingImageAnalysis(item);
+  void ensureListingTextAnalysis(item, { skipFollowups: true });
+  void ensureListingImageAnalysis(item, { skipFollowups: true });
+  void ensureAccessoryCheck(item);
 }
 
 function syncStagePanels(item) {
@@ -1191,6 +1347,7 @@ function updateStageSlide() {
     stageSlideIndex -= 1;
   }
   $appShell?.setAttribute('data-stage-slide-index', String(stageSlideIndex));
+  scheduleAutoRunNextStep();
   const controls = $current?.querySelector('[data-stage-slide-controls]');
   if (!controls) return;
   const prev = controls.querySelector('[data-stage-slide-prev]');
@@ -1232,6 +1389,82 @@ function playStageStartMotion() {
     $appShell?.classList.remove('is-stage-starting');
     stageStartMotionTimer = 0;
   }, 900);
+}
+
+function startStageTwo(item, key = summaryKey(item)) {
+  if (!item || !key) return false;
+  if (!isStepOneDone(item)) return false;
+  if (productRiskAnalyses.get(key)?.status === 'loading') return false;
+  const shouldRetry = productRiskAnalyses.get(key)?.status === 'error';
+  stageTwoActiveKeys.add(key);
+  if (shouldRetry) {
+    productRiskAnalyses.delete(key);
+    productRiskYoutubeAnalyses.delete(key);
+    accessoryChecks.delete(key);
+  }
+  playStageStartMotion();
+  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
+  void ensureProductRisk(item);
+  return true;
+}
+
+function startStageThree(item, btn = null, key = summaryKey(item)) {
+  if (!item || !key || !isStepTwoDone(item)) return false;
+  if (stageThreeActiveKeys.has(key) && relatedRequestedKeys.has(key)) return false;
+  stageThreeActiveKeys.add(key);
+  relatedRequestedKeys.add(key);
+  persistAiCaches();
+  playStageStartMotion();
+  openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn);
+  return true;
+}
+
+function startStageFive(item, key = sellerChatKey(item)) {
+  if (!item || !key || !isPurchaseReceiptPrinted(item)) return false;
+  const alreadyActive = stageFiveActiveKeys.has(key);
+  if (alreadyActive) {
+    ensureSellerChatKeywords(item);
+    return false;
+  }
+  stageFiveActiveKeys.add(key);
+  stageFiveEnteringKeys.add(key);
+  persistAiCaches();
+  playStageStartMotion();
+  refreshSellerChatSection(item);
+  ensureSellerChatKeywords(item);
+  window.setTimeout(() => {
+    stageFiveEnteringKeys.delete(key);
+    if (selectedKey === key) refreshSellerChatDynamic(item);
+    persistAiCaches();
+  }, 760);
+  return true;
+}
+
+function scheduleAutoRunNextStep(item = currentRenderedItem()) {
+  if (!isAutoRunEnabled() || autoRunTimer) return;
+  autoRunTimer = window.setTimeout(() => {
+    autoRunTimer = 0;
+    runAutoNextStep(item || currentRenderedItem());
+  }, 90);
+}
+
+function runAutoNextStep(item = currentRenderedItem()) {
+  if (!isAutoRunEnabled() || !item) return false;
+  const key = summaryKey(item);
+  if (!key || selectedKey !== key) return false;
+  if (!isStepOneDone(item)) return false;
+  if (!isStepTwoStarted(item)) return startStageTwo(item, key);
+  if (!isStepTwoDone(item)) return false;
+  if (!isStepThreeUnlocked(item)) return startStageThree(item, null, key);
+  if (!isStepThreeDone(item)) return false;
+  const stageComps = effectiveStageThreeComps(item, comps);
+  const { state: receiptState } = stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
+  if (receiptState?.status !== 'done') {
+    if (receiptState?.status !== 'loading') void ensurePurchaseReceipt(item);
+    return true;
+  }
+  if (!isPurchaseReceiptPrinted(item, stageComps)) return false;
+  return startStageFive(item, key);
 }
 
 function playAiResultMotion(duration = 560) {
@@ -2350,6 +2583,162 @@ function renderListingImageGroupsCard(item) {
   `;
 }
 
+function accessoryStatusLabel(entry) {
+  const kind = typeof entry === 'string' ? '' : accessoryStatusKind(entry);
+  const evidence = typeof entry === 'string' ? '' : accessoryEvidenceText(entry);
+  if (kind === 'missing') return '없음';
+  if (kind === 'confirmed') {
+    if (/(사진|이미지)\S{0,20}(?:보임|보입니다|확인|식별)/i.test(evidence)) return '사진 확인';
+    if (/(본문|판매글|글|설명)\S{0,20}(?:포함|있음|있습니다|있다고|명시|언급|기재|구성)/i.test(evidence)) return '본문 확인';
+    return '확인됨';
+  }
+  return '확인 필요';
+}
+
+function accessoryStatusLevel(entry) {
+  const kind = typeof entry === 'string' ? '' : accessoryStatusKind(entry);
+  if (kind === 'missing') return 'risk';
+  if (kind === 'confirmed') return 'safe';
+  return 'caution';
+}
+
+function accessoryEvidenceText(entry) {
+  return `${entry?.name || ''} ${entry?.status || ''} ${entry?.evidence || ''} ${entry?.question || ''}`
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function accessoryEvidenceSaysMissing(entry) {
+  const status = String(entry?.status || '').trim().toLowerCase();
+  if (/^(missing|not_included|excluded|explicit_missing)$/.test(status)) return true;
+  if (/unconfirmed|unknown|not[_-]?shown|not[_-]?visible|not[_-]?mentioned|missing_or_unconfirmed/i.test(status)) return false;
+  const evidence = accessoryEvidenceText(entry);
+  const onlyVisibilityMissing =
+    /(언급|확인|보이|보임|식별|사진|이미지)\S{0,24}(?:없|않|어렵|불가|안\s*됨|되지)|(?:본문|판매글|글|설명)\S{0,16}언급\S{0,8}(?:없|않)/i.test(evidence);
+  const explicitMissing = /(?:판매자|판매글|본문|글|설명|매물)\S{0,45}(?:미포함|불포함|제외|별도\s*구매|없다고\s*(?:명시|밝힘|언급)?|없습니다\s*(?:명시|밝힘|언급)?|없음(?:이라고|으로)?\s*(?:명시|밝힘|언급)?|없다(?:고)?\s*(?:명시|밝힘|언급)?)/i.test(evidence);
+  const terseExplicitMissing =
+    /(?:박스|상자|케이스|파우치|충전기|어댑터|케이블|동글|영수증|보증서|구매내역|펜슬|리모컨)\S{0,12}(?:미포함|불포함|제외|별도\s*구매|없음)$/i.test(evidence);
+  return explicitMissing || (terseExplicitMissing && !onlyVisibilityMissing);
+}
+
+function accessoryEvidenceSaysIncluded(entry) {
+  const status = String(entry?.status || '').trim();
+  const evidence = accessoryEvidenceText(entry);
+  if (status === 'confirmed' || status === 'body_only') return true;
+  if (/본체|기기\s*본체|노트북\s*본체|제품\s*본체|device|unit/i.test(String(entry?.name || ''))) return true;
+  return (
+    /(사진|이미지)\S{0,25}(?:보임|보입니다|확인|식별|나옴|나옵니다)/i.test(evidence) ||
+    /(본문|판매글|글|설명|매물)\S{0,35}(?:포함|있음|있습니다|있다고|동봉|구성|명시|언급|기재|풀박스)/i.test(evidence) ||
+    /(?:포함|있음|있습니다|있다고|동봉|구성|명시|언급|기재|풀박스)\S{0,35}(?:본문|판매글|글|설명|매물|사진|이미지)/i.test(evidence)
+  );
+}
+
+function accessoryStatusKind(entry) {
+  if (accessoryEvidenceSaysMissing(entry)) return 'missing';
+  if (accessoryEvidenceSaysIncluded(entry)) return 'confirmed';
+  return 'unknown';
+}
+
+function accessoryStatusIcon(entry) {
+  const kind = accessoryStatusKind(entry);
+  const icon = kind === 'confirmed' ? 'check' : kind === 'missing' ? 'close' : 'warning';
+  const label = kind === 'confirmed' ? '확인됨' : kind === 'missing' ? '판매자가 없음/미포함 명시' : '확인 필요';
+  return `
+    <span class="accessory-status accessory-status--${escapeAttr(kind)}" title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}">
+      <span class="material-symbols-rounded" aria-hidden="true">${icon}</span>
+    </span>
+  `;
+}
+
+function accessoryItemIconName(name) {
+  const value = String(name || '').toLowerCase();
+  if (/충전|어댑터|전원|파워|charger|adapter|power/.test(value)) return 'power';
+  if (/케이블|선\b|usb|hdmi|젠더|동글|어댑터|cable|dongle/.test(value)) return 'cable';
+  if (/박스|상자|패키지|케이스|파우치|box|case|pouch/.test(value)) return 'inventory_2';
+  if (/보증|영수증|구매내역|구매\s*내역|증빙|receipt|warranty/.test(value)) return 'receipt_long';
+  if (/설명서|매뉴얼|가이드|안내서|manual|guide/.test(value)) return 'menu_book';
+  if (/펜|스타일러스|s펜|애플펜슬|pencil|stylus|pen/.test(value)) return 'stylus';
+  if (/리모컨|컨트롤러|패드|조이콘|remote|controller|joy/.test(value)) return 'sports_esports';
+  if (/배터리|건전지|battery/.test(value)) return 'battery_full';
+  if (/스트랩|밴드|끈|strap|band/.test(value)) return 'watch';
+  if (/스탠드|거치대|독\b|dock|stand/.test(value)) return 'view_in_ar';
+  if (/본체|기기|제품|device|unit/.test(value)) return 'devices';
+  return 'category';
+}
+
+function renderAccessoryMini(entry) {
+  const statusText = accessoryStatusLabel(entry);
+  const evidence = String(entry.evidence || '').trim();
+  return `
+    <div class="stage-two-mini accessory-mini risk-${escapeAttr(accessoryStatusLevel(entry))}">
+      <div class="stage-two-mini-top accessory-mini__head">
+        <b><span class="material-symbols-rounded" aria-hidden="true">${escapeHtml(accessoryItemIconName(entry.name))}</span></b>
+        <strong>${escapeHtml(entry.name)}</strong>
+      </div>
+      <span>${escapeHtml([statusText, evidence].filter(Boolean).join(' · '))}</span>
+      ${accessoryStatusIcon(entry)}
+    </div>
+  `;
+}
+
+function renderAccessoryNoticeMini() {
+  return `
+    <div class="accessory-mini-notice risk-caution">
+      <span class="material-symbols-rounded" aria-hidden="true">warning</span>
+      <strong>확인 필요</strong>
+      <span>거래 전 구성품 사진이나 포함 여부를 판매자에게 한 번만 확인하세요.</span>
+    </div>
+  `;
+}
+
+function renderAccessoryCheckCard(item) {
+  const key = summaryKey(item);
+  const state = key ? accessoryChecks.get(key) : null;
+  if (state?.status === 'loading') {
+    return renderAnalysisLoadingCard(
+      '구성품 체크',
+      '제품 기본 구성품을 조사한 뒤 본문·사진과 대조합니다.',
+      'stage-two-card--accessory-check',
+      840,
+      state,
+      'accessoryCheck'
+    ).replace('<article ', '<article data-accessory-check ');
+  }
+  if (state?.status === 'error') {
+    return `
+      <article class="mini-card stage-two-card stage-two-card--error stage-two-card--accessory-check" data-accessory-check>
+        <p class="stage-two-card-label">AI 분석 실패</p>
+        <h3>구성품 체크</h3>
+        <p>${escapeHtml(state.error || '구성품 체크를 불러오지 못했습니다.')}</p>
+      </article>
+    `;
+  }
+  const analysis = state?.analysis;
+  if (!analysis || state?.status !== 'done') return '';
+  const items = (Array.isArray(analysis.items) ? analysis.items : [])
+    .filter((entry) => entry?.name && entry.status !== 'not_applicable')
+    .slice(0, 6);
+  if (!items.length && !analysis.summary) return '';
+  const summary =
+    String(analysis.summary || '').trim() ||
+    '기본 구성품 대비 본문·사진에서 확인되지 않은 항목이 있습니다.';
+  const overallLevel = String(analysis.overallLevel || 'caution');
+  return `
+    <article class="mini-card stage-two-card stage-two-card--accessory-check" data-accessory-check style="--stage-delay:840ms">
+      <div class="stage-two-card-head">
+        <p class="stage-two-card-label">구성품 체크</p>
+        <h3>${escapeHtml(summary)}</h3>
+      </div>
+      <div class="stage-two-mini-list">
+        ${items
+          .map((entry) => renderAccessoryMini(entry))
+          .join('')}
+        ${overallLevel === 'risk' ? renderAccessoryNoticeMini() : ''}
+      </div>
+    </article>
+  `;
+}
+
 function directAiStepLabel(item) {
   if (!item) return '매물 대기';
   if (isStepFourDone(item)) return 'Step 4 최종 판단까지 반영';
@@ -2401,6 +2790,7 @@ function invalidateStepTwoCaches(key) {
   productRiskYoutubeAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
+  accessoryChecks.delete(key);
   stageTwoCompletedKeys.delete(key);
 }
 
@@ -2430,6 +2820,7 @@ function invalidateAnalysisPart(item, target) {
     case 'productRisk':
       productRiskAnalyses.delete(key);
       productRiskYoutubeAnalyses.delete(key);
+      accessoryChecks.delete(key);
       invalidatePurchaseReceiptCaches(item);
       break;
     case 'productRiskYoutube':
@@ -2437,11 +2828,17 @@ function invalidateAnalysisPart(item, target) {
       break;
     case 'listingText':
       listingTextAnalyses.delete(key);
+      accessoryChecks.delete(key);
       invalidatePurchaseReceiptCaches(item);
       break;
     case 'listingImage':
       listingImageAnalyses.delete(key);
+      accessoryChecks.delete(key);
       imageAnalysisPreviewedKeys.delete(key);
+      invalidatePurchaseReceiptCaches(item);
+      break;
+    case 'accessoryCheck':
+      accessoryChecks.delete(key);
       invalidatePurchaseReceiptCaches(item);
       break;
     case 'searchQuery':
@@ -2473,6 +2870,8 @@ function isDirectAiPartLoading(item, target) {
       return listingTextAnalyses.get(key)?.status === 'loading';
     case 'listingImage':
       return listingImageAnalyses.get(key)?.status === 'loading';
+    case 'accessoryCheck':
+      return accessoryChecks.get(key)?.status === 'loading';
     case 'searchQuery':
       return searchQueryRegenerations.get(key)?.status === 'loading';
     case 'usedPriceGuide': {
@@ -2511,7 +2910,8 @@ function directAiEarlierStageBlock(item, requiredStep) {
       productRiskAnalyses.get(key)?.status === 'loading' ||
       productRiskYoutubeAnalyses.get(key)?.status === 'loading' ||
       listingTextAnalyses.get(key)?.status === 'loading' ||
-      listingImageAnalyses.get(key)?.status === 'loading';
+      listingImageAnalyses.get(key)?.status === 'loading' ||
+      accessoryChecks.get(key)?.status === 'loading';
     return loading
       ? 'Step 2 리스크 판별이 진행 중입니다. 이전 단계가 마무리된 뒤 다시 실행할 수 있습니다.'
       : 'Step 2 리스크 판별이 끝난 뒤 실행할 수 있습니다.';
@@ -2593,21 +2993,14 @@ function directAiPdfCompletionWarning(item) {
 function startStageTwoFromAssistant(item) {
   const key = summaryKey(item);
   if (!key) return '먼저 분석할 매물을 불러와 주세요.';
-  stageTwoActiveKeys.add(key);
-  playStageStartMotion();
-  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
-  void ensureProductRisk(item);
+  startStageTwo(item, key);
   return 'Step 2 리스크 판별을 시작했습니다.';
 }
 
 function startStageThreeFromAssistant(item) {
   const key = summaryKey(item);
   if (!key) return '먼저 분석할 매물을 불러와 주세요.';
-  stageThreeActiveKeys.add(key);
-  relatedRequestedKeys.add(key);
-  persistAiCaches();
-  playStageStartMotion();
-  openRelatedSearchForItem(item, stageThreeSearchQueries(item), null);
+  startStageThree(item, null, key);
   return 'Step 3 가격 참고자료 수집을 시작했습니다.';
 }
 
@@ -2775,7 +3168,7 @@ const DIRECT_AI_ACTIONS = [
     async run(item) {
       invalidateAnalysisPart(item, 'listingText');
       if (selectedKey === summaryKey(item)) refreshListingTextAnalysisCard(item);
-      await ensureListingTextAnalysis(item);
+      await ensureListingTextAnalysis(item, { skipFollowups: true });
       refreshDirectAiPanelIfOpen();
       return { message: '판매글 분석을 다시 생성합니다.' };
     },
@@ -2796,9 +3189,35 @@ const DIRECT_AI_ACTIONS = [
     async run(item) {
       invalidateAnalysisPart(item, 'listingImage');
       if (selectedKey === summaryKey(item)) refreshListingImageAnalysisCard(item);
-      await ensureListingImageAnalysis(item);
+      await ensureListingImageAnalysis(item, { skipFollowups: true });
       refreshDirectAiPanelIfOpen();
       return { message: '판매자 이미지 분석을 다시 생성합니다.' };
+    },
+  },
+  {
+    id: 'regen.accessoryCheck',
+    label: '구성품 체크 다시 생성',
+    risk: 'safe',
+    chipLabel: '구성품 체크 다시',
+    aliases: ['구성품', '구성품 체크', '구성 체크', '부속품', '악세사리', '액세서리'],
+    preconditions(item) {
+      if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      const block = directAiEarlierStageBlock(item, 2);
+      if (block) return { ok: false, message: block };
+      const key = summaryKey(item);
+      if (productRiskAnalyses.get(key)?.status !== 'done') return { ok: false, message: 'Step 2 리스크 판별이 끝난 뒤 구성품 체크를 다시 실행할 수 있습니다.' };
+      const imageState = listingImageAnalyses.get(key);
+      if (imageState?.status === 'loading') return { ok: false, message: '이미지 분석이 끝난 뒤 구성품 체크를 다시 실행할 수 있습니다.' };
+      if (imageState && imageState.status !== 'done' && imageState.status !== 'error') return { ok: false, message: '이미지 분석 결과가 준비된 뒤 구성품 체크를 다시 실행할 수 있습니다.' };
+      if (isDirectAiPartLoading(item, 'accessoryCheck')) return { ok: false, message: '구성품 체크가 이미 생성 중입니다.' };
+      return { ok: true };
+    },
+    async run(item) {
+      invalidateAnalysisPart(item, 'accessoryCheck');
+      if (selectedKey === summaryKey(item)) refreshAccessoryCheckCard(item);
+      await ensureAccessoryCheck(item);
+      refreshDirectAiPanelIfOpen();
+      return { message: '구성품 체크를 다시 생성합니다.' };
     },
   },
   {
@@ -3013,6 +3432,60 @@ const DIRECT_AI_ACTIONS = [
     },
   },
   {
+    id: 'ui.toggleAutoRun',
+    label: '자동진행 켜기/끄기',
+    risk: 'safe',
+    chipLabel: '자동진행 전환',
+    aliases: [
+      '자동진행',
+      '자동 진행',
+      '자동진행 켜',
+      '자동진행 켜기',
+      '자동 진행 켜',
+      '자동진행 꺼',
+      '자동진행 끄기',
+      '자동 진행 꺼',
+      'auto run',
+      'autorun',
+    ],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      const next = !isAutoRunEnabled();
+      setAutoRunMode(next);
+      return { message: `자동진행을 ${next ? '켰습니다.' : '껐습니다.'}` };
+    },
+  },
+  {
+    id: 'ui.autoRunOn',
+    label: '자동진행 켜기',
+    risk: 'safe',
+    chipLabel: '자동진행 켜기',
+    aliases: ['자동진행 켜', '자동진행 켜기', '자동 진행 켜', '자동 진행 켜기', 'auto run on', 'autorun on'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      setAutoRunMode(true);
+      return { message: '자동진행을 켰습니다.' };
+    },
+  },
+  {
+    id: 'ui.autoRunOff',
+    label: '자동진행 끄기',
+    risk: 'safe',
+    chipLabel: '자동진행 끄기',
+    aliases: ['자동진행 꺼', '자동진행 끄기', '자동 진행 꺼', '자동 진행 끄기', 'auto run off', 'autorun off'],
+    preconditions() {
+      return { ok: true };
+    },
+    async run() {
+      setAutoRunMode(false);
+      return { message: '자동진행을 껐습니다.' };
+    },
+  },
+  {
     id: 'ui.darkModeOn',
     label: '다크모드 켜기',
     risk: 'safe',
@@ -3172,10 +3645,37 @@ function getDirectAiAvailableActions(item = currentRenderedItem()) {
   });
 }
 
+const DIRECT_AI_ACTION_START_TOASTS = {
+  'regen.productSummary': '매물 정리를 다시 생성합니다.',
+  'regen.productRisk': '리스크 판별을 다시 생성합니다.',
+  'regen.productRiskYoutube': '유튜브 참고 자료를 다시 생성합니다.',
+  'regen.listingText': '판매글 분석을 다시 생성합니다.',
+  'regen.listingImage': '이미지 분석을 다시 생성합니다.',
+  'regen.accessoryCheck': '구성품 체크를 다시 생성합니다.',
+  'regen.searchQuery': '가격 참고용 검색어를 다시 생성합니다.',
+  'regen.comparisonSearch': '비교 매물을 다시 검색하고 정리합니다.',
+  'regen.usedPriceGuide': '가격 참고자료를 다시 만듭니다.',
+  'regen.skipComparison': '비교 매물 수집을 건너뛰고 가격 참고로 넘어갑니다.',
+  'regen.purchaseReceipt': '최종 판단 영수증을 다시 출력합니다.',
+};
+
+function directAiActionStartToastMessage(action) {
+  return DIRECT_AI_ACTION_START_TOASTS[action?.id || ''] || '';
+}
+
+function directAiActionCompleteToastMessage(action) {
+  const id = action?.id || '';
+  if (id === 'ui.toggleAutoRun' || id === 'ui.autoRunOn' || id === 'ui.autoRunOff') {
+    return isAutoRunEnabled() ? '자동진행이 켜졌습니다.' : '자동진행이 꺼졌습니다.';
+  }
+  return '';
+}
+
 function getDirectAiSuggestedCommands(item = currentRenderedItem()) {
   const preferred = [
     'stage.next',
     'regen.listingImage',
+    'regen.accessoryCheck',
     'regen.usedPriceGuide',
     'regen.purchaseReceipt',
     'ui.pdf',
@@ -3194,7 +3694,7 @@ function getDirectAiSuggestedCommands(item = currentRenderedItem()) {
 }
 
 const DIRECT_AI_COMMAND_VERBS =
-  /(?:다시\s*(?:만들|생성|해|분석|검색|정리|실행|돌려)?|재생성|refresh|regenerate|만들(?:어|기)?|생성|실행|시작|출력|저장|해\s*줘|실행해|저장해|열어|열어줘|켜줘|켜|보여줘|스킵|skip)/i;
+  /(?:다시\s*(?:만들|생성|해|분석|검색|정리|실행|돌려)?|재생성|refresh|regenerate|만들(?:어|기)?|생성|실행|시작|출력|저장|체크|확인|해\s*줘|실행해|저장해|열어|열어줘|켜줘|켜|보여줘|스킵|skip)/i;
 
 function normalizeDirectAiCommandText(text) {
   return String(text || '')
@@ -3262,9 +3762,13 @@ function matchDirectAiCommandRules(message) {
     { pattern: /ai\s*설정|api\s*설정|키\s*설정|api\s*키|gemini|제미나이/, actionId: 'ui.openSettings', confidence: 0.92 },
     { pattern: /단축키|키보드\s*단축키|shortcut|hotkey/, actionId: 'ui.shortcuts', confidence: 0.98 },
     { pattern: /보기\s*전환|레이아웃|스크롤(?:식)?|슬라이드(?:식)?/, actionId: 'ui.openLayout', confidence: 0.88 },
+    { pattern: /(?:자동\s*진행|자동진행|auto\s*run|autorun).*(?:꺼|꺼줘|끄|off|해제|비활성)/, actionId: 'ui.autoRunOff', confidence: 0.98 },
+    { pattern: /(?:자동\s*진행|자동진행|auto\s*run|autorun).*(?:켜|켜줘|on|활성|시작)/, actionId: 'ui.autoRunOn', confidence: 0.98 },
+    { pattern: /^(?:자동\s*진행|자동진행|auto\s*run|autorun)(?:\s*(?:전환|토글|toggle))?$/, actionId: 'ui.toggleAutoRun', confidence: 0.96 },
     { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode).*(꺼|꺼줘|off|해제|비활성)|라이트\s*모드|밝은\s*모드/, actionId: 'ui.darkModeOff', confidence: 0.96 },
     { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode)(?:\s*(?:실행|켜|켜줘|on|적용|활성|해줘|해|전환|바꿔)?)?$/, actionId: 'ui.darkModeOn', confidence: 0.96 },
     { pattern: /url\s*불러|링크\s*불러|매물\s*url/, actionId: 'ui.openImport', confidence: 0.88 },
+    { pattern: /(구성품|구성\s*체크|부속품|악세사리|액세서리)\s*(다시\s*)?(체크|재분석|분석|생성|확인)/, actionId: 'regen.accessoryCheck', confidence: 0.95 },
     { pattern: /(이미지|사진)\s*분석/, actionId: 'regen.listingImage', confidence: 0.93 },
     { pattern: /(본문|판매글|텍스트|글)\s*(다시\s*)?(분석|재분석|체크|검토)/, actionId: 'regen.listingText', confidence: 0.95 },
     { pattern: /유튜브/, actionId: 'regen.productRiskYoutube', confidence: 0.9 },
@@ -3370,7 +3874,11 @@ async function executeDirectAiAction(actionId, item = currentRenderedItem(), ctx
 
   directAiChat.commandStatus = 'loading';
   try {
+    const startToastMessage = directAiActionStartToastMessage(action);
+    if (startToastMessage) showAppToast(startToastMessage);
     const result = await action.run(item, ctx);
+    const toastMessage = directAiActionCompleteToastMessage(action);
+    if (toastMessage) showAppToast(toastMessage);
     return { ok: true, message: result?.message || `${action.label}을(를) 실행했습니다.` };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : String(err) };
@@ -3626,6 +4134,7 @@ function directAiContext(item = currentRenderedItem(), opts = {}) {
     youtube: includeStep2 && productRiskYoutubeAnalyses.get(key)?.status === 'done' ? productRiskYoutubeAnalyses.get(key)?.analysis || null : null,
     listingTextAnalysis: includeStep2 && listingTextAnalyses.get(key)?.status === 'done' ? listingTextAnalyses.get(key)?.analysis || null : null,
     listingImageAnalysis: includeStep2 && listingImageAnalyses.get(key)?.status === 'done' ? listingImageAnalyses.get(key)?.analysis || null : null,
+    accessoryCheck: includeStep2 && accessoryChecks.get(key)?.status === 'done' ? accessoryChecks.get(key)?.analysis || null : null,
     comparison:
       includeStep3 && stageComps && isCompsCollected(stageComps)
         ? {
@@ -3702,6 +4211,7 @@ function directAiKeywordStageSignature(item = currentRenderedItem(), stage = cur
     productRiskYoutubeAnalyses.get(key)?.status || 'none',
     listingTextAnalyses.get(key)?.status || 'none',
     listingImageAnalyses.get(key)?.status || 'none',
+    accessoryChecks.get(key)?.status || 'none',
     stageComps && isCompsCollected(stageComps) ? 'comps-done' : 'comps-none',
     stageComps ? resolvedUsedPriceGuideState(item, stageComps).state?.status || 'guide-none' : 'guide-none',
     receiptKey ? purchaseReceipts.get(receiptKey)?.status || 'receipt-none' : 'receipt-none',
@@ -3814,7 +4324,7 @@ function directAiShortcutHelpText() {
   const body = APP_SHORTCUT_GROUPS.map(
     (group) => `${group.title}\n${group.items.map(([key, desc]) => `${key}: ${desc}`).join('\n')}`
   ).join('\n\n');
-  return `단축키 패널을 열었습니다.\n\n${body}\n\n입력창 안에서는 전역 단축키가 비활성화됩니다.`;
+  return `단축키 패널을 열었습니다.\n\n${body}`;
 }
 
 function renderDirectAiSuggestionsHtml() {
@@ -3973,6 +4483,11 @@ function sellerChatKey(item) {
   return summaryKey(item);
 }
 
+function normalizeSellerChatTone(value) {
+  const raw = String(value || 'polite');
+  return sellerChatToneOptions.some((opt) => opt.value === raw) ? raw : 'polite';
+}
+
 function defaultSellerChatState() {
   return {
     mode: 'first',
@@ -3982,10 +4497,14 @@ function defaultSellerChatState() {
     sellerReply: '',
     replyAnalysis: null,
     status: 'idle',
+    loadingTarget: '',
     messages: [],
     lastSuggestion: null,
+    quickReplies: [],
+    selectedKeyword: '',
     lastRequestMessage: '',
     lastRequestWasSellerReply: false,
+    lastRequestKind: 'initial',
     error: '',
   };
 }
@@ -3994,7 +4513,9 @@ function getSellerChatState(item) {
   const key = sellerChatKey(item);
   if (!key) return null;
   if (!sellerChatStates.has(key)) sellerChatStates.set(key, defaultSellerChatState());
-  return sellerChatStates.get(key);
+  const state = sellerChatStates.get(key);
+  state.tone = normalizeSellerChatTone(state.tone);
+  return state;
 }
 
 function updateSellerChatState(item, patch = {}) {
@@ -4005,7 +4526,7 @@ function updateSellerChatState(item, patch = {}) {
 }
 
 function sellerChatToneLabel(value) {
-  return sellerChatToneOptions.find((opt) => opt.value === value)?.label || '공손하게';
+  return sellerChatToneOptions.find((opt) => opt.value === normalizeSellerChatTone(value))?.label || '공손하게';
 }
 
 function sellerChatContext(item, comps) {
@@ -4015,6 +4536,7 @@ function sellerChatContext(item, comps) {
   const riskAnalysis = key ? productRiskAnalyses.get(key)?.analysis || null : null;
   const listingTextAnalysis = key ? listingTextAnalyses.get(key)?.analysis || null : null;
   const listingImageAnalysis = key ? listingImageAnalyses.get(key)?.analysis || null : null;
+  const accessoryCheck = key && accessoryChecks.get(key)?.status === 'done' ? accessoryChecks.get(key)?.analysis || null : null;
   const { state: receiptState } = key && stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
   const { state: usedGuideState } = key && stageComps ? resolvedUsedPriceGuideState(item, stageComps) : { state: null };
   const receipt = receiptState?.status === 'done' ? receiptState.receipt || null : null;
@@ -4036,6 +4558,7 @@ function sellerChatContext(item, comps) {
     riskAnalysis,
     listingTextAnalysis,
     listingImageAnalysis,
+    accessoryCheck,
     receipt,
     usedPriceGuide,
     comparison: {
@@ -4061,20 +4584,6 @@ function sellerChatContext(item, comps) {
   };
 }
 
-function sellerChatQuickChips(mode, response = null, messages = []) {
-  const responseChips = Array.isArray(response?.quickReplies)
-    ? response.quickReplies.filter(Boolean).slice(0, 4)
-    : [];
-  if (responseChips.length) return responseChips;
-  const defaults = mode === 'reply'
-    ? ['구성품 한 번만 더 확인할게요', '하자 부분 사진 부탁드려요', '가격 조금 조정 가능할까요?', '직거래도 가능할까요?']
-    : ['인사하고 상태부터 확인', '구성품 확인', '하자 여부 질문', '가격 조정 가능 여부'];
-  const sentTexts = (Array.isArray(messages) ? messages : [])
-    .filter((msg) => msg?.role === 'me')
-    .map((msg) => msg.text || '');
-  return defaults.filter((chip) => !sellerChatIsDuplicateText(chip, sentTexts)).slice(0, 4);
-}
-
 function sellerChatSuggestionTexts(response) {
   const texts = [
     response?.primary,
@@ -4084,6 +4593,120 @@ function sellerChatSuggestionTexts(response) {
     .map((text) => String(text || '').trim())
     .filter(Boolean);
   return [...new Set(texts)].slice(0, 6);
+}
+
+function sellerChatRequestTopic(text) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  const accessoryMatch = raw.match(/([가-힣A-Za-z0-9+#./ -]{1,24}?)(?:\s*(?:포함|동봉|구성|있|유무|여부|확인))/);
+  const accessoryName = accessoryMatch?.[1]
+    ?.replace(/^(혹시|그|저|이|해당|구성품|부속품|악세사리|액세서리)\s*/g, '')
+    ?.trim();
+  if (accessoryName && !/가격|네고|상태|하자|직거래|택배|배송|인사/.test(accessoryName)) {
+    return { type: 'accessory', label: accessoryName, keywords: [accessoryName, '포함', '있', '동봉', '구성'] };
+  }
+  if (/충전기|어댑터|충전\s*케이블|케이블|박스|영수증|보증서|구매내역|파우치|케이스|동글|펜슬|리모컨/i.test(raw)) {
+    const label =
+      raw.match(/충전기|어댑터|충전\s*케이블|케이블|박스|영수증|보증서|구매내역|파우치|케이스|동글|펜슬|리모컨/i)?.[0] ||
+      raw;
+    return { type: 'accessory', label, keywords: [label, '포함', '있', '동봉', '구성'] };
+  }
+  if (/하자|흠집|스크래치|기스|찍힘|오염|파손|상태|작동|테스트|고질/.test(raw)) {
+    return { type: 'condition', label: '상태/작동', keywords: ['상태', '하자', '작동', '테스트', '문제'] };
+  }
+  if (/가격|네고|조정|할인|깎/.test(raw)) {
+    return { type: 'price', label: '가격 조정', keywords: ['가격', '네고', '조정', '할인'] };
+  }
+  if (/직거래|택배|배송|거래\s*장소|장소/.test(raw)) {
+    return { type: 'delivery', label: '거래 방식', keywords: ['직거래', '택배', '배송', '장소'] };
+  }
+  if (/인사|안녕|처음|첫\s*연락/.test(raw)) {
+    return { type: 'greeting', label: '첫 연락', keywords: ['안녕하세요', '관심', '구매', '문의'] };
+  }
+  return null;
+}
+
+function sellerChatTextMatchesTopic(text, topic) {
+  if (!topic) return true;
+  const raw = String(text || '');
+  if (!raw.trim()) return false;
+  if (topic.type === 'accessory') {
+    const label = String(topic.label || '').trim();
+    return Boolean(label && raw.includes(label) && /포함|있|동봉|구성|같이|주시|확인|사진/.test(raw));
+  }
+  return topic.keywords.some((keyword) => raw.includes(keyword));
+}
+
+function sellerChatLocalTopicSuggestions(topic, tone = 'polite') {
+  if (!topic) return [];
+  const suffix = tone === 'friendly' ? '가능할까요?^^' : '가능할까요?';
+  if (topic.type === 'accessory') {
+    const name = topic.label || '구성품';
+    return [
+      `혹시 ${name}도 같이 포함되어 있나요?`,
+      `${name} 포함 여부만 한 번 확인 가능할까요?`,
+      `${name}가 포함된 구성인지 궁금합니다.`,
+      `거래 전에 ${name} 포함 여부와 사진 확인 ${suffix}`,
+    ];
+  }
+  if (topic.type === 'condition') {
+    return [
+      '혹시 사용 중 고질적인 문제나 작동 이상은 없었나요?',
+      '직거래 전에 기기 작동 테스트를 한 번 해보고 구매해도 될까요?',
+      '외관 하자나 작동상 특이사항이 있는지 확인 부탁드립니다.',
+    ];
+  }
+  if (topic.type === 'price') {
+    return [
+      '상태랑 구성품 확인되면 바로 거래하고 싶은데, 가격 조정 가능할까요?',
+      '혹시 조금 네고 가능하실까요?',
+      '확인 후 바로 구매 기준으로 가격 조정 여지가 있을까요?',
+    ];
+  }
+  if (topic.type === 'delivery') {
+    return [
+      '직거래와 택배 중 어떤 방식이 가능하실까요?',
+      '거래 가능 장소나 택배 가능 여부 확인 부탁드립니다.',
+      '직거래 가능하시면 대략 어느 지역에서 가능하실까요?',
+    ];
+  }
+  if (topic.type === 'greeting') {
+    return [
+      '안녕하세요. 매물 보고 연락드립니다. 아직 거래 가능할까요?',
+      '안녕하세요. 구매 관심 있는데 상태와 작동에는 문제 없을까요?',
+      '안녕하세요. 구매하고 싶어서 문의드립니다. 상태 먼저 확인 가능할까요?',
+    ];
+  }
+  return [];
+}
+
+function alignSellerChatSuggestionToRequest(response, requestText = '', tone = 'polite') {
+  const topic = sellerChatRequestTopic(requestText);
+  if (!topic) return response;
+  const source = sellerChatSuggestionTexts(response);
+  const aligned = source.filter((text) => sellerChatTextMatchesTopic(text, topic));
+  const fallback = sellerChatLocalTopicSuggestions(topic, tone);
+  const merged = [...aligned, ...fallback]
+    .map((text) => String(text || '').trim())
+    .filter(Boolean);
+  const unique = [];
+  const seen = new Set();
+  merged.forEach((text) => {
+    const key = normalizeSellerChatTextForCompare(text);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    unique.push(text);
+  });
+  return {
+    ...response,
+    primary: unique[0] || response.primary || '',
+    alternatives: unique.slice(1, 5),
+    followUps: unique.slice(0, 3),
+    quickReplies: (Array.isArray(response.quickReplies) ? response.quickReplies : []).filter(
+      (chip) => !sellerChatTextMatchesTopic(chip, topic)
+    ),
+  };
 }
 
 function sellerChatNeedsNegotiation(context) {
@@ -4144,6 +4767,93 @@ function sellerChatIntentSet(text) {
   return intents;
 }
 
+function sellerChatConversationState(messages = [], requestText = '', requestKind = 'freeform') {
+  const history = sellerChatHistoryPayload(messages);
+  const buyerMessages = history.filter((msg) => msg.role === 'me');
+  const sellerMessages = history.filter((msg) => msg.role === 'seller');
+  const covered = [...sellerChatCoveredIntentSet(messages, requestText)];
+  const lastBuyerIndex = history.map((msg) => msg.role).lastIndexOf('me');
+  const hasSellerReplyAfterLastBuyer =
+    lastBuyerIndex >= 0 && history.slice(lastBuyerIndex + 1).some((msg) => msg.role === 'seller');
+  const hasBuyerGreeting = covered.includes('greeting');
+  const allIntents = ['greeting', 'condition', 'components', 'receipt', 'delivery', 'price'];
+  const remainingIntents = allIntents.filter((intent) => !covered.includes(intent));
+  const nextPhase = !buyerMessages.length
+    ? 'first_contact'
+    : hasSellerReplyAfterLastBuyer
+      ? 'reply_to_seller'
+      : 'buyer_follow_up_before_seller_reply';
+  return {
+    requestKind,
+    nextPhase,
+    hasBuyerGreeting,
+    hasSellerReply: sellerMessages.length > 0,
+    hasSellerReplyAfterLastBuyer,
+    coveredIntents: covered,
+    remainingIntents,
+    lastBuyerMessage: buyerMessages.at(-1)?.text || '',
+    lastSellerMessage: sellerMessages.at(-1)?.text || '',
+  };
+}
+
+function sellerChatSentTexts(messages = [], extraText = '') {
+  return [
+    ...(Array.isArray(messages) ? messages : [])
+      .filter((msg) => msg?.role === 'me')
+      .map((msg) => String(msg.text || '').trim()),
+    String(extraText || '').trim(),
+  ].filter(Boolean);
+}
+
+function sellerChatCoveredIntentSet(messages = [], extraText = '') {
+  const intents = new Set();
+  sellerChatSentTexts(messages, extraText).forEach((text) => {
+    sellerChatIntentSet(text).forEach((intent) => intents.add(intent));
+  });
+  return intents;
+}
+
+function sellerChatChipIntentSet(chip) {
+  const intents = sellerChatIntentSet(chip);
+  const raw = String(chip || '');
+  if (/첫\s*인사|첫\s*연락|인사/.test(raw)) intents.add('greeting');
+  if (/상태부터/.test(raw)) intents.add('condition');
+  if (/구성품\s*확인|구성\s*확인/.test(raw)) intents.add('components');
+  if (/하자\s*여부/.test(raw)) intents.add('condition');
+  if (/가격\s*조정/.test(raw)) intents.add('price');
+  if (/직거래|택배|배송/.test(raw)) intents.add('delivery');
+  return intents;
+}
+
+function sellerChatAccessoryChipCandidates(item) {
+  const key = summaryKey(item);
+  const analysis = key && accessoryChecks.get(key)?.status === 'done' ? accessoryChecks.get(key)?.analysis : null;
+  const items = Array.isArray(analysis?.items) ? analysis.items : [];
+  return items
+    .filter((entry) => {
+      if (!entry || typeof entry !== 'object') return false;
+      const kind = accessoryStatusKind(entry);
+      return kind !== 'confirmed';
+    })
+    .map((entry) => String(entry.name || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((name) => `${name} 포함 여부`);
+}
+
+function sellerChatShouldShowChip(chip, coveredIntents, sentTexts) {
+  const chipIntents = sellerChatChipIntentSet(chip);
+  if ([...chipIntents].some((intent) => coveredIntents.has(intent))) {
+    const isSpecificComponent = chipIntents.has('components') && !/구성품|구성\s*확인|부속품|악세사리|액세서리/.test(String(chip || ''));
+    if (!isSpecificComponent) return false;
+  }
+  return !sellerChatIsDuplicateText(chip, sentTexts);
+}
+
+function sellerChatQuickChips(state, item = null) {
+  return sellerChatResolvedChips(state, item);
+}
+
 function sellerChatIsDuplicateText(candidate, sentTexts) {
   const normalized = normalizeSellerChatTextForCompare(candidate);
   if (!normalized) return true;
@@ -4200,6 +4910,8 @@ function enforceSellerChatNegotiation(response, context, messages = [], requestT
     .filter((msg) => msg?.role === 'me')
     .map((msg) => msg.text || '');
   if (sentTexts.some(sellerChatHasNegotiation)) return response;
+  const coveredIntents = sellerChatCoveredIntentSet(messages, requestText);
+  if (coveredIntents.has('greeting') && (coveredIntents.has('condition') || coveredIntents.has('components'))) return response;
   const negotiation = sellerChatNegotiationSentence(context);
   const primary = String(response.primary || '').trim();
   const alternatives = Array.isArray(response.alternatives) ? response.alternatives.filter(Boolean) : [];
@@ -4282,9 +4994,9 @@ function renderSellerChatReplyForm(state) {
         rows="2"
         placeholder="판매자 답변 붙여넣기: 예) 네 구성품은 박스랑 충전기 있고 하자는 없습니다."
         data-seller-chat-reply
-        ${state.status === 'loading' ? 'disabled' : ''}
+        ${sellerChatReplyFormBusy(state) ? 'disabled' : ''}
       >${escapeHtml(state.sellerReply || '')}</textarea>
-      <button type="submit" class="seller-chat__send seller-chat__send--reply"${state.status === 'loading' ? ' disabled' : ''}>답장 만들기</button>
+      <button type="submit" class="seller-chat__send seller-chat__send--reply"${sellerChatReplyFormBusy(state) ? ' disabled' : ''}>답장 만들기</button>
     </form>
   `;
 }
@@ -4304,27 +5016,31 @@ function renderSellerChatThread(state) {
   return messages.map((msg, index) => renderSellerChatMessage(msg, index)).join('');
 }
 
-function renderSellerChatSuggestions(state) {
-  if (state?.status === 'loading') {
-    return `
-      <div class="seller-chat__suggestions is-loading">
-        <div class="seller-chat__suggestions-head">
-          <strong>문구 생성 중...</strong>
-          <span>가격·리스크 근거를 반영하고 있습니다.</span>
-          ${renderAiLoadingProgress(state, 'sellerChat')}
-        </div>
-        <div class="seller-chat__suggestion-card seller-chat__suggestion-card--skeleton">
-          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--short"></span>
-          <span class="seller-chat__skeleton-line"></span>
-          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--mid"></span>
-        </div>
-        <div class="seller-chat__suggestion-card seller-chat__suggestion-card--skeleton">
-          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--short"></span>
-          <span class="seller-chat__skeleton-line"></span>
-          <span class="seller-chat__skeleton-line seller-chat__skeleton-line--mid"></span>
-        </div>
+function renderSellerChatSuggestionSkeleton(state) {
+  return `
+    <div class="seller-chat__suggestions is-loading">
+      <div class="seller-chat__suggestions-head">
+        <strong>메시지 후보 생성 중...</strong>
+        <span>선택한 키워드와 대화 맥락을 반영하고 있습니다.</span>
+        ${renderAiLoadingProgress(state, 'sellerChatMessages')}
       </div>
-    `;
+      <div class="seller-chat__suggestion-card seller-chat__suggestion-card--skeleton summary-loading summary-loading--skeleton">
+        <span class="seller-chat__skeleton-line seller-chat__skeleton-line--short skeleton-line"></span>
+        <span class="seller-chat__skeleton-line skeleton-line"></span>
+        <span class="seller-chat__skeleton-line seller-chat__skeleton-line--mid skeleton-line"></span>
+      </div>
+      <div class="seller-chat__suggestion-card seller-chat__suggestion-card--skeleton summary-loading summary-loading--skeleton">
+        <span class="seller-chat__skeleton-line seller-chat__skeleton-line--short skeleton-line"></span>
+        <span class="seller-chat__skeleton-line skeleton-line"></span>
+        <span class="seller-chat__skeleton-line seller-chat__skeleton-line--mid skeleton-line"></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderSellerChatSuggestions(state) {
+  if (sellerChatIsLoading(state, 'messages')) {
+    return renderSellerChatSuggestionSkeleton(state);
   }
   const suggestions = sellerChatSuggestionTexts(state?.lastSuggestion);
   if (!suggestions.length) return '';
@@ -4335,7 +5051,7 @@ function renderSellerChatSuggestions(state) {
           <strong>선택 가능한 메시지 후보</strong>
           <span>거래를 이어갈 때만 골라 보내세요.</span>
         </div>
-        <button type="button" class="seller-chat__regen" data-seller-chat-regenerate ${state.status === 'loading' ? 'disabled' : ''}>다시 만들기</button>
+        <button type="button" class="seller-chat__regen" data-seller-chat-regenerate ${sellerChatIsLoading(state, 'messages') ? 'disabled' : ''}>다시 만들기</button>
       </div>
       ${suggestions
         .map(
@@ -4358,9 +5074,11 @@ function renderSellerChatSuggestions(state) {
 function renderSellerReplyAnalysis(state) {
   const analysis = state?.replyAnalysis || null;
   if (!analysis?.text) return '';
+  const isLoading = analysis.status === 'loading';
+  const animationKey = sellerReplyAnalysisRenderKey(state);
   return `
-    <div class="seller-chat__reply-insight" data-seller-reply-analysis>
-      <span class="material-symbols-rounded" aria-hidden="true">quick_phrases</span>
+    <div class="seller-chat__reply-insight${isLoading ? ' is-loading' : ''}" data-seller-reply-analysis data-reply-analysis-key="${escapeAttr(animationKey)}">
+      <span class="material-symbols-rounded" aria-hidden="true">${isLoading ? 'progress_activity' : 'quick_phrases'}</span>
       <div>
         <strong>판매자 답장 해석</strong>
         <p>${escapeHtml(analysis.text)}</p>
@@ -4369,11 +5087,47 @@ function renderSellerReplyAnalysis(state) {
   `;
 }
 
-function renderSellerChatChips(state) {
-  const quickChips = sellerChatQuickChips(state?.mode || 'first', state?.lastSuggestion || null, state?.messages || []);
-  return quickChips
-    .map((chip) => `<button type="button" class="seller-chat__chip" data-seller-chat-chip="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`)
+function sellerReplyAnalysisRenderKey(state) {
+  const analysis = state?.replyAnalysis || null;
+  if (!analysis?.text) return 'empty';
+  return directAiKeywordDigest(`${analysis.status || 'done'}::${analysis.source || ''}::${analysis.text || ''}`);
+}
+
+function refreshSellerReplyAnalysisSlot(slot, state) {
+  if (!slot) return;
+  const nextKey = sellerReplyAnalysisRenderKey(state);
+  const currentKey = slot.querySelector('[data-seller-reply-analysis]')?.getAttribute('data-reply-analysis-key') || 'empty';
+  if (nextKey === currentKey) return;
+  slot.innerHTML = nextKey === 'empty' ? '' : renderSellerReplyAnalysis(state);
+}
+
+function renderSellerChatChipSkeleton(state) {
+  return `
+    <div class="seller-chat__chips-loading" aria-live="polite">
+      <p class="seller-chat__chips-empty">추천 키워드를 준비하고 있습니다.</p>
+      ${renderAiLoadingProgress(state, 'sellerChatKeywords')}
+    </div>
+  `;
+}
+
+function renderSellerChatChips(state, item) {
+  const quickChips = sellerChatQuickChips(state, item);
+  const loadingKeywords = sellerChatIsLoading(state, 'keywords');
+  const loadingMessages = sellerChatIsLoading(state, 'messages');
+  if (loadingKeywords) {
+    return renderSellerChatChipSkeleton(state);
+  }
+  if (!quickChips.length) {
+    return `<p class="seller-chat__chips-empty">추천 키워드를 준비하고 있습니다.</p>`;
+  }
+  const disabled = loadingMessages ? ' disabled' : '';
+  const chipHtml = quickChips
+    .map(
+      (chip) =>
+        `<button type="button" class="seller-chat__chip" data-seller-chat-chip="${escapeAttr(chip)}"${disabled}>${escapeHtml(chip)}</button>`
+    )
     .join('');
+  return chipHtml;
 }
 
 function sellerChatSellerName(item) {
@@ -4445,26 +5199,26 @@ function refreshSellerChatDynamic(item, opts = {}) {
   const input = panel.querySelector('[data-seller-chat-input]');
   const reply = panel.querySelector('[data-seller-chat-reply]');
   if (thread && !opts.skipThread) thread.innerHTML = renderSellerChatThread(state);
-  if (replyAnalysis) replyAnalysis.innerHTML = renderSellerReplyAnalysis(state);
-  if (suggestions) {
+  if (replyAnalysis && !opts.skipReplyAnalysis) refreshSellerReplyAnalysisSlot(replyAnalysis, state);
+  if (suggestions && !opts.skipSuggestions) {
     const suggestionsHtml = renderSellerChatSuggestions(state);
     if (shouldKeepExistingLoadingBlock(suggestions, suggestionsHtml)) {
-      updateAiLoadingProgressNodes('sellerChat', state, suggestions);
+      updateAiLoadingProgressNodes('sellerChatMessages', state, suggestions);
     } else {
       suggestions.innerHTML = suggestionsHtml;
     }
   }
-  if (chips) chips.innerHTML = renderSellerChatChips(state);
+  if (chips && !opts.skipChips) chips.innerHTML = renderSellerChatChips(state, item);
   if (error) error.innerHTML = state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : '';
   if (modeTitle) modeTitle.textContent = `거래 메시지 도우미 · ${sellerChatToneLabel(state.tone)}`;
   if (input) {
     input.value = state.input || '';
-    input.disabled = state.status === 'loading';
+    input.disabled = sellerChatFreeformInputBusy(state);
   }
   if (reply) {
     panel.querySelectorAll('[data-seller-chat-reply]').forEach((replyInput) => {
       replyInput.value = state.sellerReply || '';
-      replyInput.disabled = state.status === 'loading';
+      replyInput.disabled = sellerChatReplyFormBusy(state);
     });
   }
   panel.querySelectorAll('[data-seller-chat-mode]').forEach((btn) => {
@@ -4474,7 +5228,8 @@ function refreshSellerChatDynamic(item, opts = {}) {
     btn.classList.toggle('is-active', btn.getAttribute('data-seller-chat-tone') === state.tone);
   });
   panel.querySelectorAll('.seller-chat__send').forEach((btn) => {
-    btn.disabled = state.status === 'loading';
+    const isReplySend = btn.classList.contains('seller-chat__send--reply');
+    btn.disabled = isReplySend ? sellerChatReplyFormBusy(state) : sellerChatFreeformInputBusy(state);
   });
   return true;
 }
@@ -4492,7 +5247,14 @@ function renderSellerChatPanel(item, comps) {
           <span>거래 메시지</span>
         </aside>
         <div class="stage-zone-grid stage-five-zone-grid">
-          <button type="button" class="stage-five-start-card stage-start-card" data-stage-five-start="${escapeAttr(key)}">
+          ${
+            isAutoRunEnabled()
+              ? renderAutoRunWaitCard(
+                  '영수증 출력 후 판매자 대화 도우미를 자동으로 준비합니다.',
+                  '확인할 구성품·하자·가격 질문을 이어서 추천합니다.',
+                  'stage-five-start-card'
+                )
+              : `<button type="button" class="stage-five-start-card stage-start-card" data-stage-five-start="${escapeAttr(key)}">
             <div class="stage-two-ready">
               <div>
                 <p class="stage-two-card-label">판매자 대화 준비</p>
@@ -4501,7 +5263,8 @@ function renderSellerChatPanel(item, comps) {
                 <span class="stage-start-card__cta">거래 메시지 만들기</span>
               </div>
             </div>
-          </button>
+          </button>`
+          }
         </div>
       </section>
     `;
@@ -4533,6 +5296,7 @@ function renderSellerChatPanel(item, comps) {
               </header>
               ${renderSellerChatMeta(item)}
               <div class="seller-chat__thread" data-seller-chat-thread>${renderSellerChatThread(state)}</div>
+              <div data-seller-reply-analysis-slot>${renderSellerReplyAnalysis(state)}</div>
               <div class="seller-chat__reply-dock">${renderSellerChatReplyForm(state)}</div>
             </section>
             <aside class="seller-chat__right-pane" aria-label="거래 전 확인과 메시지 후보">
@@ -4546,7 +5310,6 @@ function renderSellerChatPanel(item, comps) {
                 </div>
                 ${renderSellerChatChecklist(item) || '<p class="seller-chat__side-empty">확인 항목이 아직 없습니다.</p>'}
               </div>
-              <div data-seller-reply-analysis-slot>${renderSellerReplyAnalysis(state)}</div>
               <div class="seller-chat__side-section">
                 <div class="seller-chat__side-head">
                   <span class="material-symbols-rounded" aria-hidden="true">record_voice_over</span>
@@ -4569,10 +5332,19 @@ function renderSellerChatPanel(item, comps) {
                 <input class="seller-chat__note-input" type="text" value="${escapeAttr(state.toneNote || '')}" placeholder="말투 추가 요청: 예) 너무 딱딱하지 않게" data-seller-chat-tone-note />
                 ${note}
               </div>
-              <div data-seller-chat-suggestions>${renderSellerChatSuggestions(state)}</div>
-              <div class="seller-chat__chips" data-seller-chat-chips>
-                ${renderSellerChatChips(state)}
+              <div class="seller-chat__side-section seller-chat__side-section--keywords">
+                <div class="seller-chat__side-head">
+                  <span class="material-symbols-rounded" aria-hidden="true">sell</span>
+                  <div>
+                    <strong>추천 키워드</strong>
+                    <p>키워드를 고르면 아래에 메시지 후보가 생성됩니다.</p>
+                  </div>
+                </div>
+                <div class="seller-chat__chips" data-seller-chat-chips>
+                  ${renderSellerChatChips(state, item)}
+                </div>
               </div>
+              <div data-seller-chat-suggestions>${renderSellerChatSuggestions(state)}</div>
               <form class="seller-chat__form" data-seller-chat-form>
                 <span class="seller-chat__form-label">AI에게 요청할 조건</span>
                 <textarea
@@ -4580,9 +5352,9 @@ function renderSellerChatPanel(item, comps) {
                   rows="2"
                   placeholder="${escapeAttr(placeholder)}"
                   data-seller-chat-input
-                  ${state.status === 'loading' ? 'disabled' : ''}
+                  ${sellerChatFreeformInputBusy(state) ? 'disabled' : ''}
                 >${escapeHtml(state.input || '')}</textarea>
-                <button type="submit" class="seller-chat__send"${state.status === 'loading' ? ' disabled' : ''}>${escapeHtml(actionLabel)}${state.status === 'loading' ? ' 중...' : ''}</button>
+                <button type="submit" class="seller-chat__send"${sellerChatFreeformInputBusy(state) ? ' disabled' : ''}>${escapeHtml(actionLabel)}${sellerChatFreeformInputBusy(state) ? ' 중...' : ''}</button>
               </form>
               <div data-seller-chat-error>${state.error ? `<p class="seller-chat__error">${escapeHtml(state.error)}</p>` : ''}</div>
             </aside>
@@ -4665,6 +5437,21 @@ function renderStageTwoSimple(title, desc, delay = 0) {
   `;
 }
 
+function renderAutoRunWaitCard(title, desc, className = 'stage-two-card') {
+  return `
+    <article class="mini-card ${escapeAttr(className)} stage-start-card auto-run-wait-card" aria-live="polite">
+      <div class="stage-two-ready">
+        <div>
+          <p class="stage-two-card-label">자동 진행</p>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(desc)}</p>
+          <span class="stage-start-card__cta">자동으로 시작합니다</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function renderStageTwoSection(item) {
   if (!item) return '';
   const key = summaryKey(item);
@@ -4696,8 +5483,9 @@ function renderStageTwoSection(item) {
 
   const followupHtml =
     isActive && riskState?.status === 'done'
-      ? `${renderListingTextAnalysisCard(item)}${renderListingImageAnalysisCard(item)}${renderListingImageGroupsCard(item)}`
+      ? `${renderListingTextAnalysisCard(item)}${renderListingImageAnalysisCard(item)}${renderListingImageGroupsCard(item)}${renderAccessoryCheckCard(item)}`
       : '';
+  const youtubeHtml = isActive && riskState?.status === 'done' ? renderStageTwoYoutubePanel(item, analysis) : '';
   return `
     <section class="stage-two-panel stage-zone stage-two-zone is-active" data-stage-panel data-stage-two-panel>
       <aside class="stage-zone-label">
@@ -4707,7 +5495,13 @@ function renderStageTwoSection(item) {
       <div class="stage-zone-grid stage-two-zone-grid">
         ${
           !isActive
-            ? `<button type="button" class="mini-card stage-two-card stage-two-card--ready stage-start-card" data-stage-two-start="${escapeAttr(key)}">
+            ? isAutoRunEnabled()
+              ? renderAutoRunWaitCard(
+                  '매물 정리 완료 후 리스크 판별을 자동으로 시작합니다.',
+                  '고질병·본문 누락·사진 상태 분석을 순서대로 실행합니다.',
+                  'stage-two-card stage-two-card--ready'
+                )
+              : `<button type="button" class="mini-card stage-two-card stage-two-card--ready stage-start-card" data-stage-two-start="${escapeAttr(key)}">
                   <div class="stage-two-ready">
                     <div>
                       <p class="stage-two-card-label">다음 단계 대기</p>
@@ -4725,10 +5519,11 @@ function renderStageTwoSection(item) {
                   <button type="button" class="chip-btn stage-two-start-btn" data-stage-two-start="${escapeAttr(key)}">다시 분석</button>
                 </article>`
             : riskState?.status === 'done'
-              ? `${renderStageTwoRiskCards(analysis, item)}${renderStageTwoYoutubePanel(item, analysis)}`
+              ? renderStageTwoRiskCards(analysis, item)
               : renderStageTwoLoadingCards(item)
         }
         ${followupHtml}
+        ${youtubeHtml}
       </div>
     </section>
   `;
@@ -4759,7 +5554,14 @@ function renderStageThreeSection(item, comps) {
           <span>가격 참고</span>
         </aside>
         <div class="stage-zone-grid stage-three-zone-grid">
-          <button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}">
+          ${
+            isAutoRunEnabled()
+              ? renderAutoRunWaitCard(
+                  '리스크 판별이 끝나면 가격 참고자료 수집을 자동으로 시작합니다.',
+                  '신품가·비교 매물·시세 참고표를 바로 모읍니다.',
+                  'stage-three-card stage-three-card--ready'
+                )
+              : `<button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}">
             <div class="stage-two-ready">
               <div>
                 <p class="stage-two-card-label">다음 단계 대기</p>
@@ -4768,7 +5570,8 @@ function renderStageThreeSection(item, comps) {
                 <span class="stage-start-card__cta">버튼 클릭으로 시작</span>
               </div>
             </div>
-          </button>
+          </button>`
+          }
         </div>
       </section>
     `;
@@ -5181,10 +5984,15 @@ function renderComparisonList(items, limit = 8) {
 function receiptVerdictLabel(verdict) {
   return {
     buy: '구매 가능',
+    check_buy: '확인 후 구매 추천',
     negotiate: '네고 추천',
     hold: '보류',
     pass: '패스 권장',
   }[verdict] || '판단 보류';
+}
+
+function receiptNegotiationLabel(verdict) {
+  return verdict === 'negotiate' ? '네고 제안' : '가격 대응';
 }
 
 function compactReportList(values, limit = 5) {
@@ -5971,7 +6779,7 @@ function renderReportReceiptPaper(item, receipt) {
       </section>
       <div class="report-receipt-prices">
         <div><small>가격 참고 범위</small><b>${escapeHtml(reportValue(receipt?.fairPriceLabel, '판단 어려움'))}</b></div>
-        <div><small>네고 제안</small><b>${escapeHtml(reportValue(receipt?.negotiationPriceLabel, '판단 어려움'))}</b></div>
+        <div><small>${escapeHtml(receiptNegotiationLabel(receipt?.verdict))}</small><b>${escapeHtml(reportValue(receipt?.negotiationPriceLabel, '판단 어려움'))}</b></div>
         <div><small>구매 상한</small><b>${escapeHtml(reportValue(receipt?.maxBuyPriceLabel, '판단 어려움'))}</b></div>
       </div>
       <hr />
@@ -5997,6 +6805,122 @@ function renderReportReceiptPaper(item, receipt) {
   `;
 }
 
+function uniqReportItems(values, limit = 999) {
+  const seen = new Set();
+  return compactReportList(values, 999)
+    .filter((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+function reportAccessoryItems(analysis) {
+  return Array.isArray(analysis?.items) ? analysis.items.filter((entry) => entry && typeof entry === 'object') : [];
+}
+
+function reportAccessoryStatusMeta(entry) {
+  const kind = accessoryStatusKind(entry);
+  if (kind === 'missing') return { mark: 'X', label: '판매자가 없음/미포함 명시', tone: 'risk' };
+  if (kind === 'confirmed') return { mark: 'O', label: accessoryStatusLabel(entry), tone: 'safe' };
+  return { mark: '!', label: '확인 필요', tone: 'caution' };
+}
+
+function renderReportAccessoryGrid(analysis) {
+  const items = reportAccessoryItems(analysis);
+  if (!items.length) return '<p class="report-muted">구성품 체크 결과가 없습니다.</p>';
+  return `
+    <div class="report-accessory-grid">
+      ${items
+        .map((entry) => {
+          const meta = reportAccessoryStatusMeta(entry);
+          const evidence = reportValue(entry.evidence, '근거 없음');
+          const question = reportValue(entry.question, '');
+          return `
+            <article class="report-accessory-card report-accessory-card--${escapeAttr(meta.tone)}">
+              <div class="report-accessory-card__head">
+                <span class="report-accessory-mark">${escapeHtml(meta.mark)}</span>
+                <div>
+                  <b>${escapeHtml(reportValue(entry.name, '구성품'))}</b>
+                  <small>${escapeHtml(reportValue(entry.importance, 'unknown'))} · ${escapeHtml(meta.label)}</small>
+                </div>
+              </div>
+              <p>${escapeHtml(evidence)}</p>
+              ${question ? `<p class="report-question">확인 질문: ${escapeHtml(question)}</p>` : ''}
+            </article>
+          `;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
+function reportAccessoryQuestions(analysis) {
+  return reportAccessoryItems(analysis)
+    .map((entry) => {
+      const meta = reportAccessoryStatusMeta(entry);
+      const question = reportValue(entry.question, '');
+      if (!question && meta.tone === 'safe') return '';
+      return question || `${reportValue(entry.name, '구성품')} 포함 여부와 사진을 확인하세요.`;
+    })
+    .filter(Boolean);
+}
+
+function renderReportConditionPriceTable(guide) {
+  const rows = (Array.isArray(guide?.conditionPrices) ? guide.conditionPrices : []).filter(Boolean);
+  if (!rows.length) return '<p class="report-muted">상태별 가격표가 없습니다.</p>';
+  return `
+    <table class="report-table">
+      <thead><tr><th>상태</th><th>가격대</th><th>해석</th></tr></thead>
+      <tbody>
+        ${rows
+          .map(
+            (row) => `
+              <tr>
+                <td>${escapeHtml(reportValue(row.condition))}</td>
+                <td>${escapeHtml(reportValue(row.priceLabel))}</td>
+                <td>${escapeHtml(reportValue(row.comment, ''))}</td>
+              </tr>
+            `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderReportSellerChatSummary(state) {
+  const messages = Array.isArray(state?.messages) ? state.messages : [];
+  const suggestions = sellerChatSuggestionTexts(state?.lastSuggestion);
+  if (!messages.length && !suggestions.length && !state?.replyAnalysis?.text) {
+    return '<p class="report-muted">판매자 대화 기록 또는 추천 문구가 아직 없습니다.</p>';
+  }
+  return `
+    <div class="report-chat-summary">
+      ${
+        messages.length
+          ? `<section><h3>대화 기록</h3>${renderStaticReportList(
+              messages.map((msg) => `${msg.role === 'seller' ? '판매자' : '나'}: ${msg.text || ''}`),
+              '대화 기록 없음'
+            )}</section>`
+          : ''
+      }
+      ${
+        suggestions.length
+          ? `<section><h3>최근 추천 문구</h3>${renderStaticReportList(suggestions, '추천 문구 없음')}</section>`
+          : ''
+      }
+      ${
+        state?.replyAnalysis?.text
+          ? `<section><h3>판매자 답장 해석</h3><p>${escapeHtml(state.replyAnalysis.text)}</p></section>`
+          : ''
+      }
+    </div>
+  `;
+}
+
 function renderPurchaseReportDocumentStatic(item, comps) {
   const key = summaryKey(item);
   const stageComps = effectiveStageThreeComps(item, comps);
@@ -6006,10 +6930,13 @@ function renderPurchaseReportDocumentStatic(item, comps) {
   const reportTextAnalysis =
     meaningfulListingTextAnalysis(textAnalysis) || fallbackListingTextAnalysis(item, summary, risk) || {};
   const imageAnalysis = listingImageAnalyses.get(key)?.analysis || {};
+  const accessoryState = key ? accessoryChecks.get(key) : null;
+  const accessoryAnalysis = accessoryState?.status === 'done' ? accessoryState.analysis || {} : {};
   const { state: guideState } = resolvedUsedPriceGuideState(item, stageComps);
   const guide = guideState?.guide || {};
   const { state: receiptState } = stageComps ? resolvedPurchaseReceiptState(item, stageComps) : { state: null };
   const receipt = receiptState?.status === 'done' ? receiptState.receipt || {} : {};
+  const sellerState = key ? sellerChatStates.get(sellerChatKey(item)) || null : null;
   const listingImages = (Array.isArray(item?.imageUrls) ? item.imageUrls : []).map((url, idx) => ({
     imageUrl: url,
     index: idx + 1,
@@ -6038,9 +6965,16 @@ function renderPurchaseReportDocumentStatic(item, comps) {
     ...(Array.isArray(risk.purchaseChecklist) ? risk.purchaseChecklist : []),
     ...(Array.isArray(textAnalysis.checklist) ? textAnalysis.checklist : []),
     ...(Array.isArray(imageAnalysis.checklist) ? imageAnalysis.checklist : []),
+    ...reportAccessoryQuestions(accessoryAnalysis),
     ...(Array.isArray(receipt.cautions) ? receipt.cautions : []),
   ];
-  const comparisonRows = matchedComps.map(
+  const finalChecklist = uniqReportItems([
+    ...checklist,
+    ...(Array.isArray(textAnalysis.missingInfo) ? textAnalysis.missingInfo : []),
+    ...(Array.isArray(textAnalysis.redFlags) ? textAnalysis.redFlags : []),
+    ...(Array.isArray(receipt.cautions) ? receipt.cautions : []),
+  ], 12);
+  const comparisonRows = matchedComps.slice(0, 12).map(
     (candidate) => `
       <tr>
         <td>${escapeHtml(candidate.platformLabel || candidate.platform || '-')}</td>
@@ -6142,6 +7076,32 @@ function renderPurchaseReportDocumentStatic(item, comps) {
             display: grid;
             gap: 9px;
           }
+          .report-cover-facts {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+          }
+          .report-cover-facts div {
+            display: grid;
+            gap: 4px;
+            min-width: 0;
+            padding: 10px 11px;
+            border: 1px solid rgba(255, 111, 15, 0.18);
+            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.72);
+          }
+          .report-cover-facts small {
+            color: #9a3412;
+            font-size: 10px;
+            font-weight: 950;
+          }
+          .report-cover-facts b {
+            font-size: 12px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+            word-break: keep-all;
+          }
           .report-kicker { color: #ea580c; font-size: 12px; font-weight: 950; letter-spacing: .02em; }
           h1, h2, h3 { margin: 0; }
           h1 { font-size: 28px; line-height: 1.25; }
@@ -6163,6 +7123,58 @@ function renderPurchaseReportDocumentStatic(item, comps) {
           .verdict { display: inline-flex; width: fit-content; padding: 9px 13px; border-radius: 999px; background: #111827; color: #fff; font-weight: 950; box-shadow: 0 10px 20px rgba(17,24,39,.18); }
           .report-list { margin: 0; padding-left: 18px; }
           .report-list li { margin: 5px 0; line-height: 1.48; }
+          .report-accessory-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+          }
+          .report-accessory-card {
+            display: grid;
+            gap: 8px;
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            background: #fff;
+          }
+          .report-accessory-card--safe { border-color: rgba(5, 150, 105, 0.22); background: #f0fdf4; }
+          .report-accessory-card--caution { border-color: rgba(217, 119, 6, 0.24); background: #fffbeb; }
+          .report-accessory-card--risk { border-color: rgba(225, 29, 72, 0.22); background: #fff1f2; }
+          .report-accessory-card__head {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 9px;
+            align-items: center;
+          }
+          .report-accessory-mark {
+            display: grid;
+            place-items: center;
+            width: 30px;
+            height: 30px;
+            border-radius: 999px;
+            background: #111827;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 950;
+          }
+          .report-accessory-card__head b {
+            display: block;
+            font-size: 13px;
+          }
+          .report-accessory-card__head small,
+          .report-question {
+            color: #64748b;
+            font-size: 11px;
+            font-weight: 850;
+          }
+          .report-accessory-card p {
+            font-size: 12px;
+            line-height: 1.5;
+          }
+          .report-question {
+            padding-top: 7px;
+            border-top: 1px dashed rgba(15, 23, 42, 0.14);
+          }
           .report-photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
           .report-photo-grid--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .report-photo-card { margin: 0; border: 1px solid #e5e7eb; border-radius: 14px; overflow: hidden; background: #fff; break-inside: avoid; page-break-inside: avoid; }
@@ -6225,6 +7237,21 @@ function renderPurchaseReportDocumentStatic(item, comps) {
           table { width: 100%; border-collapse: collapse; font-size: 12px; }
           th, td { padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
           th { color: #64748b; font-weight: 950; }
+          .report-table td:nth-child(2) {
+            width: 26%;
+            font-weight: 900;
+            white-space: nowrap;
+          }
+          .report-chat-summary {
+            display: grid;
+            gap: 12px;
+          }
+          .report-chat-summary section {
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            background: #fff;
+          }
           .report-text-analysis {
             display: grid;
             gap: 12px;
@@ -6278,6 +7305,11 @@ function renderPurchaseReportDocumentStatic(item, comps) {
               <h1>${escapeHtml(title)}</h1>
               <span class="verdict">${escapeHtml(receiptVerdictLabel(receipt.verdict))}</span>
               <p>${escapeHtml(receipt.summary || summary.summary || '최종 판단 요약이 없습니다.')}</p>
+              <div class="report-cover-facts">
+                <div><small>현재가</small><b>${escapeHtml(reportValue(item.priceLabel))}</b></div>
+                <div><small>신품가</small><b>${escapeHtml(newPriceText)}</b></div>
+                <div><small>가격 의견</small><b>${escapeHtml(reportValue(guide.recommendedAction || receipt.priceReason, '확인 필요'))}</b></div>
+              </div>
             </div>
           </section>
 
@@ -6338,6 +7370,10 @@ function renderPurchaseReportDocumentStatic(item, comps) {
                 <h3>판매자 이미지 분석</h3>
                 <p>${escapeHtml(reportValue(imageAnalysis.overall || imageAnalysis.summary || imageAnalysis.comment, '이미지 분석 없음'))}</p>
               </section>
+              <section class="report-block report-block--wide">
+                <h3>구성품 체크 요약</h3>
+                <p>${escapeHtml(reportValue(accessoryAnalysis.summary, '구성품 체크 결과 없음'))}</p>
+              </section>
             </div>
           </section>
 
@@ -6370,6 +7406,20 @@ function renderPurchaseReportDocumentStatic(item, comps) {
           ${analysisPhotoPages}
 
           <section class="report-page">
+            <h2>Step 2 구성품 체크</h2>
+            <div class="report-grid">
+              <section class="report-block report-block--wide">
+                <h3>구성품 종합 판단</h3>
+                <p>${escapeHtml(reportValue(accessoryAnalysis.summary, '구성품 체크 결과가 없습니다.'))}</p>
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>구성품별 확인 상태</h3>
+                ${renderReportAccessoryGrid(accessoryAnalysis)}
+              </section>
+            </div>
+          </section>
+
+          <section class="report-page">
             <h2>Step 3 가격 참고자료</h2>
             <div class="report-grid">
               <section class="report-block">
@@ -6380,13 +7430,22 @@ function renderPurchaseReportDocumentStatic(item, comps) {
                 <h3>가격 범위</h3>
                 <dl>
                   <dt>참고 범위</dt><dd>${escapeHtml(reportValue(guide.fairPriceLabel || receipt.fairPriceLabel))}</dd>
-                  <dt>네고 제안</dt><dd>${escapeHtml(reportValue(receipt.negotiationPriceLabel))}</dd>
+                  <dt>${escapeHtml(receiptNegotiationLabel(receipt.verdict))}</dt><dd>${escapeHtml(reportValue(receipt.negotiationPriceLabel))}</dd>
                   <dt>구매 상한</dt><dd>${escapeHtml(reportValue(receipt.maxBuyPriceLabel))}</dd>
                   <dt>비교 매물</dt><dd>${escapeHtml(`${matchedComps.length || allComps.length}건`)}</dd>
+                  <dt>신뢰도</dt><dd>${escapeHtml(reportValue(guide.confidence, '확인 필요'))}</dd>
                 </dl>
               </section>
               <section class="report-block report-block--wide">
-                <h3>비교 매물 목록</h3>
+                <h3>상태별 중고가이드</h3>
+                ${renderReportConditionPriceTable(guide)}
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>현재 매물 가격 해석</h3>
+                <p>${escapeHtml(reportValue(guide.currentAssessment || guide.recommendedAction, '현재 매물 가격 해석 없음'))}</p>
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>비교 매물 목록${matchedComps.length > 12 ? ` (상위 12건 / 전체 ${matchedComps.length}건)` : ''}</h3>
                 ${
                   comparisonRows.length
                     ? `<table><thead><tr><th>플랫폼</th><th>제목</th><th>가격</th><th>상태</th></tr></thead><tbody>${comparisonRows.join('')}</tbody></table>`
@@ -6402,6 +7461,20 @@ function renderPurchaseReportDocumentStatic(item, comps) {
               <section class="report-block report-block--wide">
                 <h3>최종 판단 영수증</h3>
                 ${renderReportReceiptPaper(item, receipt)}
+              </section>
+            </div>
+          </section>
+
+          <section class="report-page">
+            <h2>거래 전 확인 메모</h2>
+            <div class="report-grid">
+              <section class="report-block report-block--wide">
+                <h3>최종 체크 항목</h3>
+                ${renderStaticReportList(finalChecklist, '추가 확인 항목이 없습니다.')}
+              </section>
+              <section class="report-block report-block--wide">
+                <h3>판매자 대화 도우미 요약</h3>
+                ${renderReportSellerChatSummary(sellerState)}
               </section>
             </div>
           </section>
@@ -6779,7 +7852,7 @@ function renderPurchaseReceiptBlock(item, comps) {
               </section>
               <div class="receipt-price-lines">
                 <div><span>가격 참고 범위</span><b>${escapeHtml(r.fairPriceLabel || '판단 어려움')}</b></div>
-                <div><span>네고 제안</span><b>${escapeHtml(r.negotiationPriceLabel || '판단 어려움')}</b></div>
+                <div><span>${escapeHtml(receiptNegotiationLabel(r.verdict))}</span><b>${escapeHtml(r.negotiationPriceLabel || '판단 어려움')}</b></div>
                 <div><span>구매 상한</span><b>${escapeHtml(r.maxBuyPriceLabel || '판단 어려움')}</b></div>
               </div>
               <div class="receipt-divider"></div>
@@ -6812,6 +7885,13 @@ function renderPurchaseReceiptBlock(item, comps) {
         </div>
       </article>
     `;
+  }
+  if (isAutoRunEnabled()) {
+    return renderAutoRunWaitCard(
+      '가격 참고자료가 준비되면 최종 판단 영수증을 자동으로 만듭니다.',
+      'Step 1~3 분석과 구성품 체크를 종합해 구매 판단을 생성합니다.',
+      'stage-three-card purchase-receipt-card stage-four-start-card'
+    );
   }
   return `
     <button type="button" class="mini-card stage-three-card purchase-receipt-card stage-start-card stage-four-start-card" data-purchase-receipt="${escapeAttr(key)}">
@@ -7992,16 +9072,7 @@ function bindStageTwoFlow(root, item) {
   root?.querySelectorAll('[data-stage-two-start]').forEach((el) => {
     const start = () => {
       const key = el.getAttribute('data-stage-two-start') || summaryKey(item);
-      if (!key) return;
-      const shouldRetry = productRiskAnalyses.get(key)?.status === 'error';
-      stageTwoActiveKeys.add(key);
-      if (shouldRetry) {
-        productRiskAnalyses.delete(key);
-        productRiskYoutubeAnalyses.delete(key);
-      }
-      playStageStartMotion();
-      if (selectedKey === key) refreshProductSummaryBlock(item, { refreshProductSummary: false });
-      void ensureProductRisk(item);
+      startStageTwo(item, key);
     };
     el.addEventListener('click', start);
     if (el.tagName !== 'BUTTON') {
@@ -8120,12 +9191,7 @@ function bindStageThreeFlow(root, item) {
   root?.querySelectorAll('[data-stage-three-start]').forEach((el) => {
     const start = () => {
       const key = el.getAttribute('data-stage-three-start') || summaryKey(item);
-      if (!key) return;
-      stageThreeActiveKeys.add(key);
-      relatedRequestedKeys.add(key);
-      persistAiCaches();
-      playStageStartMotion();
-      openRelatedSearchForItem(item, stageThreeSearchQueries(item), el);
+      startStageThree(item, el, key);
     };
     el.addEventListener('click', start);
     if (el.tagName !== 'BUTTON') {
@@ -8138,6 +9204,7 @@ function bindStageThreeFlow(root, item) {
   });
   root?.querySelectorAll('[data-stage-three-refresh]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      showAppToast('비교 매물을 다시 검색하고 정리합니다.');
       openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn, { isolated: true });
     });
   });
@@ -8313,6 +9380,7 @@ function bindUsedPriceGuide(root, item) {
         usedPriceGuideProgresses.delete(listingKey);
         purchaseReceiptsForListingClear(listingKey);
       }
+      showAppToast('가격 참고자료를 다시 만듭니다.');
       void ensureUsedPriceGuide(item, { regenerate: true });
     });
   });
@@ -8321,11 +9389,13 @@ function bindUsedPriceGuide(root, item) {
 function bindPurchaseReceipt(root, item) {
   root?.querySelectorAll('[data-purchase-receipt]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      showAppToast('최종 판단 영수증을 출력합니다.');
       void ensurePurchaseReceipt(item);
     });
   });
   root?.querySelectorAll('[data-purchase-receipt-regenerate]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      showAppToast('최종 판단 영수증을 다시 출력합니다.');
       void ensurePurchaseReceipt(item, { regenerate: true });
     });
   });
@@ -8532,143 +9602,298 @@ function closeDirectAiPanel() {
   return true;
 }
 
-async function submitSellerChat(item, opts = {}) {
+function sellerChatIsLoading(state, target = '') {
+  if (state?.status !== 'loading') return false;
+  if (!target) return true;
+  return state.loadingTarget === target;
+}
+
+function sellerChatReplyFormBusy(state) {
+  if (!state) return false;
+  if (state.replyAnalysis?.status === 'loading') return true;
+  return sellerChatIsLoading(state, 'messages') && state.lastRequestWasSellerReply === true;
+}
+
+function sellerChatFreeformInputBusy(state) {
+  if (!state) return false;
+  return sellerChatIsLoading(state, 'messages') && state.lastRequestWasSellerReply !== true;
+}
+
+function sellerChatReplyAnalysisPayload(state) {
+  return state?.replyAnalysis?.status === 'done' && state.replyAnalysis?.text
+    ? {
+        status: state.replyAnalysis.status || 'done',
+        text: state.replyAnalysis.text,
+        source: state.replyAnalysis.source || '',
+      }
+    : null;
+}
+
+function sellerChatApiPayload(item, state, overrides = {}) {
+  const context = sellerChatContext(item, comps);
+  const chatHistory = sellerChatHistoryPayload(state.messages);
+  const keywordText = String(overrides.keywordText ?? overrides.message ?? state.selectedKeyword ?? state.input ?? '').trim();
+  const requestKind = String(overrides.requestKind || 'freeform');
+  return {
+    context,
+    chatHistory,
+    keywordText,
+    requestKind,
+    conversationState: sellerChatConversationState(state.messages, keywordText, requestKind),
+    payload: {
+      mode: state.mode,
+      tone: state.tone,
+      toneLabel: sellerChatToneLabel(state.tone),
+      toneNote: state.toneNote,
+      message: keywordText,
+      keywordText,
+      requestKind,
+      chatHistory,
+      conversationState: sellerChatConversationState(state.messages, keywordText, requestKind),
+      replyAnalysis: overrides.replyAnalysis ?? sellerChatReplyAnalysisPayload(state),
+      listing: context.item,
+      summary: context.summary,
+      riskAnalysis: context.riskAnalysis,
+      listingTextAnalysis: context.listingTextAnalysis,
+      listingImageAnalysis: context.listingImageAnalysis,
+      accessoryCheck: context.accessoryCheck,
+      usedPriceGuide: context.usedPriceGuide,
+      receipt: context.receipt,
+      comparison: context.comparison,
+    },
+  };
+}
+
+function sellerChatResolvedChips(state, item = null) {
+  const messages = Array.isArray(state?.messages) ? state.messages : [];
+  const sentTexts = sellerChatSentTexts(messages);
+  const coveredIntents = sellerChatCoveredIntentSet(messages);
+  const responseChips = Array.isArray(state?.quickReplies)
+    ? state.quickReplies.map((chip) => String(chip || '').trim()).filter(Boolean)
+    : [];
+  const candidateChips = coveredIntents.has('greeting') ? responseChips : ['첫 인사', ...responseChips];
+  const seen = new Set();
+  return candidateChips
+    .filter((chip) => {
+      const key = normalizeSellerChatTextForCompare(chip);
+      if (!key || seen.has(key)) return false;
+      if (!sellerChatShouldShowChip(chip, coveredIntents, sentTexts)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 4);
+}
+
+async function finishSellerChatLoading(state, item, loadingKind) {
+  state.finishStartedAt = Date.now();
+  state.finishFromPercent = Math.min(99, Math.max(0, aiLoadingPercent(state, loadingKind) || 0));
+  state.forcePercent = 100;
+  refreshSellerChatDynamic(item, { skipThread: true });
+  await waitMs(AI_LOADING_FINISH_MS);
+  state.status = 'idle';
+  delete state.forcePercent;
+  delete state.finishStartedAt;
+  delete state.finishFromPercent;
+  delete state.loadingTarget;
+}
+
+async function loadSellerChatKeywords(item, opts = {}) {
+  const key = sellerChatKey(item);
+  const state = key ? sellerChatStates.get(key) : null;
+  if (!state) return;
+  if (!stageFiveActiveKeys.has(key)) return;
+  if (opts.initial === true && state.quickReplies.length && !opts.force) return;
+  if (sellerChatIsLoading(state)) return;
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchSellerChatKeywords !== 'function') {
+    state.status = 'error';
+    state.error = typeof globalThis.UlsaAi?.fetchSellerChatKeywords !== 'function'
+      ? '키워드 생성 API를 불러오지 못했습니다. 분석 서버를 재시작한 뒤 페이지를 새로고침해 주세요.'
+      : 'AI 설정이 필요합니다.';
+    refreshSellerChatDynamic(item, { skipThread: true, skipSuggestions: true });
+    return;
+  }
+  state.status = 'loading';
+  state.loadingTarget = 'keywords';
+  state.startedAt = Date.now();
+  state.error = '';
+  refreshSellerChatDynamic(item, { skipThread: true, skipSuggestions: true });
+  try {
+    const { payload } = sellerChatApiPayload(item, state, { requestKind: 'keywords', keywordText: '' });
+    const data = await globalThis.UlsaAi.fetchSellerChatKeywords({ apiKey, ...payload });
+    const quickReplies = Array.isArray(data.quickReplies)
+      ? data.quickReplies.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 4)
+      : [];
+    state.quickReplies = quickReplies;
+    persistAiCaches();
+    await finishSellerChatLoading(state, item, 'sellerChatKeywords');
+  } catch (err) {
+    state.status = 'error';
+    delete state.loadingTarget;
+    delete state.forcePercent;
+    delete state.finishStartedAt;
+    delete state.finishFromPercent;
+    state.error = err instanceof Error ? err.message : String(err);
+  }
+  persistAiCaches();
+  refreshSellerChatDynamic(item, { skipThread: true, skipSuggestions: true });
+}
+
+function ensureSellerChatKeywords(item) {
+  const key = sellerChatKey(item);
+  if (!key || !stageFiveActiveKeys.has(key)) return;
+  const state = getSellerChatState(item);
+  if (!state) return;
+  if (state.quickReplies.length) return;
+  if (sellerChatIsLoading(state)) return;
+  void loadSellerChatKeywords(item, { initial: true });
+}
+
+async function generateSellerChatMessages(item, opts = {}) {
   const key = sellerChatKey(item);
   const state = key ? sellerChatStates.get(key) : null;
   if (!state) return;
   const apiKey = getAiApiKey();
-  if (!apiKey || typeof globalThis.UlsaAi?.fetchSellerChatAssistant !== 'function') {
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchSellerChatMessages !== 'function') {
     state.status = 'error';
     state.error = 'AI 설정이 필요합니다.';
-    refreshSellerChatSection(item);
+    refreshSellerChatDynamic(item, { skipThread: true });
     return;
   }
 
   const asSellerReply = opts.asSellerReply === true;
   const isRegenerate = opts.regenerate === true;
-  const message = String(
-    isRegenerate ? state.lastRequestMessage || state.input || '' : (asSellerReply ? state.sellerReply : state.input) || ''
+  const keywordText = String(
+    isRegenerate
+      ? state.selectedKeyword || state.lastRequestMessage || state.input || ''
+      : opts.keywordText || (asSellerReply ? state.sellerReply : state.input) || state.selectedKeyword || ''
   ).trim();
-  const payloadMessage = message || '';
-  const context = sellerChatContext(item, comps);
+  const requestKind =
+    opts.requestKind ||
+    (isRegenerate ? state.lastRequestKind || 'regenerate' : asSellerReply ? 'seller_reply' : 'freeform');
   let appendedSellerReply = false;
 
-  if (asSellerReply && payloadMessage && !isRegenerate) {
-    const sellerMessage = { role: 'seller', text: payloadMessage };
+  if (asSellerReply && keywordText && !isRegenerate) {
+    const sellerMessage = { role: 'seller', text: keywordText };
     state.messages.push(sellerMessage);
+    persistAiCaches();
     appendedSellerReply = appendSellerChatMessageToThread(item, sellerMessage, state.messages.length - 1);
   }
+
   state.status = 'loading';
+  state.loadingTarget = 'messages';
   state.startedAt = Date.now();
   state.error = '';
-  state.lastRequestMessage = payloadMessage;
+  state.selectedKeyword = keywordText;
+  state.lastRequestMessage = keywordText;
   state.lastRequestWasSellerReply = asSellerReply;
+  state.lastRequestKind = requestKind;
   if (!isRegenerate) {
     if (asSellerReply) state.sellerReply = '';
     else state.input = '';
   }
   state.lastSuggestion = null;
-  if (!refreshSellerChatDynamic(item, { skipThread: appendedSellerReply || !asSellerReply })) refreshSellerChatSection(item);
+  if (asSellerReply && typeof globalThis.UlsaAi?.fetchSellerReplyAnalysis === 'function') {
+    state.replyAnalysis = {
+      status: 'loading',
+      text: '판매자 답장 해석 중입니다...',
+      source: keywordText,
+    };
+  }
+  refreshSellerChatDynamic(item, { skipThread: true, skipChips: true });
 
   try {
-    const chatHistory = sellerChatHistoryPayload(state.messages);
-    let replyAnalysisForPrompt = state.replyAnalysis?.status === 'done' && state.replyAnalysis?.text
-      ? {
-          status: state.replyAnalysis.status || 'done',
-          text: state.replyAnalysis.text,
-          source: state.replyAnalysis.source || '',
-        }
-      : null;
+    const { context, chatHistory, payload } = sellerChatApiPayload(item, state, {
+      keywordText,
+      requestKind,
+      replyAnalysis: null,
+    });
+    let replyAnalysisForPrompt = sellerChatReplyAnalysisPayload(state);
     if (asSellerReply && typeof globalThis.UlsaAi?.fetchSellerReplyAnalysis === 'function') {
       try {
         const analysisData = await globalThis.UlsaAi.fetchSellerReplyAnalysis({
           apiKey,
-          sellerReply: payloadMessage,
+          sellerReply: keywordText,
           chatHistory,
           listing: context.item,
           summary: context.summary,
           riskAnalysis: context.riskAnalysis,
           listingTextAnalysis: context.listingTextAnalysis,
           listingImageAnalysis: context.listingImageAnalysis,
+          accessoryCheck: context.accessoryCheck,
           usedPriceGuide: context.usedPriceGuide,
           receipt: context.receipt,
           comparison: context.comparison,
         });
         const text = stripChatMarkdown(analysisData.analysis || analysisData.replyAnalysis?.analysis || '').trim();
-        state.replyAnalysis = text ? { status: 'done', text, source: payloadMessage } : null;
+        state.replyAnalysis = text ? { status: 'done', text, source: keywordText } : null;
         replyAnalysisForPrompt = state.replyAnalysis;
-        refreshSellerChatDynamic(item, { skipThread: true });
+        persistAiCaches();
+        refreshSellerChatDynamic(item, { skipThread: true, skipChips: true });
       } catch {
         state.replyAnalysis = {
           status: 'error',
           text: '판매자 답장 해석을 불러오지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도해 주세요.',
-          source: payloadMessage,
+          source: keywordText,
         };
         replyAnalysisForPrompt = null;
-        refreshSellerChatDynamic(item, { skipThread: true });
+        persistAiCaches();
+        refreshSellerChatDynamic(item, { skipThread: true, skipChips: true });
       }
     } else if (asSellerReply) {
       state.replyAnalysis = {
         status: 'error',
         text: '판매자 답장 해석 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.',
-        source: payloadMessage,
+        source: keywordText,
       };
       replyAnalysisForPrompt = null;
     }
-    const data = await globalThis.UlsaAi.fetchSellerChatAssistant({
+
+    const data = await globalThis.UlsaAi.fetchSellerChatMessages({
       apiKey,
-      mode: state.mode,
-      tone: state.tone,
-      toneLabel: sellerChatToneLabel(state.tone),
-      toneNote: state.toneNote,
-      message: payloadMessage,
-      chatHistory,
+      ...payload,
       replyAnalysis: replyAnalysisForPrompt,
-      listing: context.item,
-      summary: context.summary,
-      riskAnalysis: context.riskAnalysis,
-      listingTextAnalysis: context.listingTextAnalysis,
-      listingImageAnalysis: context.listingImageAnalysis,
-      usedPriceGuide: context.usedPriceGuide,
-      receipt: context.receipt,
-      comparison: context.comparison,
     });
-    const primary = stripChatMarkdown(data.primary || data.message || data.answer || '').trim();
+    const primary = stripChatMarkdown(data.primary || data.messages?.primary || '').trim();
     const alternatives = Array.isArray(data.alternatives)
       ? data.alternatives.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 5)
-      : [];
+      : Array.isArray(data.messages?.alternatives)
+        ? data.messages.alternatives.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 5)
+        : [];
     const followUps = Array.isArray(data.followUps)
       ? data.followUps.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 3)
-      : [];
-    const quickReplies = Array.isArray(data.quickReplies)
-      ? data.quickReplies.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 4)
-      : [];
+      : Array.isArray(data.messages?.followUps)
+        ? data.messages.followUps.map((x) => stripChatMarkdown(x)).filter(Boolean).slice(0, 3)
+        : [];
     const rawSuggestion = {
       primary,
       alternatives,
       followUps,
-      quickReplies,
-      summary: stripChatMarkdown(data.summary || '').trim(),
+      summary: stripChatMarkdown(data.summary || data.messages?.summary || '').trim(),
     };
-    const dedupedSuggestion = filterSellerChatDuplicateSuggestions(rawSuggestion, state.messages);
-    state.lastSuggestion = enforceSellerChatNegotiation(dedupedSuggestion, context, state.messages, payloadMessage);
-    state.finishStartedAt = Date.now();
-    state.finishFromPercent = Math.min(99, Math.max(0, aiLoadingPercent(state, 'sellerChat') || 0));
-    state.forcePercent = 100;
-    if (!refreshSellerChatDynamic(item, { skipThread: true })) refreshSellerChatSection(item);
-    await waitMs(AI_LOADING_FINISH_MS);
-    state.status = 'done';
-    delete state.forcePercent;
-    delete state.finishStartedAt;
-    delete state.finishFromPercent;
+    const topicAlignedSuggestion = asSellerReply
+      ? rawSuggestion
+      : alignSellerChatSuggestionToRequest(rawSuggestion, keywordText, state.tone);
+    state.lastSuggestion = filterSellerChatDuplicateSuggestions(topicAlignedSuggestion, state.messages);
+    persistAiCaches();
+    await finishSellerChatLoading(state, item, 'sellerChatMessages');
   } catch (err) {
     state.status = 'error';
+    delete state.loadingTarget;
     delete state.forcePercent;
     delete state.finishStartedAt;
     delete state.finishFromPercent;
     state.error = err instanceof Error ? err.message : String(err);
   }
-  if (!refreshSellerChatDynamic(item, { skipThread: true })) refreshSellerChatSection(item);
+  persistAiCaches();
+  refreshSellerChatDynamic(item, { skipThread: true });
+}
+
+async function submitSellerChat(item, opts = {}) {
+  if (opts.keywords === true) {
+    return loadSellerChatKeywords(item, opts);
+  }
+  return generateSellerChatMessages(item, opts);
 }
 
 function bindSellerChatFlow(root, item) {
@@ -8687,15 +9912,7 @@ function bindSellerChatFlow(root, item) {
 
     if (target.matches('[data-stage-five-start]')) {
       const startKey = target.getAttribute('data-stage-five-start') || key;
-      if (!startKey) return;
-      stageFiveActiveKeys.add(startKey);
-      stageFiveEnteringKeys.add(startKey);
-      playStageStartMotion();
-      refreshSellerChatSection(item);
-      window.setTimeout(() => {
-        stageFiveEnteringKeys.delete(startKey);
-        if (selectedKey === startKey) refreshSellerChatSection(item);
-      }, 760);
+      startStageFive(item, startKey);
       return;
     }
     if (target.matches('[data-seller-chat-mode]')) {
@@ -8705,19 +9922,27 @@ function bindSellerChatFlow(root, item) {
       return;
     }
     if (target.matches('[data-seller-chat-tone]')) {
-      currentState.tone = String(target.getAttribute('data-seller-chat-tone') || 'polite');
+      currentState.tone = normalizeSellerChatTone(target.getAttribute('data-seller-chat-tone') || 'polite');
       currentState.error = '';
-      refreshSellerChatDynamic(item);
+      refreshSellerChatDynamic(item, {
+        skipThread: true,
+        skipReplyAnalysis: true,
+        skipSuggestions: true,
+        skipChips: true,
+      });
       return;
     }
     if (target.matches('[data-seller-chat-chip]')) {
-      currentState.input = String(target.getAttribute('data-seller-chat-chip') || '');
-      void submitSellerChat(item);
+      const chipText = String(target.getAttribute('data-seller-chat-chip') || '').trim();
+      if (!chipText || sellerChatIsLoading(currentState)) return;
+      currentState.selectedKeyword = chipText;
+      void generateSellerChatMessages(item, { keywordText: chipText, requestKind: 'quick_reply' });
       return;
     }
     if (target.matches('[data-seller-chat-regenerate]')) {
       currentState.error = '';
-      void submitSellerChat(item, { regenerate: true, asSellerReply: currentState.lastRequestWasSellerReply === true });
+      showAppToast('판매자 대화 문구를 다시 만듭니다.');
+      void generateSellerChatMessages(item, { regenerate: true, asSellerReply: currentState.lastRequestWasSellerReply === true });
       return;
     }
     const copyTarget = target.closest?.('[data-seller-chat-copy]');
@@ -8731,11 +9956,17 @@ function bindSellerChatFlow(root, item) {
       const nextMessage = { role: 'me', text };
       currentState.messages.push(nextMessage);
       currentState.lastSuggestion = null;
+      currentState.lastRequestMessage = '';
+      currentState.lastRequestKind = 'sent_message';
       currentState.input = '';
       currentState.status = 'idle';
       currentState.error = '';
+      persistAiCaches();
+      const suggestions = panel.querySelector('[data-seller-chat-suggestions]');
+      if (suggestions) suggestions.innerHTML = '';
       appendSellerChatMessageToThread(item, nextMessage, currentState.messages.length - 1);
-      refreshSellerChatDynamic(item, { skipThread: true });
+      refreshSellerChatDynamic(item, { skipThread: true, skipSuggestions: true, skipChips: true });
+      void loadSellerChatKeywords(item, { force: true });
       return;
     }
     if (target.matches('[data-seller-chat-delete]')) {
@@ -8744,6 +9975,8 @@ function bindSellerChatFlow(root, item) {
       currentState.messages.splice(index, 1);
       currentState.status = 'idle';
       currentState.error = '';
+      currentState.lastRequestKind = 'manual_edit';
+      persistAiCaches();
       refreshSellerChatDynamic(item);
       return;
     }
@@ -8751,12 +9984,17 @@ function bindSellerChatFlow(root, item) {
       currentState.mode = 'first';
       currentState.messages = [];
       currentState.lastSuggestion = null;
+      currentState.quickReplies = [];
       currentState.replyAnalysis = null;
+      currentState.lastRequestMessage = '';
+      currentState.lastRequestKind = 'initial';
       currentState.input = '';
       currentState.sellerReply = '';
       currentState.status = 'idle';
       currentState.error = '';
+      persistAiCaches();
       refreshSellerChatDynamic(item);
+      void loadSellerChatKeywords(item, { force: true });
     }
   });
 
@@ -8775,9 +10013,20 @@ function bindSellerChatFlow(root, item) {
   panel.addEventListener('input', (e) => {
     const currentState = getSellerChatState(item);
     if (!currentState) return;
-    if (e.target.matches('[data-seller-chat-tone-note]')) currentState.toneNote = String(e.target.value || '');
-    if (e.target.matches('[data-seller-chat-input]')) currentState.input = String(e.target.value || '');
-    if (e.target.matches('[data-seller-chat-reply]')) currentState.sellerReply = String(e.target.value || '');
+    let shouldPersist = false;
+    if (e.target.matches('[data-seller-chat-tone-note]')) {
+      currentState.toneNote = String(e.target.value || '');
+      shouldPersist = true;
+    }
+    if (e.target.matches('[data-seller-chat-input]')) {
+      currentState.input = String(e.target.value || '');
+      shouldPersist = true;
+    }
+    if (e.target.matches('[data-seller-chat-reply]')) {
+      currentState.sellerReply = String(e.target.value || '');
+      shouldPersist = true;
+    }
+    if (shouldPersist) persistAiCaches();
   });
 
   panel.addEventListener('submit', (e) => {
@@ -8786,14 +10035,16 @@ function bindSellerChatFlow(root, item) {
     if (e.target.matches('[data-seller-chat-form]')) {
       e.preventDefault();
       currentState.input = String(e.target.querySelector('[data-seller-chat-input]')?.value || '');
-      void submitSellerChat(item);
+      persistAiCaches();
+      void generateSellerChatMessages(item, { requestKind: 'freeform' });
       return;
     }
     if (e.target.matches('[data-seller-chat-reply-form]')) {
       e.preventDefault();
       currentState.mode = 'reply';
       currentState.sellerReply = String(e.target.querySelector('[data-seller-chat-reply]')?.value || '');
-      void submitSellerChat(item, { asSellerReply: true });
+      persistAiCaches();
+      void generateSellerChatMessages(item, { asSellerReply: true });
     }
   });
 }
@@ -9041,6 +10292,7 @@ function clearProductSummaryCaches(key) {
   productRiskYoutubeAnalyses.delete(key);
   listingTextAnalyses.delete(key);
   listingImageAnalyses.delete(key);
+  accessoryChecks.delete(key);
   stageTwoActiveKeys.delete(key);
   stageThreeActiveKeys.delete(key);
   stageFiveActiveKeys.delete(key);
@@ -9079,7 +10331,6 @@ function resetCurrentAnalysisRuntimeState() {
   usedPriceGuideProgresses.delete(key);
   stageThreeAutoQueryRetryCounts.delete(key);
   stageThreeComparisonRunIds.delete(key);
-  sellerChatStates.delete(key);
   for (const timerKey of [...comparisonFilterTimers]) {
     if (listingKeyFromStageCacheKey(timerKey) === key) comparisonFilterTimers.delete(timerKey);
   }
@@ -9199,6 +10450,7 @@ function bindProductSummaryRetry(root, item) {
     btn.addEventListener('click', () => {
       const key = summaryKey(item);
       if (!key) return;
+      showAppToast(btn.classList.contains('wrong-product-btn') ? '제품을 다시 식별합니다.' : '제품 정리를 다시 시도합니다.');
       clearProductSummaryCaches(key);
       void ensureProductSummary(item);
     });
@@ -9436,6 +10688,7 @@ async function ensurePurchaseReceipt(item, opts = {}) {
       riskAnalysis: productRiskAnalyses.get(summaryKey(item))?.analysis || null,
       listingTextAnalysis: listingTextAnalyses.get(summaryKey(item))?.analysis || null,
       listingImageAnalysis: listingImageAnalyses.get(summaryKey(item))?.analysis || null,
+      accessoryCheck: accessoryChecks.get(summaryKey(item))?.status === 'done' ? accessoryChecks.get(summaryKey(item))?.analysis || null : null,
       usedPriceGuide: resolvedUsedPriceGuideState(item, stageComps).state?.status === 'done' ? resolvedUsedPriceGuideState(item, stageComps).state?.guide || null : null,
       comparison: purchaseReceiptComparisonPayload(item, stageComps),
       apiKey,
@@ -9507,7 +10760,8 @@ function upsertStageTwoCard(item, selector, html, beforeSelector = '') {
   const isFollowupCard =
     selector === '[data-listing-text-analysis]' ||
     selector === '[data-listing-image-analysis]' ||
-    selector === '[data-listing-image-groups]';
+    selector === '[data-listing-image-groups]' ||
+    selector === '[data-accessory-check]';
   if (isFollowupCard && (panel.querySelector('[data-stage-two-start]') || !canRenderStageTwoFollowups(item))) {
     existing?.remove();
     return;
@@ -9544,14 +10798,14 @@ function canRenderStageTwoFollowups(item) {
 
 function removeStageTwoFollowupCards() {
   $current
-    .querySelectorAll('[data-listing-text-analysis], [data-listing-image-analysis], [data-listing-image-groups]')
+    .querySelectorAll('[data-listing-text-analysis], [data-listing-image-analysis], [data-listing-image-groups], [data-accessory-check]')
     .forEach((el) => el.remove());
 }
 
 function refreshProductRiskYoutubeCard(item) {
   const key = summaryKey(item);
   if (!key || productRiskAnalyses.get(key)?.status !== 'done') return;
-  upsertStageTwoCard(item, '[data-stage-two-youtube]', renderStageTwoYoutubePanel(item), '[data-listing-text-analysis]');
+  upsertStageTwoCard(item, '[data-stage-two-youtube]', renderStageTwoYoutubePanel(item));
 }
 
 function refreshStageThreeSection(item) {
@@ -9658,6 +10912,7 @@ function refreshStageFiveSection(item) {
     else if (stageThree) stageThree.insertAdjacentHTML('afterend', html);
   }
   bindSellerChatFlow($current, item);
+  ensureSellerChatKeywords(item);
   updateStageSlide();
   refreshDirectAiPanelIfOpen();
 }
@@ -9710,7 +10965,7 @@ function refreshListingTextAnalysisCard(item) {
     item,
     '[data-listing-text-analysis]',
     renderListingTextAnalysisCard(item),
-    '[data-listing-image-analysis]'
+    '[data-listing-image-analysis], [data-accessory-check], [data-stage-two-youtube]'
   );
   maybeMarkStageTwoComplete(item);
   refreshStageThreeSection(item);
@@ -9721,8 +10976,18 @@ function refreshListingImageAnalysisCard(item) {
     removeStageTwoFollowupCards();
     return;
   }
-  upsertStageTwoCard(item, '[data-listing-image-analysis]', renderListingImageAnalysisCard(item));
-  upsertStageTwoCard(item, '[data-listing-image-groups]', renderListingImageGroupsCard(item));
+  upsertStageTwoCard(
+    item,
+    '[data-listing-image-analysis]',
+    renderListingImageAnalysisCard(item),
+    '[data-accessory-check], [data-stage-two-youtube]'
+  );
+  upsertStageTwoCard(
+    item,
+    '[data-listing-image-groups]',
+    renderListingImageGroupsCard(item),
+    '[data-accessory-check], [data-stage-two-youtube]'
+  );
   const panel = $current.querySelector('[data-stage-two-panel]');
   bindImageAnalysisSlider(panel, item);
   bindImageZoom(panel);
@@ -9730,10 +10995,22 @@ function refreshListingImageAnalysisCard(item) {
   refreshStageThreeSection(item);
 }
 
-function previewListingImageAnalysis(item) {
+function refreshAccessoryCheckCard(item) {
+  if (!canRenderStageTwoFollowups(item)) {
+    removeStageTwoFollowupCards();
+    return;
+  }
+  upsertStageTwoCard(item, '[data-accessory-check]', renderAccessoryCheckCard(item), '[data-stage-two-youtube]');
+  maybeMarkStageTwoComplete(item);
+  refreshStageThreeSection(item);
+}
+
+function previewListingImageAnalysis(item, opts = {}) {
   const key = summaryKey(item);
   if (!key || imageAnalysisPreviewedKeys.has(key)) return;
-  if (!$appShell?.classList.contains('app-shell--slide') || stageSlideIndex !== 1) return;
+  const isSlide = $appShell?.classList.contains('app-shell--slide');
+  if (isSlide && stageSlideIndex !== 1) return;
+  if (!isSlide && opts.allowScroll !== true) return;
   if (!isStepTwoStarted(item)) return;
   if (!$current.querySelector('[data-listing-image-analysis]')) return;
   const images = imageAnalysisEntries(item);
@@ -9876,6 +11153,7 @@ $btnHistoryClear?.addEventListener('click', () => {
   productRiskYoutubeAnalyses.clear();
   listingTextAnalyses.clear();
   listingImageAnalyses.clear();
+  accessoryChecks.clear();
   comparisonFilters.clear();
   usedPriceGuides.clear();
   purchaseReceipts.clear();
@@ -10151,6 +11429,14 @@ function handleAppShortcut(e) {
     $btnLayoutMode?.click();
     return;
   }
+  if (isShortcutCode(e, 'KeyT')) {
+    e.preventDefault();
+    const nextAutoRun = !isAutoRunEnabled();
+    setAutoRunMode(nextAutoRun);
+    showAppToast(`자동진행이 ${nextAutoRun ? '켜졌습니다.' : '꺼졌습니다.'}`);
+    scheduleAutoRunNextStep(currentRenderedItem());
+    return;
+  }
   if (isShortcutCode(e, 'KeyS')) {
     e.preventDefault();
     document.getElementById('btnAiSettings')?.click();
@@ -10217,7 +11503,7 @@ function favoriteCompareSnapshot(item) {
   const verdict = receipt?.verdict || (receipt ? 'done' : 'pending');
   const score =
     (price != null ? Math.min(50, Math.max(0, 50 - price / 20000)) : 18) +
-    (verdict === 'buy' ? 30 : verdict === 'negotiate' ? 18 : verdict === 'hold' ? 4 : 10) -
+    (verdict === 'buy' ? 30 : verdict === 'check_buy' ? 24 : verdict === 'negotiate' ? 18 : verdict === 'hold' ? 4 : 10) -
     Math.min(18, riskCount * 2 + imageIssueCount * 3);
   return {
     key,
@@ -10236,6 +11522,7 @@ function favoriteCompareSnapshot(item) {
 
 function compareVerdictText(verdict) {
   if (verdict === 'buy') return '구매 후보';
+  if (verdict === 'check_buy') return '확인 후 구매';
   if (verdict === 'negotiate') return '네고 후보';
   if (verdict === 'hold') return '보류';
   return '분석 전';
@@ -10488,9 +11775,7 @@ async function ensureProductRisk(item) {
   const existing = productRiskAnalyses.get(key);
   if (existing?.status === 'loading') return;
   if (existing?.status === 'done') {
-    void ensureProductRiskYoutube(item);
-    void ensureListingTextAnalysis(item);
-    void ensureListingImageAnalysis(item);
+    ensureStageTwoFollowups(item);
     return;
   }
 
@@ -10543,9 +11828,7 @@ async function ensureProductRisk(item) {
     refreshProductSummaryBlock(item);
   }
   if (productRiskAnalyses.get(key)?.status === 'done') {
-    void ensureProductRiskYoutube(item);
-    void ensureListingTextAnalysis(item);
-    void ensureListingImageAnalysis(item);
+    ensureStageTwoFollowups(item);
   }
 }
 
@@ -10615,16 +11898,20 @@ async function ensureProductRiskYoutube(item) {
   if (selectedKey === key) refreshProductRiskYoutubeCard(item);
 }
 
-async function ensureListingTextAnalysis(item) {
+async function ensureListingTextAnalysis(item, opts = {}) {
   const key = summaryKey(item);
   if (!key) return;
   const existing = listingTextAnalyses.get(key);
   if (existing?.status === 'loading') return;
-  if (existing?.status === 'done' && existing.source === 'ai' && hasListingTextAnalysisContent(existing.analysis)) return;
+  if (existing?.status === 'done' && existing.source === 'ai' && hasListingTextAnalysisContent(existing.analysis)) {
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
+    return;
+  }
   if (existing?.status === 'done') listingTextAnalyses.delete(key);
 
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchListingTextAnalysis !== 'function') {
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
 
@@ -10666,7 +11953,6 @@ async function ensureListingTextAnalysis(item) {
     }, 'listingText');
     persistAiCaches();
     if (selectedKey === key) {
-      playAiResultMotion();
       refreshListingTextAnalysisCard(item);
     }
   } catch (e) {
@@ -10677,9 +11963,84 @@ async function ensureListingTextAnalysis(item) {
   } finally {
     aiScope.release();
   }
+  if (!opts.skipFollowups) ensureStageTwoFollowups(item);
 }
 
-async function ensureListingImageAnalysis(item) {
+async function ensureAccessoryCheck(item) {
+  const key = summaryKey(item);
+  if (!key) return;
+  if (productRiskAnalyses.get(key)?.status !== 'done') return;
+
+  const existing = accessoryChecks.get(key);
+  if (existing?.status === 'loading') return;
+  if (existing?.status === 'done') return;
+
+  const apiKey = getAiApiKey();
+  if (!apiKey || typeof globalThis.UlsaAi?.fetchAccessoryCheck !== 'function') {
+    accessoryChecks.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    if (selectedKey === key) refreshAccessoryCheckCard(item);
+    return;
+  }
+
+  const summary = getProductSummaryState(item)?.summary || null;
+  const riskAnalysis = productRiskAnalyses.get(key)?.analysis || null;
+  const listingTextAnalysis = listingTextAnalyses.get(key)?.analysis || null;
+  const listingImageAnalysis = listingImageAnalyses.get(key)?.analysis || null;
+  accessoryChecks.set(key, {
+    status: 'loading',
+    startedAt: Date.now(),
+    durationMs: AI_LOADING_DURATIONS.accessoryCheck,
+    startPercent: 6,
+    endPercent: 96,
+  });
+  if (selectedKey === key) refreshAccessoryCheckCard(item);
+
+  const aiScope = createAiRequestScope();
+  try {
+    const data = await globalThis.UlsaAi.fetchAccessoryCheck({
+      title: item.title || '',
+      body: item.body || '',
+      productName: summary?.productName || fallbackSearchQuery(item),
+      summary,
+      riskAnalysis,
+      listingTextAnalysis,
+      listingImageAnalysis,
+      apiKey,
+      signal: aiScope.signal,
+    });
+    if (shouldIgnoreAiScope(aiScope)) return;
+    const analysis = data.analysis?.parseOk ? data.analysis : null;
+    if (!analysis) {
+      await showAiLoadingComplete(accessoryChecks, key, () => {
+        if (selectedKey === key) refreshAccessoryCheckCard(item);
+      }, 'accessoryCheck');
+      accessoryChecks.set(key, { status: 'error', error: '구성품 체크 결과를 해석하지 못했습니다.' });
+      persistAiCaches();
+      if (selectedKey === key) refreshAccessoryCheckCard(item);
+      return;
+    }
+    await finishAiLoadingState(accessoryChecks, key, { status: 'done', analysis }, () => {
+      if (selectedKey === key) refreshAccessoryCheckCard(item);
+    }, 'accessoryCheck');
+    invalidatePurchaseReceiptCaches(item);
+    persistAiCaches();
+    if (selectedKey === key) {
+      refreshAccessoryCheckCard(item);
+    }
+  } catch (e) {
+    if (shouldIgnoreAiScope(aiScope, e)) return;
+    accessoryChecks.set(key, {
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    });
+    persistAiCaches();
+    if (selectedKey === key) refreshAccessoryCheckCard(item);
+  } finally {
+    aiScope.release();
+  }
+}
+
+async function ensureListingImageAnalysis(item, opts = {}) {
   const key = summaryKey(item);
   if (!key) return;
   const existing = listingImageAnalyses.get(key);
@@ -10689,6 +12050,7 @@ async function ensureListingImageAnalysis(item) {
       refreshListingImageAnalysisCard(item);
       previewListingImageAnalysis(item);
     }
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
   if (existing?.status === 'done') listingImageAnalyses.delete(key);
@@ -10696,7 +12058,8 @@ async function ensureListingImageAnalysis(item) {
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchListingImageAnalysis !== 'function') {
     listingImageAnalyses.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
-    if (selectedKey === key) refreshProductSummaryBlock(item);
+    if (selectedKey === key) refreshListingImageAnalysisCard(item);
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
 
@@ -10708,6 +12071,7 @@ async function ensureListingImageAnalysis(item) {
     });
     persistAiCaches();
     if (selectedKey === key) refreshListingImageAnalysisCard(item);
+    if (!opts.skipFollowups) ensureStageTwoFollowups(item);
     return;
   }
 
@@ -10736,9 +12100,8 @@ async function ensureListingImageAnalysis(item) {
     }, 'listingImage');
     persistAiCaches();
     if (selectedKey === key) {
-      playAiResultMotion();
       refreshListingImageAnalysisCard(item);
-      previewListingImageAnalysis(item);
+      previewListingImageAnalysis(item, { allowScroll: true });
     }
   } catch (e) {
     if (shouldIgnoreAiScope(aiScope, e)) return;
@@ -10751,6 +12114,7 @@ async function ensureListingImageAnalysis(item) {
   } finally {
     aiScope.release();
   }
+  if (!opts.skipFollowups) ensureStageTwoFollowups(item);
 }
 
 function applyPayload(payload, opts = {}) {
@@ -10904,6 +12268,11 @@ function initMain() {
   $railImportForm?.addEventListener('submit', (e) => {
     e.preventDefault();
     requestListingUrlImport($railUrlInput?.value || '');
+  });
+
+  $autoRunToggle?.addEventListener('change', () => {
+    setAutoRunMode($autoRunToggle.checked);
+    showAppToast(`자동진행이 ${$autoRunToggle.checked ? '켜졌습니다.' : '꺼졌습니다.'}`);
   });
 
   $btnRefresh.addEventListener('click', () => {

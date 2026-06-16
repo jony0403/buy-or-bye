@@ -1,0 +1,55 @@
+역할:
+조사 메모와 판매글·사진 분석을 대조해 구성품 체크 결과를 JSON으로 만드세요.
+
+입력:
+제품명: {{productName}}
+조사 메모:
+{{researchText}}
+
+판매글 제목: {{title}}
+판매글 본문:
+{{body}}
+
+제품 요약(JSON): {{summaryJson}}
+리스크 분석(JSON): {{riskAnalysisJson}}
+본문 분석(JSON): {{listingTextAnalysisJson}}
+사진 분석(JSON): {{listingImageAnalysisJson}}
+
+처리 기준:
+- items[].status 값은 아래 중 하나만 사용하세요.
+  - confirmed: 해당 구성품이 포함되어 있다고 본문에 명시되었거나 사진에 보인다고 실제로 확인됨
+  - body_only: 본문에는 포함/구성이라고 명시되었지만 사진으로는 확인 안 됨
+  - unconfirmed: 기준 구성품인데 본문·사진 모두에서 포함/미포함 여부를 확인할 수 없음
+  - missing: 판매자가 없다고/미포함이라고 직접 밝혔거나 본문에 "박스 없음", "충전기 미포함", "구성품 제외"처럼 명시됨
+  - not_applicable: 이 제품/매물 기준 해당 없음
+- importance는 required | optional | unknown 중 하나입니다.
+- 아이콘 판정 기준을 반드시 지키세요.
+  - O: 사진에 보이거나, 본문/판매글에 포함·있음·구성·동봉·풀박스처럼 있다고 언급됨. 사진에 안 보여도 본문에 있다고 되어 있으면 O입니다.
+  - 삼각형: 본문에도 사진에도 포함/없음 여부를 전혀 확인할 수 없음.
+  - X: 판매자가 "박스 없음", "충전기 미포함", "구성품 제외"처럼 없다고 직접 밝힘. 사진에 안 보인다는 이유나 본문에 언급이 없다는 이유만으로 X 처리하지 마세요.
+- 본체/제품 본체처럼 매물의 핵심 물건은 제목·본문·사진상 제품 자체가 거래 대상이면 보통 O로 판단하세요. 단, 판매자가 본체가 없다고 밝힌 특수한 경우만 X입니다.
+- 판매자가 없다고 밝힌 항목은 status를 missing으로 두고 evidence에 "본문에 박스가 없다고 명시"처럼 적으세요.
+- 확인이 어려운 항목은 status를 unconfirmed로 두고 evidence에 "본문과 사진에서 포함 여부를 확인할 수 없음"처럼 적으세요. 이 경우 절대 status를 missing으로 쓰지 마세요.
+- 판매자가 "충전기 포함", "박스 있음", "풀박스", "본체 구성"처럼 있다고 밝힌 항목은 사진에 안 보여도 status를 confirmed 또는 body_only로 두고, evidence에 "본문에는 포함으로 명시되었으나 사진으로는 확인되지 않음"처럼 적으세요.
+- "누락 확정"처럼 단정하지 말고, 근거가 약하면 unconfirmed 또는 body_only로 표현하세요.
+- evidence에는 "사진 2번에서 충전기 확인", "본문에 풀박스라고만 적혀 있음"처럼 짧은 근거를 쓰세요.
+- question에는 판매자에게 바로 물을 짧은 확인 질문을 쓰세요. confirmed/not_applicable이면 빈 문자열.
+- overallLevel: safe | caution | risk
+- summary: 1~2문장, 존댓말
+- items는 3~8개, 중요한 required 항목을 우선 포함하세요.
+
+출력 형식:
+반드시 JSON만 출력하세요:
+{
+  "summary": "충전기는 사진에서 확인되지 않아 거래 전 확인이 필요합니다.",
+  "overallLevel": "caution",
+  "items": [
+    {
+      "name": "충전기",
+      "importance": "required",
+      "status": "unconfirmed",
+      "evidence": "본문에는 언급이 없고 사진에도 충전기가 보이지 않습니다.",
+      "question": "정품 충전기 포함 여부와 사진을 확인해 주세요."
+    }
+  ]
+}

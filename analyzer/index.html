@@ -14,7 +14,7 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-    <link rel="stylesheet" href="style.css?v=20260615-performance-bg-off" />
+    <link rel="stylesheet" href="style.css?v=20260616-receipt-print-performance" />
   </head>
   <body>
     <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
@@ -162,6 +162,7 @@
                 <div><dt><kbd>L</kbd></dt><dd>스크롤식/슬라이드식 전환</dd></div>
                 <div><dt><kbd>D</kbd></dt><dd>다크모드 전환</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>최근 매물 열기/닫기</dd></div>
+                <div><dt><kbd>T</kbd></dt><dd>자동진행 켜기/끄기</dd></div>
                 <div><dt><kbd>S</kbd></dt><dd>AI 설정 열기</dd></div>
               </dl>
             </section>
@@ -184,7 +185,6 @@
               </dl>
             </section>
           </div>
-          <p class="shortcut-panel__note">한글 입력 상태에서도 물리 키 기준으로 동작합니다. 입력창 안에서는 전역 단축키가 비활성화됩니다.</p>
         </div>
       </aside>
       <header class="top">
@@ -206,6 +206,11 @@
             aria-label="매물 URL"
           />
           <button type="submit" id="btnUrlImport" class="btn btn-small url-import__submit">불러오기</button>
+          <label class="auto-run-toggle" title="대기 버튼 없이 가능한 다음 단계를 자동으로 진행합니다.">
+            <input id="autoRunToggle" type="checkbox" />
+            <span class="auto-run-toggle__track" aria-hidden="true"><i></i></span>
+            <span class="auto-run-toggle__text">자동진행</span>
+          </label>
           <div id="urlImportStatus" class="url-import__status" role="status" aria-live="polite"></div>
         </form>
         <div class="top-actions">
@@ -269,8 +274,8 @@
     </div>
 
     <script src="ai/config.js?v=20260521-1618"></script>
-    <script src="ai/client.js?v=20260611-reply-analysis-fix"></script>
+    <script src="ai/client.js?v=20260616-seller-chat-keywords"></script>
     <script src="ai/gate.js?v=20260521-1618"></script>
-    <script src="app.js?v=20260611-hide-dev-shortcut"></script>
+    <script src="app.js?v=20260616-action-toast-immediate"></script>
   </body>
 </html>
