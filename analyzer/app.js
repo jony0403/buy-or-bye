@@ -3645,13 +3645,28 @@ function getDirectAiAvailableActions(item = currentRenderedItem()) {
   });
 }
 
-function directAiActionToastMessage(action, result) {
+const DIRECT_AI_ACTION_START_TOASTS = {
+  'regen.productSummary': '매물 정리를 다시 생성합니다.',
+  'regen.productRisk': '리스크 판별을 다시 생성합니다.',
+  'regen.productRiskYoutube': '유튜브 참고 자료를 다시 생성합니다.',
+  'regen.listingText': '판매글 분석을 다시 생성합니다.',
+  'regen.listingImage': '이미지 분석을 다시 생성합니다.',
+  'regen.accessoryCheck': '구성품 체크를 다시 생성합니다.',
+  'regen.searchQuery': '가격 참고용 검색어를 다시 생성합니다.',
+  'regen.comparisonSearch': '비교 매물을 다시 검색하고 정리합니다.',
+  'regen.usedPriceGuide': '가격 참고자료를 다시 만듭니다.',
+  'regen.skipComparison': '비교 매물 수집을 건너뛰고 가격 참고로 넘어갑니다.',
+  'regen.purchaseReceipt': '최종 판단 영수증을 다시 출력합니다.',
+};
+
+function directAiActionStartToastMessage(action) {
+  return DIRECT_AI_ACTION_START_TOASTS[action?.id || ''] || '';
+}
+
+function directAiActionCompleteToastMessage(action) {
   const id = action?.id || '';
   if (id === 'ui.toggleAutoRun' || id === 'ui.autoRunOn' || id === 'ui.autoRunOff') {
     return isAutoRunEnabled() ? '자동진행이 켜졌습니다.' : '자동진행이 꺼졌습니다.';
-  }
-  if (id.startsWith('regen.')) {
-    return result?.message || `${action.label}을(를) 시작했습니다.`;
   }
   return '';
 }
@@ -3859,8 +3874,10 @@ async function executeDirectAiAction(actionId, item = currentRenderedItem(), ctx
 
   directAiChat.commandStatus = 'loading';
   try {
+    const startToastMessage = directAiActionStartToastMessage(action);
+    if (startToastMessage) showAppToast(startToastMessage);
     const result = await action.run(item, ctx);
-    const toastMessage = directAiActionToastMessage(action, result);
+    const toastMessage = directAiActionCompleteToastMessage(action);
     if (toastMessage) showAppToast(toastMessage);
     return { ok: true, message: result?.message || `${action.label}을(를) 실행했습니다.` };
   } catch (err) {
