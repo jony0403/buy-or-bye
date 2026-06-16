@@ -47,6 +47,8 @@ const PROMPTS = {
   listingImageAnalysis: await loadPrompt('listing-image-analysis.txt'),
   directAiChat: await loadPrompt('direct-ai-chat.txt'),
   sellerChatAssistant: await loadPrompt('seller-chat-assistant.txt'),
+  sellerChatKeywords: await loadPrompt('seller-chat-keywords.txt'),
+  sellerChatMessages: await loadPrompt('seller-chat-messages.txt'),
   sellerReplyAnalysis: await loadPrompt('seller-reply-analysis.txt'),
 };
 
@@ -1860,9 +1862,11 @@ function buildAccessoryCheckJsonPrompt(payload, researchText) {
 }
 
 function normalizeAccessoryStatus(raw) {
-  const status = String(raw || 'missing_or_unconfirmed').trim();
-  if (['confirmed', 'body_only', 'missing_or_unconfirmed', 'not_applicable'].includes(status)) return status;
-  return 'missing_or_unconfirmed';
+  const status = String(raw || 'unconfirmed').trim();
+  if (['confirmed', 'body_only', 'unconfirmed', 'missing', 'missing_or_unconfirmed', 'not_applicable'].includes(status)) {
+    return status;
+  }
+  return 'unconfirmed';
 }
 
 function normalizeAccessoryImportance(raw) {
@@ -2025,7 +2029,7 @@ function parsePurchaseReceipt(text) {
   const parsed = parseJsonObject(text);
   const verdict = String(parsed.verdict || 'hold').toLowerCase();
   return {
-    verdict: ['buy', 'negotiate', 'hold', 'pass'].includes(verdict) ? verdict : 'hold',
+    verdict: ['buy', 'check_buy', 'negotiate', 'hold', 'pass'].includes(verdict) ? verdict : 'hold',
     headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '구매 판단 보류')
       .replace(/\s+/g, ' ')
       .trim(),
@@ -2158,14 +2162,17 @@ async function runDirectAiChat(apiKey, model, prompt) {
   });
 }
 
-function buildSellerChatAssistantPrompt(payload) {
-  return renderPrompt(PROMPTS.sellerChatAssistant, {
+function buildSellerChatPromptVars(payload) {
+  return {
     mode: String(payload.mode || 'first'),
     tone: String(payload.tone || 'polite'),
     toneLabel: String(payload.toneLabel || ''),
     toneNote: String(payload.toneNote || '').trim() || '(없음)',
-    userText: String(payload.message || payload.userText || '').trim() || '(없음)',
+    requestKind: String(payload.requestKind || 'freeform'),
+    userText: String(payload.message || payload.userText || payload.keywordText || '').trim() || '(없음)',
+    keywordText: String(payload.keywordText || payload.message || payload.userText || '').trim() || '(없음)',
     chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
+    conversationStateJson: JSON.stringify(payload.conversationState || null),
     replyAnalysisJson: JSON.stringify(payload.replyAnalysis || null),
     listingJson: JSON.stringify(payload.listing || null),
     summaryJson: JSON.stringify(payload.summary || null),
@@ -2176,7 +2183,19 @@ function buildSellerChatAssistantPrompt(payload) {
     usedPriceGuideJson: JSON.stringify(payload.usedPriceGuide || null),
     receiptJson: JSON.stringify(payload.receipt || null),
     comparisonJson: JSON.stringify(payload.comparison || null),
-  });
+  };
+}
+
+function buildSellerChatAssistantPrompt(payload) {
+  return renderPrompt(PROMPTS.sellerChatAssistant, buildSellerChatPromptVars(payload));
+}
+
+function buildSellerChatKeywordsPrompt(payload) {
+  return renderPrompt(PROMPTS.sellerChatKeywords, buildSellerChatPromptVars(payload));
+}
+
+function buildSellerChatMessagesPrompt(payload) {
+  return renderPrompt(PROMPTS.sellerChatMessages, buildSellerChatPromptVars(payload));
 }
 
 function parseSellerChatAssistant(text) {
@@ -2186,6 +2205,26 @@ function parseSellerChatAssistant(text) {
     alternatives: normalizeShortList(parsed.alternatives, 5),
     followUps: normalizeShortList(parsed.followUps, 3),
     quickReplies: normalizeShortList(parsed.quickReplies, 4),
+    summary: String(parsed.summary || '').replace(/\s+/g, ' ').trim(),
+    parseOk: Boolean(parsed.primary || parsed.message || parsed.answer),
+  };
+}
+
+function parseSellerChatKeywords(text) {
+  const parsed = parseJsonObject(text);
+  return {
+    quickReplies: normalizeShortList(parsed.quickReplies, 4),
+    summary: String(parsed.summary || '').replace(/\s+/g, ' ').trim(),
+    parseOk: Boolean(Array.isArray(parsed.quickReplies) && parsed.quickReplies.length),
+  };
+}
+
+function parseSellerChatMessages(text) {
+  const parsed = parseJsonObject(text);
+  return {
+    primary: String(parsed.primary || parsed.message || parsed.answer || '').replace(/\s+/g, ' ').trim(),
+    alternatives: normalizeShortList(parsed.alternatives, 5),
+    followUps: normalizeShortList(parsed.followUps, 3),
     summary: String(parsed.summary || '').replace(/\s+/g, ' ').trim(),
     parseOk: Boolean(parsed.primary || parsed.message || parsed.answer),
   };
@@ -2874,6 +2913,90 @@ const server = http.createServer(async (req, res) => {
         rawText: rawOut,
         model,
         pipeline: 'gemini_seller_chat_assistant_json',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/seller-chat-keywords') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const prompt = buildSellerChatKeywordsPrompt(body);
+      const rawOut = await geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+        temperature: 0.35,
+        maxOutputTokens: 800,
+        responseMimeType: 'application/json',
+        timeoutMs: GEMINI_FAST_TIMEOUT_MS,
+      });
+      const keywords = parseSellerChatKeywords(rawOut);
+      json(res, 200, {
+        keywords,
+        quickReplies: keywords.quickReplies,
+        summary: keywords.summary,
+        rawText: rawOut,
+        model,
+        pipeline: 'gemini_seller_chat_keywords_json',
+      });
+    } catch (e) {
+      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/seller-chat-messages') {
+    try {
+      const apiKey =
+        req.headers['x-gemini-key'] ||
+        (req.headers.authorization && req.headers.authorization.replace(/^Bearer\s+/i, '')) ||
+        '';
+      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      if (!String(apiKey).trim()) {
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        return;
+      }
+      const bodyRaw = await readBody(req);
+      let body;
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        return;
+      }
+      const prompt = buildSellerChatMessagesPrompt(body);
+      const rawOut = await geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
+        temperature: 0.35,
+        maxOutputTokens: 1200,
+        responseMimeType: 'application/json',
+        timeoutMs: GEMINI_FAST_TIMEOUT_MS,
+      });
+      const messages = parseSellerChatMessages(rawOut);
+      json(res, 200, {
+        messages,
+        primary: messages.primary,
+        alternatives: messages.alternatives,
+        followUps: messages.followUps,
+        summary: messages.summary,
+        rawText: rawOut,
+        model,
+        pipeline: 'gemini_seller_chat_messages_json',
       });
     } catch (e) {
       json(res, 502, { error: e instanceof Error ? e.message : String(e) });

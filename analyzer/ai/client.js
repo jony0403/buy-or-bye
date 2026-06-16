@@ -397,14 +397,10 @@
     return data;
   };
 
-  /**
-   * @param {{ mode: string, tone: string, toneLabel?: string, toneNote?: string, message?: string, chatHistory?: object[], replyAnalysis?: object, listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, accessoryCheck?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
-   * @returns {Promise<{ assistant: object, model: string, pipeline: string }>}
-   */
-  UlsaAi.fetchSellerChatAssistant = async (p) => {
+  UlsaAi.fetchSellerChatKeywords = async (p) => {
     const port = location.port || '3920';
     const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/seller-chat-assistant`, {
+    const res = await fetch(`http://${location.hostname}:${port}/api/seller-chat-keywords`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -416,8 +412,57 @@
         tone: p.tone || 'polite',
         toneLabel: p.toneLabel || '',
         toneNote: p.toneNote || '',
-        message: p.message || '',
         chatHistory: Array.isArray(p.chatHistory) ? p.chatHistory : [],
+        conversationState: p.conversationState || null,
+        replyAnalysis: p.replyAnalysis || null,
+        listing: p.listing || null,
+        summary: p.summary || null,
+        riskAnalysis: p.riskAnalysis || null,
+        listingTextAnalysis: p.listingTextAnalysis || null,
+        listingImageAnalysis: p.listingImageAnalysis || null,
+        accessoryCheck: p.accessoryCheck || null,
+        usedPriceGuide: p.usedPriceGuide || null,
+        receipt: p.receipt || null,
+        comparison: p.comparison || null,
+      }),
+    });
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+    }
+    if (!res.ok) {
+      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+    }
+    return data;
+  };
+
+  /**
+   * @param {{ mode: string, tone: string, toneLabel?: string, toneNote?: string, message?: string, keywordText?: string, requestKind?: string, chatHistory?: object[], conversationState?: object, replyAnalysis?: object, listing?: object, summary?: object, riskAnalysis?: object, listingTextAnalysis?: object, listingImageAnalysis?: object, accessoryCheck?: object, usedPriceGuide?: object, receipt?: object, comparison?: object, apiKey: string, model?: string }} p
+   * @returns {Promise<{ messages: object, model: string, pipeline: string }>}
+   */
+  UlsaAi.fetchSellerChatMessages = async (p) => {
+    const port = location.port || '3920';
+    const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(`http://${location.hostname}:${port}/api/seller-chat-messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Gemini-Key': p.apiKey,
+        'X-Gemini-Model': model,
+      },
+      body: JSON.stringify({
+        mode: p.mode || 'first',
+        tone: p.tone || 'polite',
+        toneLabel: p.toneLabel || '',
+        toneNote: p.toneNote || '',
+        message: p.message || p.keywordText || '',
+        keywordText: p.keywordText || p.message || '',
+        requestKind: p.requestKind || 'freeform',
+        chatHistory: Array.isArray(p.chatHistory) ? p.chatHistory : [],
+        conversationState: p.conversationState || null,
         replyAnalysis: p.replyAnalysis || null,
         listing: p.listing || null,
         summary: p.summary || null,

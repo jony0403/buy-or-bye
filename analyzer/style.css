@@ -262,6 +262,11 @@ body.modal-scroll-locked {
   color: #475569;
   font-size: 0.8rem;
 }
+.seller-chat__left-pane .seller-chat__reply-insight {
+  margin: 0.55rem 0.72rem 0;
+  padding: 0.62rem 0.7rem;
+  border-radius: 16px;
+}
 .top {
   display: grid;
   grid-template-columns: auto minmax(320px, 420px) 1fr;
@@ -2580,6 +2585,32 @@ h1 {
 .accessory-mini > span:not(.accessory-status) {
   overflow-wrap: anywhere;
 }
+.accessory-mini-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.45rem;
+  padding: 0.5rem 0.68rem;
+  border: 1px solid rgba(245, 158, 11, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 251, 235, 0.72);
+  color: #7c4a03;
+}
+.accessory-mini-notice .material-symbols-rounded {
+  font-size: 1rem;
+  color: #d97706;
+}
+.accessory-mini-notice strong {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: #92400e;
+}
+.accessory-mini-notice span:last-child {
+  min-width: 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #8a5a12;
+}
 .accessory-status {
   display: inline-flex;
   width: 1.72rem;
@@ -3845,6 +3876,10 @@ h1 {
   background: #ecfdf5;
   color: #047857;
 }
+.receipt-check_buy .purchase-receipt-verdict {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
 .receipt-pass .purchase-receipt-verdict {
   background: #fff1f2;
   color: #d80027;
@@ -4595,6 +4630,11 @@ body {
   background: #eefbf5;
   color: #047857;
 }
+.app-shell .receipt-check_buy .purchase-receipt-verdict {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
 .app-shell .receipt-pass .purchase-receipt-verdict {
   border-color: rgba(225, 29, 72, 0.16);
   background: #fff1f4;
@@ -5324,6 +5364,7 @@ body .app-shell .stage-two-risk-card p:not(.stage-two-card-label) {
   font-size: 0.64rem !important;
   line-height: 1.32 !important;
 }
+.app-toast,
 .seller-chat-toast {
   position: fixed;
   left: 50%;
@@ -5341,6 +5382,7 @@ body .app-shell .stage-two-risk-card p:not(.stage-two-card-label) {
   transform: translate3d(-50%, 10px, 0) scale(0.98);
   transition: opacity 160ms ease, transform 160ms ease;
 }
+.app-toast.is-visible,
 .seller-chat-toast.is-visible {
   opacity: 1;
   transform: translate3d(-50%, 0, 0) scale(1);
@@ -6736,6 +6778,123 @@ body .app-shell .stage-two-risk-card p:not(.stage-two-card-label) {
 }
 .seller-chat__delete + .seller-chat__label {
   padding-right: 1.1rem;
+}
+
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions,
+body .app-shell .stage-five-panel .seller-chat__suggestions,
+.seller-chat__suggestions {
+  gap: 0.48rem !important;
+  padding: 0.64rem 0.72rem !important;
+  background: linear-gradient(180deg, #ffffff, #f8fafc) !important;
+  border-top: 1px solid rgba(226, 232, 240, 0.9) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions-head,
+body .app-shell .stage-five-panel .seller-chat__suggestions-head,
+.seller-chat__suggestions-head {
+  align-items: center !important;
+  padding: 0 0.08rem 0.08rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestions-head strong,
+body .app-shell .stage-five-panel .seller-chat__suggestions-head strong,
+.seller-chat__suggestions-head strong {
+  color: #0f172a !important;
+  font-size: 0.78rem !important;
+  letter-spacing: -0.02em !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card,
+body .app-shell .stage-five-panel .seller-chat__suggestion-card,
+.seller-chat__suggestion-card {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  gap: 0.22rem 0.62rem !important;
+  align-items: center !important;
+  min-height: 0 !important;
+  padding: 0.62rem 2.35rem 0.62rem 0.72rem !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  color: #0f172a !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.045) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:hover,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card:focus-visible,
+body .app-shell .stage-five-panel .seller-chat__suggestion-card:hover,
+body .app-shell .stage-five-panel .seller-chat__suggestion-card:focus-visible,
+.seller-chat__suggestion-card:hover,
+.seller-chat__suggestion-card:focus-visible {
+  border-color: rgba(20, 184, 166, 0.42) !important;
+  background: #f0fdfa !important;
+  color: #0f172a !important;
+  box-shadow: 0 7px 18px rgba(20, 184, 166, 0.12) !important;
+  transform: translateY(-1px) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-label,
+body .app-shell .stage-five-panel .seller-chat__suggestion-label,
+.seller-chat__suggestion-label {
+  grid-column: 1 / -1 !important;
+  width: fit-content !important;
+  padding: 0.12rem 0.42rem !important;
+  border-radius: 999px !important;
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  font-size: 0.6rem !important;
+  font-weight: 950 !important;
+  line-height: 1.2 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card strong,
+body .app-shell .stage-five-panel .seller-chat__suggestion-card strong,
+.seller-chat__suggestion-card strong {
+  grid-column: 1 / -1 !important;
+  padding-right: 0.35rem !important;
+  color: #111827 !important;
+  font-size: 0.82rem !important;
+  font-weight: 850 !important;
+  line-height: 1.48 !important;
+  letter-spacing: -0.015em !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-actions,
+body .app-shell .stage-five-panel .seller-chat__suggestion-actions,
+.seller-chat__suggestion-actions {
+  grid-column: 1 / -1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+  margin-top: 0.08rem !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-actions small,
+body .app-shell .stage-five-panel .seller-chat__suggestion-actions small,
+.seller-chat__suggestion-actions small {
+  color: #94a3b8 !important;
+  font-size: 0.63rem !important;
+  font-weight: 800 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__suggestion-card .seller-chat__copy--icon,
+body .app-shell .stage-five-panel .seller-chat__suggestion-card .seller-chat__copy--icon,
+.seller-chat__suggestion-card .seller-chat__copy--icon {
+  top: 0.64rem !important;
+  right: 0.68rem !important;
+  width: 1.1rem !important;
+  height: 1.1rem !important;
+  padding: 0 !important;
+  background: transparent !important;
+  color: #64748b !important;
+  opacity: 0.82 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone.is-active,
+body .app-shell .stage-five-panel .seller-chat__tone.is-active,
+.seller-chat__tone.is-active {
+  border-color: rgba(37, 99, 235, 0.34) !important;
+  background: linear-gradient(135deg, #2563eb 0%, #14b8a6 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__tone.is-active::before,
+body .app-shell .stage-five-panel .seller-chat__tone.is-active::before,
+.seller-chat__tone.is-active::before {
+  content: "✓";
+  margin-right: 0.22rem;
+  font-weight: 950;
 }
 
 @media (max-width: 1180px) {
@@ -13419,9 +13578,9 @@ body .app-shell .seller-chat__right-pane {
 
 body .app-shell .seller-chat__left-pane {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  height: min(720px, calc(100svh - 8rem));
-  min-height: 560px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  height: min(820px, calc(100svh - 6.2rem));
+  min-height: 640px;
   overflow: hidden;
 }
 
@@ -14927,4 +15086,319 @@ body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__listi
   justify-self: end !important;
   max-width: 6.2rem !important;
   white-space: nowrap !important;
+}
+
+.seller-chat__chips-loading {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+}
+.seller-chat__chip--skeleton {
+  display: inline-block;
+  min-width: 5.5rem;
+  min-height: 1.85rem;
+  border-radius: 999px;
+  border: 0;
+  pointer-events: none;
+}
+.seller-chat__skeleton-line,
+.seller-chat__suggestion-card--skeleton .skeleton-line {
+  display: block;
+  min-height: 0.72rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+  position: relative;
+  overflow: hidden;
+}
+.seller-chat__skeleton-line::after,
+.seller-chat__suggestion-card--skeleton .skeleton-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: skeletonSweep 1.15s cubic-bezier(0.4, 0, 0.2,  1) infinite;
+}
+.seller-chat__skeleton-line--short { width: 38%; }
+.seller-chat__skeleton-line--mid { width: 72%; }
+.seller-chat__chip.is-refreshing { opacity: 0.72; }
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__chip:disabled {
+  cursor: wait !important;
+  opacity: 0.62 !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input:disabled,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer:disabled,
+body .app-shell .stage-five-panel .seller-chat__note-input:disabled,
+body .app-shell .stage-five-panel .seller-chat__composer:disabled {
+  border: 1px dashed rgba(100, 116, 139, 0.28) !important;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(241, 245, 249, 0.96),
+    rgba(241, 245, 249, 0.96) 8px,
+    rgba(226, 232, 240, 0.78) 8px,
+    rgba(226, 232, 240, 0.78) 16px
+  ) !important;
+  color: rgba(51, 65, 85, 0.62) !important;
+  cursor: wait !important;
+  opacity: 0.86 !important;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.1) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input:disabled::placeholder,
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer:disabled::placeholder,
+body .app-shell .stage-five-panel .seller-chat__note-input:disabled::placeholder,
+body .app-shell .stage-five-panel .seller-chat__composer:disabled::placeholder {
+  color: rgba(71, 85, 105, 0.5) !important;
+}
+body .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__send:disabled,
+body .app-shell .stage-five-panel .seller-chat__send:disabled {
+  filter: grayscale(0.28) !important;
+  cursor: wait !important;
+  opacity: 0.58 !important;
+}
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__note-input:disabled,
+body.theme-dark .app-shell .stage-five-card:not(.stage-five-start-card) .seller-chat__composer:disabled,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__note-input:disabled,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__composer:disabled {
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(30, 41, 59, 0.94),
+    rgba(30, 41, 59, 0.94) 8px,
+    rgba(15, 23, 42, 0.9) 8px,
+    rgba(15, 23, 42, 0.9) 16px
+  ) !important;
+  color: rgba(226, 232, 240, 0.62) !important;
+}
+body .app-shell .seller-chat__left-pane [data-seller-reply-analysis-slot] {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body .app-shell .seller-chat__left-pane .seller-chat__reply-insight {
+  margin: 0.55rem 0.72rem 0.28rem !important;
+  max-height: 11.5rem !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  animation: sellerReplyInsightIn 0.24s ease-out both;
+}
+body .app-shell .seller-chat__left-pane .seller-chat__reply-insight.is-loading {
+  border-style: dashed !important;
+  background: rgba(239, 246, 255, 0.92) !important;
+}
+body .app-shell .seller-chat__left-pane .seller-chat__reply-insight.is-loading .material-symbols-rounded {
+  animation: sellerReplyLoadingSpin 0.9s linear infinite;
+}
+body .app-shell .seller-chat__left-pane .seller-chat__reply-insight > div {
+  min-width: 0 !important;
+  min-height: 0 !important;
+}
+body .app-shell .seller-chat__left-pane .seller-chat__reply-insight p {
+  max-height: 8.4rem !important;
+  overflow: auto !important;
+  padding-right: 0.2rem !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+  scrollbar-width: thin;
+  animation: sellerReplyTextIn 0.22s ease-out both;
+}
+body .app-shell .seller-chat__left-pane .seller-chat__reply-insight p::-webkit-scrollbar {
+  width: 6px;
+}
+body .app-shell .seller-chat__left-pane .seller-chat__reply-insight p::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.32);
+}
+@keyframes sellerReplyInsightIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes sellerReplyTextIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes sellerReplyLoadingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body .app-shell .seller-chat__left-pane .seller-chat__reply-insight {
+    animation: none !important;
+  }
+  body .app-shell .seller-chat__left-pane .seller-chat__reply-insight p {
+    animation: none !important;
+  }
+  body .app-shell .seller-chat__left-pane .seller-chat__reply-insight.is-loading .material-symbols-rounded {
+    animation: none !important;
+  }
+}
+.seller-chat__chips-empty {
+  margin: 0;
+  padding: 0.35rem 0.1rem 0.15rem;
+  color: rgba(38, 50, 65, 0.68);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+/* Step 5 dark-mode final contrast pass. */
+body.theme-dark .app-shell .stage-five-panel .seller-chat__left-pane,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__right-pane {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: #101722 !important;
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__phone-head,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__context,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-dock {
+  border-color: rgba(148, 163, 184, 0.2) !important;
+  background: #151e2b !important;
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__thread {
+  background: #0f1724 !important;
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__side-section,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestions,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__form {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: #151e2b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28) !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__title strong,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__seller strong,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__side-head strong,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestions-head strong,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight strong,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestion-card strong,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__form-label {
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__title span,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__seller p,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__side-head p,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestions-head span,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight p,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__side-empty,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestion-actions small,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__chips-empty {
+  color: #b7c4d6 !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--seller,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--assistant {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: #1b2635 !important;
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--seller p,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--assistant p {
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--me {
+  border-color: rgba(251, 146, 60, 0.42) !important;
+  background: linear-gradient(135deg, #f97316, #fb923c) !important;
+  color: #fff7ed !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--me p {
+  color: #fff7ed !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__label {
+  color: rgba(226, 232, 240, 0.66) !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--me .seller-chat__label {
+  color: rgba(255, 247, 237, 0.72) !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestion-card {
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  background: #111c2c !important;
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestion-label {
+  background: rgba(45, 212, 191, 0.16) !important;
+  color: #99f6e4 !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__tone,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__chip {
+  border-color: rgba(148, 163, 184, 0.24) !important;
+  background: #202b3b !important;
+  color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__tone.is-active,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__chip:hover,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__chip:focus-visible {
+  border-color: rgba(45, 212, 191, 0.48) !important;
+  background: rgba(45, 212, 191, 0.22) !important;
+  color: #f0fdfa !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__chips .seller-chat__chip {
+  background: #0f766e !important;
+  color: #f0fdfa !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__note-input,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__composer {
+  border-color: rgba(148, 163, 184, 0.26) !important;
+  background: #0b1220 !important;
+  color: #f8fafc !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__note-input::placeholder,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__composer::placeholder {
+  color: #94a3b8 !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy--icon,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble .seller-chat__copy,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble .seller-chat__copy--icon,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestion-card .seller-chat__copy,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__suggestion-card .seller-chat__copy--icon {
+  border: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color: #99f6e4 !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy:hover,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy:focus-visible,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy--icon:hover,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy--icon:focus-visible {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #ccfbf1 !important;
+  outline: 1px solid rgba(153, 246, 228, 0.36) !important;
+  outline-offset: 2px !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--me .seller-chat__copy,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__bubble--me .seller-chat__copy--icon {
+  color: #fff7ed !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy-svg,
+body.theme-dark .app-shell .stage-five-panel .seller-chat__copy-svg path {
+  color: inherit !important;
+  fill: none !important;
+  stroke: currentColor !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-loading {
+  border-color: rgba(45, 212, 191, 0.32) !important;
+  background: rgba(15, 118, 110, 0.16) !important;
+}
+body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-loading p {
+  color: #ccfbf1 !important;
 }
