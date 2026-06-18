@@ -33,7 +33,6 @@ const PROMPTS = {
   searchQuerySingle: await loadPrompt('search-query-single.txt'),
   searchQueryCandidates: await loadPrompt('search-query-candidates.txt'),
   productIdentify: await loadPrompt('product-identify.txt'),
-  productSummary: await loadPrompt('product-summary.txt'),
   productRisk: await loadPrompt('product-risk.txt'),
   productRiskJson: await loadPrompt('product-risk-json.txt'),
   productRiskYoutubeComment: await loadPrompt('product-risk-youtube-comment.txt'),
@@ -113,21 +112,6 @@ function buildWebGroundedSearchCandidatesPrompt(title, body, imageCount, maxQuer
     title: t,
     body: b || '(없음)',
     MAX_SEARCH_QUERY_CHARS,
-  });
-}
-
-function buildProductSummaryPrompt(title, body, imageCount) {
-  const t = String(title || '').slice(0, 500);
-  const b = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1600);
-  const n = Number(imageCount) || 0;
-  const media =
-    n > 0
-      ? `상품 사진 ${n}장이 이 메시지에 첨부되어 있습니다.\n`
-      : '사진이 없습니다. 제목·본문과 웹 검색으로 판단하세요.\n';
-  return renderPrompt(PROMPTS.productSummary, {
-    media,
-    title: t,
-    body: b || '(없음)',
   });
 }
 
@@ -1744,19 +1728,6 @@ async function runWebGroundedSearchCandidates(apiKey, model, title, body, inline
     timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
   });
   return { text, pipeline: 'multimodal_candidates_json_fallback' };
-}
-
-async function runProductSummary(apiKey, model, title, body, inlineParts) {
-  const prompt = buildProductSummaryPrompt(title, body, inlineParts.length);
-  const parts =
-    inlineParts.length > 0 ? [{ text: prompt }, ...inlineParts] : [{ text: prompt }];
-  const text = await geminiGenerateFromParts(apiKey, model, parts, {
-    useGoogleSearch: true,
-    temperature: 0.2,
-    maxOutputTokens: 520,
-    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
-  });
-  return text;
 }
 
 async function runProductIdentify(apiKey, model, title, body, inlineParts) {

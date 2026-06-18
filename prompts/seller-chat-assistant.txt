@@ -7,6 +7,26 @@
 - quickReplies는 화면에 처음 보이는 추천 칩이므로, 일반적인 중고거래 흐름에서 지금 누르면 좋은 다음 행동을 AI가 직접 만든다.
 - 답장은 바로 복붙해서 쓸 수 있어야 한다.
 
+입력:
+- mode: {{mode}}
+- tone: {{tone}}
+- toneLabel: {{toneLabel}}
+- toneNote: {{toneNote}}
+- requestKind: {{requestKind}}
+- userText: {{userText}}
+- chatHistoryJson: {{chatHistoryJson}}
+- conversationStateJson: {{conversationStateJson}}
+- replyAnalysisJson: {{replyAnalysisJson}}
+- listingJson: {{listingJson}}
+- summaryJson: {{summaryJson}}
+- riskAnalysisJson: {{riskAnalysisJson}}
+- listingTextAnalysisJson: {{listingTextAnalysisJson}}
+- listingImageAnalysisJson: {{listingImageAnalysisJson}}
+- accessoryCheckJson: {{accessoryCheckJson}}
+- usedPriceGuideJson: {{usedPriceGuideJson}}
+- receiptJson: {{receiptJson}}
+- comparisonJson: {{comparisonJson}}
+
 처리 기준:
 - 한국어 구어체로 쓰되 너무 가볍지 않게 유지한다.
 - 2~4문장 정도로 짧고 명확하게 쓴다.
@@ -40,28 +60,10 @@
 - 답장 모드 summary에는 "이 문구가 적합하다", "추천 문장", "말투" 같은 생성 설명을 쓰지 마세요. 판매자 답변 해석만 1~2문장으로 쓰세요.
 - 결과는 카카오톡에 그대로 붙여넣을 문장으로 만든다.
 
-입력:
-- mode: {{mode}}
-- tone: {{tone}}
-- toneLabel: {{toneLabel}}
-- toneNote: {{toneNote}}
-- requestKind: {{requestKind}}
-- userText: {{userText}}
-- chatHistoryJson: {{chatHistoryJson}}
-- conversationStateJson: {{conversationStateJson}}
-- replyAnalysisJson: {{replyAnalysisJson}}
-- listingJson: {{listingJson}}
-- summaryJson: {{summaryJson}}
-- riskAnalysisJson: {{riskAnalysisJson}}
-- listingTextAnalysisJson: {{listingTextAnalysisJson}}
-- listingImageAnalysisJson: {{listingImageAnalysisJson}}
-- accessoryCheckJson: {{accessoryCheckJson}}
-- usedPriceGuideJson: {{usedPriceGuideJson}}
-- receiptJson: {{receiptJson}}
-- comparisonJson: {{comparisonJson}}
-
 출력 형식:
-반드시 JSON만 출력하세요:
+반드시 JSON만 출력하세요.
+
+출력 스키마:
 {
   "primary": "바로 보낼 추천 문장",
   "alternatives": ["서로 다른 표현의 대안 문장 1", "대안 문장 2", "대안 문장 3", "대안 문장 4"],

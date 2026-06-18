@@ -3579,9 +3579,11 @@ h1 {
   transform: translateX(-105%);
   transition: transform 0.22s ease;
   overflow: auto;
+  pointer-events: none;
 }
 .recent-drawer.open {
   transform: translateX(0);
+  pointer-events: auto;
 }
 .recent-drawer__head {
   display: flex;
@@ -14379,6 +14381,7 @@ body .app-shell #recentDrawer.recent-drawer {
   overflow: auto !important;
   transform: translate3d(-1rem, 0, 0) scale(0.985) !important;
   opacity: 0 !important;
+  pointer-events: none !important;
   border: 1px solid rgba(231, 226, 220, 0.9) !important;
   border-radius: 26px !important;
   box-shadow: 0 24px 70px rgba(17, 24, 39, 0.18) !important;
@@ -14388,6 +14391,7 @@ body .app-shell #recentDrawer.recent-drawer {
 body .app-shell #recentDrawer.recent-drawer.open {
   transform: translate3d(0, 0, 0) scale(1) !important;
   opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 body .app-shell #drawerBackdrop.drawer-backdrop {

@@ -19,6 +19,7 @@ const LISTING_HOST_PATTERNS = [
 const SEARCH_TAB_TIMEOUT_MS = 10_000;
 const SEARCH_CLOSE_ALARM_NAME = 'buy-or-bye-close-search-tabs';
 const searchCollectionTabIds = new Set();
+let searchCollectionGeneration = 0;
 
 function createSearchCollectionAutoCollect() {
   return { bunjang: true, daangn: true, joongna: true, at: Date.now(), sessionActive: true };
@@ -72,6 +73,14 @@ async function isSearchCollectionFinished() {
     'marketScrapeComps',
   ]);
   return Boolean(marketScrapeAutoCollect && allSearchPlatformsDone(marketScrapeAutoCollect)) || marketScrapeComps?.status === 'collected';
+}
+
+async function closeAllMatchingSearchTabs(queries = [], urls = []) {
+  const closeIds = new Set([...searchCollectionTabIds].filter((id) => typeof id === 'number'));
+  addMatchingSearchCollectionTabs(await chrome.tabs.query({}), closeIds, queries, urls);
+  if (!closeIds.size) return;
+  await closeTabIds([...closeIds]);
+  for (const id of closeIds) searchCollectionTabIds.delete(id);
 }
 
 async function closeSearchCollectionTabsIfAny() {
@@ -296,12 +305,13 @@ async function finalizeSearchCollection() {
 
 // 자동 매물검색은 무조건 끝나야 한다. 수집이 실패하거나 탭이 멈춰도
 // finally + 하드 타임아웃으로 storage를 'collected'로 정리하고 탭을 닫는다.
-async function runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds) {
+async function runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds, generation) {
   let finalized = false;
   const finalizeOnce = async () => {
     if (finalized) return;
     finalized = true;
     try {
+      if (generation !== searchCollectionGeneration) return;
       await finalizeSearchCollection();
       await pushAnalyzerTabs();
     } catch (e) {
@@ -312,12 +322,21 @@ async function runSearchCollectionInBackground(forItemKey, queries, tabsByPlatfo
     void finalizeOnce();
   }, SEARCH_TAB_TIMEOUT_MS);
   try {
+    if (generation !== searchCollectionGeneration) return;
     await collectSearchTabsAndClose(tabsByPlatform);
   } catch (e) {
     console.warn('[OPEN_SEARCH_TABS] background collection failed:', e instanceof Error ? e.message : e);
   } finally {
     clearTimeout(hardStop);
-    await finalizeOnce();
+    if (generation === searchCollectionGeneration) {
+      await finalizeOnce();
+      return;
+    }
+    const orphanIds = [...new Set((closeIds || []).filter((id) => typeof id === 'number'))];
+    if (orphanIds.length) {
+      await closeTabIds(orphanIds);
+      for (const id of orphanIds) searchCollectionTabIds.delete(id);
+    }
   }
 }
 
@@ -588,22 +607,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       if (msg.type === 'OPEN_SEARCH_TABS') {
-        await closeSearchCollectionTabsIfAny();
         const queries = dedupeSearchQueries(Array.isArray(msg.queries) ? msg.queries : [msg.query]);
         if (!queries.length) {
           sendResponse({ ok: false, error: '검색어가 비었습니다.' });
           return;
         }
+        searchCollectionGeneration += 1;
+        const generation = searchCollectionGeneration;
+        await closeSearchCollectionTabsIfAny();
+        await closeAllMatchingSearchTabs(queries, []);
+        if (generation !== searchCollectionGeneration) {
+          sendResponse({ ok: false, error: '검색이 취소되었습니다.' });
+          return;
+        }
         const { marketScrapeLatest } = await chrome.storage.local.get('marketScrapeLatest');
         const forItemKey = marketScrapeLatest ? `${marketScrapeLatest.platform}:${marketScrapeLatest.itemId}` : null;
         const { tabsByPlatform, tabMetaByPlatform, closeIds } = await createSearchTabsForQuery(queries[0]);
+        if (generation !== searchCollectionGeneration) {
+          if (closeIds.length) {
+            await closeTabIds(closeIds);
+            for (const id of closeIds) searchCollectionTabIds.delete(id);
+          }
+          sendResponse({ ok: false, error: '검색이 취소되었습니다.' });
+          return;
+        }
         if (!closeIds.length) {
           sendResponse({ ok: false, error: '검색 탭을 열지 못했습니다.' });
           return;
         }
         await persistSearchCollectionSession({ forItemKey, queries, closeIds, tabMetaByPlatform, resetComps: true });
         sendResponse({ ok: true, query: queries[0], queries, tabIds: closeIds });
-        void runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds);
+        void runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds, generation);
         return;
       }
 

@@ -3256,7 +3256,7 @@ const DIRECT_AI_ACTIONS = [
       const key = summaryKey(item);
       stageThreeActiveKeys.add(key);
       relatedRequestedKeys.add(key);
-      openRelatedSearchForItem(item, stageThreeSearchQueries(item), null, { isolated: true });
+      openRelatedSearchForItem(item, stageThreeSearchQueries(item), null, { isolated: true, force: true });
       refreshDirectAiPanelIfOpen();
       return { message: '번개·당근·중고나라 비교 매물 검색을 다시 시작합니다.' };
     },
@@ -8758,6 +8758,8 @@ function renderItem(item, comps) {
 function setHistoryOpen(open) {
   $recentDrawer?.classList.toggle('open', open);
   $recentDrawer?.setAttribute('aria-hidden', open ? 'false' : 'true');
+  if (open) $recentDrawer?.removeAttribute('inert');
+  else $recentDrawer?.setAttribute('inert', '');
   if ($drawerBackdrop) $drawerBackdrop.hidden = !open;
 }
 
@@ -9089,6 +9091,16 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   const key = summaryKey(item);
   const queryList = splitSearchQueries(queries);
   if (!key || !queryList.length) return;
+  const listingKey = itemKey(item);
+  const searchProgress = stageThreeSearchProgresses.get(key);
+  if (
+    !opts.force &&
+    relatedRequestedKeys.has(key) &&
+    (comps?.status === 'collecting' || searchProgress?.phase === 'collecting') &&
+    (!comps?.forItemKey || comps.forItemKey === listingKey)
+  ) {
+    return;
+  }
   const isolated = opts.isolated === true;
   resetStageThreeComparisonWork(item, { clearGuide: !isolated, clearReceipt: !isolated, clearSearchQuery: true });
   stageThreeComparisonSkippedKeys.delete(key);
@@ -9205,7 +9217,7 @@ function bindStageThreeFlow(root, item) {
   root?.querySelectorAll('[data-stage-three-refresh]').forEach((btn) => {
     btn.addEventListener('click', () => {
       showAppToast('비교 매물을 다시 검색하고 정리합니다.');
-      openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn, { isolated: true });
+      openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn, { isolated: true, force: true });
     });
   });
   root?.querySelectorAll('[data-stage-three-skip-comps]').forEach((btn) => {
@@ -9234,7 +9246,11 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
   if (!apiKey || typeof globalThis.UlsaAi?.fetchSearchQuery !== 'function') {
     const fallbackQueries = localStageThreeSearchQueries(item, getProductSummaryState(item)?.summary || null);
     if (fallbackQueries.length) {
-      openRelatedSearchForItem(item, fallbackQueries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
+      openRelatedSearchForItem(item, fallbackQueries, btn, {
+        isolated: true,
+        force: true,
+        preserveAutoRetryCount: opts.auto === true,
+      });
       return;
     }
     searchQueryRegenerations.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
@@ -9276,14 +9292,22 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
     }, 'searchQuery');
     searchQueryRegenerations.delete(key);
     refreshStageThreeSearchCard(item);
-    openRelatedSearchForItem(item, queries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
+    openRelatedSearchForItem(item, queries, btn, {
+      isolated: true,
+      force: true,
+      preserveAutoRetryCount: opts.auto === true,
+    });
   } catch (e) {
     const fallbackQueries = localStageThreeSearchQueries(item, getProductSummaryState(item)?.summary || null);
     if (fallbackQueries.length) {
       searchQueryRegenerations.set(key, { status: 'done', completedAt: Date.now(), fallback: true });
       refreshStageThreeSearchCard(item);
       searchQueryRegenerations.delete(key);
-      openRelatedSearchForItem(item, fallbackQueries, btn, { isolated: true, preserveAutoRetryCount: opts.auto === true });
+      openRelatedSearchForItem(item, fallbackQueries, btn, {
+        isolated: true,
+        force: true,
+        preserveAutoRetryCount: opts.auto === true,
+      });
       return;
     }
     searchQueryRegenerations.set(key, {

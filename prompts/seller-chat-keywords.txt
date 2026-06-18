@@ -6,17 +6,6 @@
 - chatHistoryJson, 매물 분석, 구성품 체크, 가격 판단, 판매자 답장 해석을 모두 반영합니다.
 - 이미 구매자(me)가 보낸 내용과 겹치는 키워드는 다시 내지 않습니다.
 
-처리 기준:
-- quickReplies만 출력합니다. primary, alternatives, followUps는 만들지 마세요.
-- 키워드는 4~12자 내외의 짧은 행동 문구입니다. 예: "첫 인사", "상태/작동 확인", "충전기 포함 여부", "가격 조정 가능 여부", "직거래/택배 확인"
-- chatHistoryJson에 me 메시지가 없으면 첫 연락 단계입니다. 이때 quickReplies의 첫 번째 칩은 반드시 "첫 인사" 또는 그에 준하는 인사 시작 칩이어야 합니다.
-- 첫 인사 칩은 예의를 갖춘 첫 문의 메시지를 만들기 위한 칩입니다. 이미 구매자(me)가 한 번이라도 메시지를 보냈다면 인사 칩은 다시 내지 않습니다.
-- chatHistoryJson에 me 메시지가 있으면 후속 단계입니다. 이미 물은 주제는 빼고, 아직 안 물은 확인·진행 주제만 남깁니다.
-- accessoryCheckJson의 unconfirmed/missing 항목, 리스크·사진·본문 분석의 확인 포인트를 우선 반영하세요.
-- receiptJson.verdict가 negotiate여도, 아직 상태·구성품 확인 전이면 가격 칩보다 확인 칩을 우선하세요.
-- 판매자 답장 해석(replyAnalysisJson)이 있으면, 판매자가 아직 답하지 않은 포인트나 회피한 포인트를 칩으로 제안하세요.
-- conversationStateJson.remainingIntents와 coveredIntents를 참고하되, 실제 대화 맥락이 더 우선입니다.
-
 입력:
 - mode: {{mode}}
 - tone: {{tone}}
@@ -35,8 +24,21 @@
 - receiptJson: {{receiptJson}}
 - comparisonJson: {{comparisonJson}}
 
+처리 기준:
+- quickReplies만 출력합니다. primary, alternatives, followUps는 만들지 마세요.
+- 키워드는 4~12자 내외의 짧은 행동 문구입니다. 예: "첫 인사", "상태/작동 확인", "충전기 포함 여부", "가격 조정 가능 여부", "직거래/택배 확인"
+- chatHistoryJson에 me 메시지가 없으면 첫 연락 단계입니다. 이때 quickReplies의 첫 번째 칩은 반드시 "첫 인사" 또는 그에 준하는 인사 시작 칩이어야 합니다.
+- 첫 인사 칩은 예의를 갖춘 첫 문의 메시지를 만들기 위한 칩입니다. 이미 구매자(me)가 한 번이라도 메시지를 보냈다면 인사 칩은 다시 내지 않습니다.
+- chatHistoryJson에 me 메시지가 있으면 후속 단계입니다. 이미 물은 주제는 빼고, 아직 안 물은 확인·진행 주제만 남깁니다.
+- accessoryCheckJson의 unconfirmed/missing 항목, 리스크·사진·본문 분석의 확인 포인트를 우선 반영하세요.
+- receiptJson.verdict가 negotiate여도, 아직 상태·구성품 확인 전이면 가격 칩보다 확인 칩을 우선하세요.
+- 판매자 답장 해석(replyAnalysisJson)이 있으면, 판매자가 아직 답하지 않은 포인트나 회피한 포인트를 칩으로 제안하세요.
+- conversationStateJson.remainingIntents와 coveredIntents를 참고하되, 실제 대화 맥락이 더 우선입니다.
+
 출력 형식:
-반드시 JSON만 출력하세요:
+반드시 JSON만 출력하세요.
+
+출력 스키마:
 {
   "quickReplies": ["짧은 칩 1", "짧은 칩 2", "짧은 칩 3", "짧은 칩 4"],
   "summary": "왜 이 키워드들을 제안했는지 한 줄"

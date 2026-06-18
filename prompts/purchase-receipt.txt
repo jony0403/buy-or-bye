@@ -10,22 +10,6 @@
 구성품 체크: {{accessoryCheckJson}}
 중고 가이드: {{usedPriceGuideJson}}
 
-출력 형식: JSON 객체 하나만 반환. 설명 금지.
-
-{
-  "verdict": "buy|check_buy|negotiate|hold|pass",
-  "headline": "결론 한 줄",
-  "summary": "종합 결론 (2문장)",
-  "fairPriceLabel": "가격 참고 범위",
-  "negotiationPriceLabel": "제안 네고가",
-  "maxBuyPriceLabel": "구매 상한가",
-  "priceReason": "가격 판단 근거",
-  "riskBalance": "리스크 확인 의견",
-  "positives": ["장점"],
-  "cautions": ["주의점"],
-  "disclaimer": "AI 참고용 의견임을 명시"
-}
-
 처리 기준:
 - 가격은 가이드의 상태별 가격표를 우선 참고.
 - 근거 부족 시 가격 필드는 "확인 어려움"으로 표기.
@@ -41,3 +25,21 @@
 - 네고 추천은 가격 판단입니다. 단순히 확인할 점이 많다는 이유만으로 negotiate를 선택하지 마세요.
 - 가격이 괜찮고 확인할 점이 남은 경우 headline은 "확인 후 구매 추천", "상태 확인 후 구매 후보"처럼 쓰고, summary에는 어떤 확인을 통과하면 구매해도 되는지 적으세요.
 - verdict가 buy 또는 check_buy이면 negotiationPriceLabel은 억지로 낮은 가격을 만들지 말고 "네고 필수 아님", "상태 확인 후 결정", "가격은 무리 없어 보임"처럼 쓰세요.
+
+출력 형식:
+JSON 객체 하나만 반환. 설명 금지.
+
+출력 스키마:
+{
+  "verdict": "buy|check_buy|negotiate|hold|pass",
+  "headline": "결론 한 줄",
+  "summary": "종합 결론 (2문장)",
+  "fairPriceLabel": "가격 참고 범위",
+  "negotiationPriceLabel": "제안 네고가",
+  "maxBuyPriceLabel": "구매 상한가",
+  "priceReason": "가격 판단 근거",
+  "riskBalance": "리스크 확인 의견",
+  "positives": ["장점"],
+  "cautions": ["주의점"],
+  "disclaimer": "AI 참고용 의견임을 명시"
+}
