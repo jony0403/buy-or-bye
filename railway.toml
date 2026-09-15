@@ -5,8 +5,10 @@ buildCommand = "npm install && npm run pack:extension"
 [deploy]
 startCommand = "npm start"
 healthcheckPath = "/api/demo/status"
+healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 
 [variables]
 HOST = "0.0.0.0"
 DEMO_MODE = "true"
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"

@@ -2,7 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const requiredPackages = ['sharp', 'playwright'];
+/** Analyzer demo needs sharp; playwright is optional (image capture server only). */
+const requiredPackages = ['sharp'];
 
 const missingPackages = requiredPackages.filter((packageName) => {
   try {
