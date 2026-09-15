@@ -915,6 +915,8 @@ async function geminiGenerateFromParts(apiKey, model, parts, opts = {}) {
 
 async function openaiGenerateFromParts(apiKey, model, parts, opts = {}) {
   const m = String(model || DEFAULT_OPENAI_MODEL).replace(/^\s+|\s+$/g, '');
+  // GPT-5 / GPT-5.6 / GPT-6 / o-series: custom temperature often rejected (default only)
+  const supportsCustomTemperature = !/^(gpt-5|gpt-6|o[0-9])/i.test(m);
   const temperature = opts.temperature ?? 0.2;
   const timeoutMs = opts.timeoutMs || OPENAI_FAST_TIMEOUT_MS;
   const wantJson = opts.responseMimeType === 'application/json';
@@ -925,7 +927,7 @@ async function openaiGenerateFromParts(apiKey, model, parts, opts = {}) {
     Authorization: `Bearer ${apiKey}`,
   };
 
-  // 1) Responses API (web_search 지원)
+  // 1) Responses API (web_search ??)
   if (useSearch) {
     const payload = {
       model: m,
@@ -936,8 +938,8 @@ async function openaiGenerateFromParts(apiKey, model, parts, opts = {}) {
         },
       ],
       tools: [{ type: 'web_search' }],
-      temperature,
     };
+    if (supportsCustomTemperature) payload.temperature = temperature;
     if (opts.maxOutputTokens != null) payload.max_output_tokens = opts.maxOutputTokens;
     if (wantJson) {
       payload.text = { format: { type: 'json_object' } };
@@ -963,11 +965,11 @@ async function openaiGenerateFromParts(apiKey, model, parts, opts = {}) {
       const text = extractGeminiText(data);
       if (text) return text;
     } catch (e) {
-      console.warn('[openai] Responses+web_search 실패, Chat Completions로 재시도:', e instanceof Error ? e.message : e);
+      console.warn('[openai] Responses+web_search ??, Chat Completions? ???:', e instanceof Error ? e.message : e);
     }
   }
 
-  // 2) Chat Completions (멀티모달·JSON)
+  // 2) Chat Completions (????�JSON)
   const chatPayload = {
     model: m,
     messages: [
@@ -976,7 +978,8 @@ async function openaiGenerateFromParts(apiKey, model, parts, opts = {}) {
         content: geminiPartsToOpenAIContent(parts),
       },
     ],
-    temperature,
+  };
+  if (supportsCustomTemperature) chatPayload.temperature = temperature;
   };
   if (opts.maxOutputTokens != null) chatPayload.max_tokens = opts.maxOutputTokens;
   if (wantJson) chatPayload.response_format = { type: 'json_object' };
