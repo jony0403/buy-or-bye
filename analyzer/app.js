@@ -5915,21 +5915,77 @@ function comparisonItemKey(item) {
   return String(item?.url || `${item?.platform || ''}:${item?.itemId || item?.title || ''}`).trim();
 }
 
+function normalizeComparisonText(text) {
+  let s = String(text || '').toLowerCase();
+  const swaps = [
+    [/아이폰|iphone/g, 'iphone'],
+    [/갤럭시|galaxy/g, 'galaxy'],
+    [/에어팟|airpods/g, 'airpods'],
+    [/맥북|macbook/g, 'macbook'],
+    [/아이패드|ipad/g, 'ipad'],
+    [/닌텐도|nintendo/g, 'nintendo'],
+    [/스위치|switch/g, 'switch'],
+    [/레노버|lenovo/g, 'lenovo'],
+    [/씽크패드|싱크패드|thinkpad/g, 'thinkpad'],
+    [/지포스|geforce|gtx|rtx/g, 'geforce'],
+    [/(\d+)\s*(?:기가|gb|g\b)/g, '$1gb'],
+    [/(\d+)\s*(?:테라|tb)/g, '$1tb'],
+    [/화이트|white|흰\s*색?/g, 'white'],
+    [/블랙|black|검정/g, 'black'],
+    [/프로\b|pro\b/g, 'pro'],
+    [/맥스|max/g, 'max'],
+    [/플러스|plus/g, 'plus'],
+    [/울트라|ultra/g, 'ultra'],
+  ];
+  for (const [re, to] of swaps) s = s.replace(re, to);
+  return s.replace(/[^0-9a-z가-힣]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function extractCapacityToken(text) {
+  const n = normalizeComparisonText(text);
+  const tb = n.match(/\b(\d+)\s*tb\b/);
+  if (tb) return `${tb[1]}tb`;
+  const gb = n.match(/\b(\d+)\s*gb\b/);
+  if (gb) return `${gb[1]}gb`;
+  return '';
+}
+
+function comparisonCoreTokens(text) {
+  const stop = new Set([
+    '중고', '판매', '구매', '급처', '풀박스', '풀셋', '정품', '양품', '직거래', '택배', '예약', '완료',
+    '판매중', '팝니다', '삽니다', '상태', '거의', '새상품', '미개봉', '사용감', '급매', '네고',
+  ]);
+  return normalizeComparisonText(text)
+    .split(' ')
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && !stop.has(t))
+    .slice(0, 16);
+}
+
 function scoreComparisonItems(item, comps) {
   const summary = getProductSummaryState(item)?.summary || null;
-  const queryText = [summary?.productName, summary?.searchQuery, ...(summary?.searchQueries || []), item?.title]
+  const baseText = [summary?.productName, summary?.searchQuery, ...(summary?.searchQueries || []), item?.title, item?.body]
     .filter(Boolean)
     .join(' ');
-  const terms = String(queryText)
-    .toLowerCase()
-    .split(/[^0-9a-z가-힣]+/i)
-    .map((term) => term.trim())
-    .filter((term) => term.length >= 2);
-  const coreTerms = [...new Set(terms)].slice(0, 12);
+  const coreTerms = [...new Set(comparisonCoreTokens(baseText))];
+  const baseCapacity = extractCapacityToken(baseText);
+  const baseNorm = normalizeComparisonText(baseText);
   return comparisonItems(comps)
     .map((candidate, index) => {
-      const title = String(candidate.title || '').toLowerCase();
-      const score = coreTerms.reduce((sum, term) => sum + (title.includes(term) ? 1 : 0), 0);
+      const title = String(candidate.title || '');
+      const titleNorm = normalizeComparisonText(title);
+      let score = coreTerms.reduce((sum, term) => sum + (titleNorm.includes(term) ? 1 : 0), 0);
+      const candCapacity = extractCapacityToken(title);
+      if (baseCapacity && candCapacity) {
+        if (baseCapacity === candCapacity) score += 3;
+        else score -= 4;
+      }
+      // 모델 번호(예: t460p, 16) 가중
+      for (const term of coreTerms) {
+        if (/^[a-z]*\d+[a-z0-9]*$/i.test(term) && titleNorm.includes(term)) score += 2;
+      }
+      if (baseNorm.includes('thinkpad') && titleNorm.includes('thinkpad')) score += 1;
+      if (baseNorm.includes('iphone') && titleNorm.includes('iphone')) score += 1;
       return { candidate, index, score };
     })
     .sort((a, b) => b.score - a.score || comparisonPlatformRank(a.candidate) - comparisonPlatformRank(b.candidate) || a.index - b.index);
@@ -6002,27 +6058,30 @@ function comparisonFilterCandidates(item, comps, limit = COMPARISON_LIST_LIMIT) 
 
 function fallbackComparisonMatches(item, comps, limit = COMPARISON_LIST_LIMIT) {
   const scored = scoreComparisonItems(item, comps);
-  const positive = scored.filter((entry) => entry.score > 0);
-  const source = positive.length ? positive : scored;
-  return balancedComparisonItems(source, limit).map((candidate) => ({
+  const baseCapacity = extractCapacityToken(
+    [getProductSummaryState(item)?.summary?.productName, item?.title, item?.body].filter(Boolean).join(' ')
+  );
+  const compatible = scored.filter((entry) => {
+    if (entry.score <= 0) return false;
+    if (!baseCapacity) return true;
+    const candCapacity = extractCapacityToken(entry.candidate?.title || '');
+    return !candCapacity || candCapacity === baseCapacity;
+  });
+  const source = compatible.length ? compatible : scored.filter((entry) => entry.score > 0);
+  const finalSource = source.length ? source : scored;
+  return balancedComparisonItems(finalSource, limit).map((candidate) => ({
     key: comparisonItemKey(candidate),
     same: true,
-    reason: positive.length
-      ? 'AI 확정 매칭이 없어 제목 키워드가 겹치는 후보를 참고용으로 포함했습니다.'
+    reason: compatible.length
+      ? '제목·모델·용량 키워드로 같은 제품 후보를 골랐습니다.'
       : 'AI 확정 매칭이 없어 수집된 검색 후보를 참고용으로 포함했습니다.',
     fallback: true,
   }));
 }
 
-// AI가 동일 제품 판별 결과를 내놓지 못했을 때, 수집된 비교 매물을 그대로(필터 없이) 노출한다.
+// AI가 동일 제품 판별 결과를 내놓지 못했을 때, 휴리스틱으로 걸러서 노출한다.
 function allComparisonMatches(item, comps) {
-  const scored = scoreComparisonItems(item, comps);
-  return scored.map((entry) => ({
-    key: comparisonItemKey(entry.candidate),
-    same: true,
-    reason: 'AI 동일 제품 판별 결과가 없어 수집된 비교 매물을 그대로 표시합니다.',
-    fallback: true,
-  }));
+  return fallbackComparisonMatches(item, comps, Math.max(COMPARISON_LIST_LIMIT, 16));
 }
 
 function comparisonSignature(comps) {
@@ -6159,7 +6218,7 @@ function renderComparisonList(items, limit = COMPARISON_LIST_LIMIT) {
       return `<li title="${escapeAttr(`[${c.platformLabel || c.platform}] ${c.title || ''} ${c.priceLabel || ''}`)}">
           ${
             imageUrl
-              ? `<img class="comp-thumb" src="${escapeAttr(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" decoding="async" />`
+              ? `<img class="comp-thumb" src="${escapeAttr(displayImageUrl(imageUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'comp-thumb comp-thumb--empty'}))" />`
               : '<span class="comp-thumb comp-thumb--empty"></span>'
           }
           <span class="comp-copy">
@@ -8220,7 +8279,9 @@ function renderCompsBlock(item, comps) {
     ? `${shown}건 표시${total > shown ? ` · 수집 ${total}건` : ''} · 중앙 ${formatWon(st.median)} · ${formatWon(st.min)} ~ ${formatWon(st.max)}`
     : `${shown}건 표시`;
   const matchNote = filterState?.fallback
-    ? 'AI 동일 제품 판별 결과가 없어 수집된 비교 매물을 그대로 표시합니다.'
+    ? filterState?.heuristic
+      ? 'AI 판별이 비어 제목·모델·용량 기준으로 비슷한 매물을 골랐습니다.'
+      : 'AI 동일 제품 판별 결과가 없어 수집된 비교 매물을 참고용으로 표시합니다.'
     : '같은 제품으로 판별된 매물';
   const listLimit = COMPARISON_LIST_LIMIT;
   const caution =
@@ -10855,12 +10916,13 @@ async function ensureComparisonFilter(item) {
         else refreshStageThreeSection(item);
       }
     });
-    // AI가 매칭을 비워서 돌려주면(=응답 없음), 수집된 비교 매물을 그대로 출력한다.
+    // AI가 매칭을 비워 주면 휴리스틱으로 걸러서 표시한다.
     const fallbackMatches = matches.length ? [] : allComparisonMatches(item, comps);
     comparisonFilters.set(filterKey, {
       status: 'done',
       matches: matches.length ? matches : fallbackMatches,
       fallback: !matches.length && fallbackMatches.length > 0,
+      heuristic: !matches.length && fallbackMatches.length > 0,
     });
     persistAiCaches();
     if (selectedKey === currentKey) {

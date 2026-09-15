@@ -555,11 +555,14 @@
   }
 
   function pickArticleImageFromCandidates(candidates) {
+    let fallback = '';
     for (const candidate of candidates) {
       const url = usableSearchImageUrl(candidate);
-      if (isDaangnArticleImageUrl(url)) return url;
+      if (!url) continue;
+      if (isDaangnArticleImageUrl(url) || isListingImageUrl(url)) return url;
+      if (!fallback && /daangn|karrot|karroter|cloudfront|daangncdn/i.test(url)) fallback = url;
     }
-    return '';
+    return fallback;
   }
 
   function imageFromSearchArticleRoot(root) {

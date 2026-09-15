@@ -242,10 +242,12 @@
           '\n\n배포 환경이라면 Railway(또는 호스팅)의 GEMINI_API_KEY 환경변수를 확인하세요. 개인 키 테스트는 주소에 ?devSettings=1 을 붙여 개발자 설정에서만 가능합니다.',
       };
     }
-    if (/(quota|rate limit|resource_exhausted|429|사용량 한도)/i.test(msg)) {
+    if (/(quota|rate limit|resource_exhausted|429|사용량 한도|일일|호출 한도|DEMO_DAILY)/i.test(msg)) {
       return {
-        title: 'API 사용량 한도 초과',
-        body: msg + '\n\n잠시 후 다시 시도하거나, Google AI Studio 쿼터·결제 상태를 확인하세요.',
+        title: 'AI 호출 한도 초과',
+        body:
+          msg +
+          '\n\n공개 배포는 IP당 하루 호출 한도가 있습니다. 잠시 후 다시 시도하거나, 운영자가 Railway 변수 DEMO_DAILY_LIMIT 을 올리면 됩니다.',
       };
     }
     if (/(model.+not found|is not found|unsupported|404.*model)/i.test(msg)) {

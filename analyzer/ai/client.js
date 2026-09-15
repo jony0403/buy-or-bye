@@ -312,6 +312,10 @@
       throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
+      // 일일 한도면 큰 오류 팝업 대신 빈 매칭 → 휴리스틱 폴백
+      if (res.status === 429 || /일일|한도|DEMO_DAILY|rate limit|quota/i.test(String(data.error || data.message || ''))) {
+        return { analysis: { matches: [], rejected: [], rateLimited: true } };
+      }
       throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;

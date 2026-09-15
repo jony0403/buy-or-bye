@@ -276,8 +276,30 @@
     const items = [];
     const seen = new Set();
     const cardImageUrl = (card) => {
-      const img = card?.querySelector?.('img');
-      return String(img?.currentSrc || img?.src || img?.getAttribute?.('data-src') || '').trim();
+      if (!card?.querySelectorAll) return '';
+      const imgs = [...card.querySelectorAll('img')];
+      for (const img of imgs) {
+        const candidates = [
+          img.currentSrc,
+          img.src,
+          img.getAttribute?.('data-src'),
+          img.getAttribute?.('data-lazy'),
+          ...String(img.getAttribute?.('srcset') || '')
+            .split(',')
+            .map((part) => part.trim().split(/\s+/)[0]),
+        ];
+        for (const raw of candidates) {
+          const url = String(raw || '').trim();
+          if (!url || /^data:|^blob:/i.test(url)) continue;
+          if (/badge|logo|icon|sprite|placeholder/i.test(url)) continue;
+          try {
+            return new URL(url, location.href).href;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      return '';
     };
     const cardTitle = (a, card) => {
       const candidates = [

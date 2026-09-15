@@ -13,7 +13,7 @@ const HOST = String(process.env.HOST || process.env.ANALYZER_HOST || '0.0.0.0').
 const SERVER_GEMINI_KEY = String(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '').trim();
 const SERVER_OPENAI_KEY = SERVER_GEMINI_KEY; // legacy alias
 const DEMO_MODE = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true' || Boolean(SERVER_GEMINI_KEY);
-const DEMO_DAILY_LIMIT = Math.max(5, Number(process.env.DEMO_DAILY_LIMIT) || 40);
+const DEMO_DAILY_LIMIT = Math.max(5, Number(process.env.DEMO_DAILY_LIMIT) || 500);
 const PUBLIC_ANALYZER_ORIGIN = String(process.env.PUBLIC_ANALYZER_ORIGIN || '').trim().replace(/\/$/, '');
 const ANALYZER_DIR = path.join(__dirname, 'analyzer');
 const EXTENSION_ICONS_DIR = path.join(__dirname, 'extension', 'icons');
@@ -137,7 +137,7 @@ function consumeDemoRateLimit(req) {
   if (used >= DEMO_DAILY_LIMIT) {
     return {
       ok: false,
-      error: `?? API ?? ??(${DEMO_DAILY_LIMIT}?)? ??????. ?? ? ?? ????? ?? ??? ?????.`,
+      error: `오늘 AI 호출 한도(${DEMO_DAILY_LIMIT}회)를 초과했습니다. 내일 다시 시도하거나 Railway 환경변수 DEMO_DAILY_LIMIT 를 높일 수 있습니다.`,
     };
   }
   demoRateBuckets.set(key, used + 1);
@@ -1085,6 +1085,15 @@ function uniqueImageUrls(urls) {
 
 function productImageProxySignature(url) {
   return crypto.createHmac('sha256', IMAGE_PROXY_SECRET).update(String(url || '')).digest('hex');
+}
+
+function isAllowlistedMarketplaceImageHost(rawUrl) {
+  try {
+    const host = new URL(String(rawUrl || '')).hostname.toLowerCase();
+    return /(?:^|\.)(daangn\.com|daangncdn\.com|karrotmarket\.com|karroter\.net|gcp-karroter\.net|bunjang\.co\.kr|bgzt\.link|joongna\.com|cloudfront\.net|cloudinary\.com|kakao(?:cdn)?\.net|kakaocdn\.net)$/i.test(host);
+  } catch {
+    return false;
+  }
 }
 
 function validProductImageProxySignature(url, signature) {
@@ -3435,9 +3444,15 @@ if (
       res.end('??? URL? ???? ????.');
       return;
     }
-    if (!validProductImageProxySignature(target, signature)) {
+    if (signature) {
+      if (!validProductImageProxySignature(target, signature)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Invalid image proxy signature.');
+        return;
+      }
+    } else if (!isAllowlistedMarketplaceImageHost(target)) {
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('???? ?? ??? ?????.');
+      res.end('Image host is not allowed.');
       return;
     }
     try {
