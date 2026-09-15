@@ -58,6 +58,9 @@ const productRiskYoutubeAnalyses = new Map();
 const listingTextAnalyses = new Map();
 /** @type {string} */
 let activeDemoScenarioId = '';
+let extensionPresent = false;
+let extensionProbeTimer = 0;
+const EXT_REQUIRED_TITLE = 'Chrome 확장 프로그램을 설치해야 사용할 수 있습니다.';
 let demoFallbackUsed = false;
 let demoCatalogCache = null;
 const listingImageAnalyses = new Map();
@@ -5588,7 +5591,7 @@ function renderStageThreeSection(item, comps) {
                   '신품가·비교 매물·시세 참고표를 바로 모읍니다.',
                   'stage-three-card stage-three-card--ready'
                 )
-              : `<button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}">
+              : `<button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}" data-needs-extension>
             <div class="stage-two-ready">
               <div>
                 <p class="stage-two-card-label">다음 단계 대기</p>
@@ -5635,7 +5638,7 @@ function renderStageThreeSearchCard(item, comps) {
           <h3>${escapeHtml(summary.productName || primaryQuery || '관련 매물 검색')}</h3>
         </div>
         <div class="stage-three-actions">
-          <button type="button" class="chip-btn" data-stage-three-refresh="${escapeAttr(key)}">다시 검색·정리</button>
+          <button type="button" class="chip-btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>다시 검색·정리</button>
           <button type="button" class="chip-btn chip-btn--ghost" data-stage-three-skip-comps="${escapeAttr(key)}">비교 매물 스킵</button>
           ${danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
         </div>
@@ -8059,7 +8062,7 @@ function renderStageThreeEmptySearch(key = '') {
   return `
     <div class="stage-three-empty-search">
       <p class="stage-three-empty-search__text">매물을 찾지 못했습니다.</p>
-      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}">
+      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>
         다시 검색
       </button>
     </div>
@@ -8090,7 +8093,7 @@ function renderStageThreeInterruptedSearch(key = '') {
   return `
     <div class="stage-three-empty-search">
       <p class="stage-three-empty-search__text">이전 검색이 완료되지 않았습니다.</p>
-      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}">
+      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>
         다시 검색
       </button>
     </div>
@@ -8719,7 +8722,9 @@ function renderItem(item, comps) {
           }
           </div>
           <div>
-            <h3 class="item-title hover-full" title="${escapeAttr(item.title || '(제목 없음)')}">${escapeHtml(item.title || '(제목 없음)')}</h3>
+            <h3 class="item-title hover-full" title="${escapeAttr(item.title || '(제목 없음)')}">${
+              isSampleListing(item) ? '<span class="sample-badge" title="샘플 판매글 입력값">샘플</span> ' : ''
+            }${escapeHtml(item.title || '(제목 없음)')}</h3>
             <p class="price listing-price-line">
               <span>${escapeHtml(item.priceLabel || '—')}</span>
               ${shipping ? `<small>${escapeHtml(shipping)}</small>` : ''}
@@ -8772,6 +8777,7 @@ function renderItem(item, comps) {
   bindProductSummaryRetry($current, item);
   bindProductImageSearch($current, item);
   bindSellerChatFlow($current, item);
+  applyExtensionUiState();
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   syncStagePanels(item);
   ensureCachedStageTwoFollowups(item);
@@ -9167,6 +9173,12 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   }
   // 중고 시세 참고표는 자동 매물검색과 완전히 독립된 병렬 작업으로, 검색 탭 결과를 기다리지 않고 바로 시작한다.
   if (selectedKey === key) void ensureUsedPriceGuide(item);
+  if (!extensionPresent) {
+    showAppToast?.(EXT_REQUIRED_TITLE);
+    if (btn) btn.disabled = false;
+    if (selectedKey === key) refreshStageThreeSection(item);
+    return;
+  }
   if (btn) btn.disabled = true;
   window.postMessage({ type: 'MARKET_SCRAPE_OPEN_SEARCH_TABS', query: queryList[0], queries: queryList }, '*');
   if (btn) {
@@ -12176,27 +12188,35 @@ function renderChampionshipEmptyState() {
     <article class="mini-card mini-card--empty sample-landing" data-sample-landing>
       <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="72" height="72" />
       <h2>매물 대기</h2>
-      <p class="empty">왼쪽 URL로 중고나라·번개장터·당근 링크를 불러오거나, 아래 샘플로 바로 분석을 시작해 보세요.</p>
+      <p class="empty">왼쪽 URL로 중고나라·번개장터·당근 링크를 불러오거나, 아래 샘플 판매글로 바로 분석을 시작해 보세요.</p>
+      <p class="empty empty-sub">샘플은 <strong>판매글(제목·본문·사진·가격)</strong>만 미리 넣어 둔 입력값입니다. Step 1부터는 전부 실시간 AI로 분석합니다.</p>
       <div class="sample-demo-block">
         <p class="sample-section-label">샘플 매물</p>
         <div class="sample-demo-grid" data-demo-grid>
           <p class="mini-muted">샘플을 불러오는 중…</p>
         </div>
       </div>
-      <div class="sample-ext-block">
-        <p class="sample-section-label">확장 프로그램 <span class="mini-muted">(선택)</span></p>
-        <p class="empty empty-sub">실제 매물 페이지에서 한 번에 보내려면 Chrome 확장을 설치하세요.</p>
+      <div class="sample-ext-block" data-ext-block>
+        <p class="sample-section-label">Chrome 확장 프로그램</p>
+        <p class="empty empty-sub">실제 매물 URL 불러오기·유사 매물(번개/당근/중고나라) 검색은 확장이 필요합니다. 샘플 분석만 할 때는 없어도 됩니다.</p>
         <div class="sample-ext-actions">
-          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip">ZIP 받기</a>
-          <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 보기</button>
+          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip">확장 ZIP 받기</a>
+          <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 자세히</button>
         </div>
-        <ol class="sample-ext-steps" data-ext-steps hidden>
-          <li>받은 ZIP을 풀어 폴더로 둡니다.</li>
-          <li>Chrome 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
-          <li>오른쪽 위 <strong>개발자 모드</strong>를 켭니다.</li>
-          <li><strong>압축해제된 확장 프로그램을 로드합니다</strong>에서 방금 푼 폴더를 선택합니다.</li>
-          <li>당근·번개·중고나라 매물 상세에서 확장 아이콘을 누르면 이 분석 화면으로 전송됩니다.</li>
-        </ol>
+        <div class="sample-ext-steps" data-ext-steps hidden>
+          <ol>
+            <li><strong>ZIP 받기</strong>를 눌러 <code>buy-or-bye-extension.zip</code>을 다운로드합니다.</li>
+            <li>다운로드한 ZIP을 마우스 오른쪽 클릭 → <strong>압축 풀기</strong>로 폴더를 만듭니다. (예: <code>buy-or-bye-extension</code>)</li>
+            <li>Chrome(또는 Chromium 계열)을 연 뒤 주소창에 <code>chrome://extensions</code>를 입력하고 Enter를 누릅니다.</li>
+            <li>오른쪽 위 <strong>개발자 모드</strong> 스위치를 켭니다.</li>
+            <li><strong>압축해제된 확장 프로그램을 로드합니다</strong>(Load unpacked)를 클릭합니다.</li>
+            <li>방금 압축을 푼 <strong>그 폴더</strong>를 선택합니다. (ZIP 파일이 아니라 풀린 폴더여야 합니다.)</li>
+            <li>확장 목록에 「Buy or Bye」가 보이면 설치 완료입니다. 필요하면 핀(고정)해 두세요.</li>
+            <li>이 분석 페이지를 <strong>새로고침</strong>하면 URL 불러오기·유사 매물 검색이 활성화됩니다.</li>
+            <li>실제 당근·번개·중고나라 <strong>매물 상세 페이지</strong>에서 확장 아이콘을 누르면 이 화면으로 매물이 전송됩니다.</li>
+          </ol>
+          <p class="empty empty-sub">설치 후에도 비활성이면 이 탭을 새로고침하거나, 확장이 이 사이트 접근을 허용했는지 chrome://extensions에서 확인해 주세요.</p>
+        </div>
       </div>
     </article>
   `;
@@ -12243,16 +12263,9 @@ async function bindChampionshipEmptyState(root) {
   }
 }
 
-function showDemoFallbackBanner(message) {
-  let bar = document.querySelector('[data-demo-fallback-banner]');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.className = 'sample-fallback-banner';
-    bar.setAttribute('data-demo-fallback-banner', '');
-    document.body.appendChild(bar);
-  }
-  bar.hidden = false;
-  bar.textContent = message || '일시적으로 준비된 분석 결과로 표시합니다.';
+function showDemoFallbackBanner() {
+  /* removed: sample runs live AI only */
+  hideDemoFallbackBanner();
 }
 
 function hideDemoFallbackBanner() {
@@ -12260,67 +12273,15 @@ function hideDemoFallbackBanner() {
   if (bar) bar.hidden = true;
 }
 
-async function hydrateDemoCache(id) {
-  const res = await fetch(`/api/demo/cache/${encodeURIComponent(id)}`);
-  const cache = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(cache.error || '데모 캐시를 불러오지 못했습니다.');
-  const item = latest;
-  const key = summaryKey(item);
-  if (!key) return;
-  if (cache.summary) {
-    const summary = { ...cache.summary };
-    if (!summary.productImageUrl && Array.isArray(item?.imageUrls) && item.imageUrls[0]) {
-      summary.productImageUrl = item.imageUrls[0];
-      summary.productImageUrls = uniqueImageList([
-        ...(Array.isArray(summary.productImageUrls) ? summary.productImageUrls : []),
-        ...item.imageUrls,
-      ]);
-    }
-    productSummaries.set(key, { status: 'done', summary, source: 'demo-cache' });
-  }
-  if (cache.riskAnalysis) {
-    productRiskAnalyses.set(key, { status: 'done', analysis: cache.riskAnalysis, source: 'demo-cache' });
-  }
-  if (cache.listingTextAnalysis) {
-    listingTextAnalyses.set(key, { status: 'done', analysis: cache.listingTextAnalysis, source: 'ai' });
-  }
-  if (cache.listingImageAnalysis) {
-    listingImageAnalyses.set(key, {
-      status: 'done',
-      analysis: cache.listingImageAnalysis,
-      source: 'ai',
-      overlayVersion: LISTING_IMAGE_OVERLAY_VERSION,
-    });
-  }
-  if (cache.accessoryCheck) {
-    accessoryChecks.set(key, { status: 'done', analysis: cache.accessoryCheck });
-  }
-  demoFallbackUsed = true;
-  showDemoFallbackBanner();
-  persistAiCaches();
-  stageTwoActiveKeys.add(key);
-  stageTwoCompletedKeys.add(key);
-  renderItem(item, comps);
+async function hydrateDemoCache() {
+  /* disabled: samples are listing inputs only */
 }
 
-async function maybeHydrateDemoFallback(errorLike) {
-  if (!activeDemoScenarioId || demoFallbackUsed) return false;
-  const msg = String(errorLike?.message || errorLike || '');
-  const should =
-    /429|quota|rate limit|한도|timeout|Failed to fetch|네트워크|GEMINI|OPENAI|사용량/i.test(msg) ||
-    Boolean(errorLike?.demoFallbackSuggested);
-  if (!should && msg) {
-    // still fallback for demo scenario hard failures
-  }
-  try {
-    await hydrateDemoCache(activeDemoScenarioId);
-    return true;
-  } catch {
-    return false;
-  }
+async function maybeHydrateDemoFallback() {
+  return false;
 }
 
-async function loadChampionshipDemo(id, opts = {}) {
+async function loadChampionshipDemo(id) {
   const res = await fetch(`/api/demo/scenarios/${encodeURIComponent(id)}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -12335,23 +12296,35 @@ async function loadChampionshipDemo(id, opts = {}) {
   activeDemoScenarioId = id;
   demoFallbackUsed = false;
   hideDemoFallbackBanner();
-  applyPayload({ latest: listing, history: [listing], comps: null }, { forceRestart: true });
-  if (opts.forceCache) {
-    await hydrateDemoCache(id);
-    return;
-  }
-  // live pipeline starts via activateListingItem -> ensureProductSummary
-  // watch summary/risk error shortly after
-  window.setTimeout(() => {
-    const key = summaryKey(latest);
-    const summaryState = key ? productSummaries.get(key) : null;
-    const riskState = key ? productRiskAnalyses.get(key) : null;
-    if (summaryState?.status === 'error' || riskState?.status === 'error') {
-      void maybeHydrateDemoFallback(summaryState?.error || riskState?.error || 'demo-error');
+  listing.imageUrls = (Array.isArray(listing.imageUrls) ? listing.imageUrls : []).map((u) => {
+    const s = String(u || '').trim();
+    if (s.startsWith('/')) return `${location.origin}${s}`;
+    return s;
+  });
+  const key = summaryKey(listing) || itemKey(listing);
+  if (key) {
+    clearProductSummaryCaches(key);
+    // wipe any prior demo-cache / AI results so Step 1+ always runs live
+    productSummaries.delete(key);
+    productRiskAnalyses.delete(key);
+    listingTextAnalyses.delete(key);
+    listingImageAnalyses.delete(key);
+    accessoryChecks.delete(key);
+    stageTwoActiveKeys.delete(key);
+    stageTwoCompletedKeys.delete(key);
+    stageThreeActiveKeys.delete(key);
+    relatedRequestedKeys.delete(key);
+    for (const cacheKey of [...comparisonFilters.keys()]) {
+      if (listingKeyFromStageCacheKey(cacheKey) === key) comparisonFilters.delete(cacheKey);
     }
-  }, 12000);
+    for (const cacheKey of [...usedPriceGuides.keys()]) {
+      if (listingKeyFromStageCacheKey(cacheKey) === key) usedPriceGuides.delete(cacheKey);
+    }
+    persistAiCaches();
+  }
+  // 판매글 입력값만 넣고 Step 1~ 전부 라이브 AI
+  applyPayload({ latest: listing, history: [listing], comps: null }, { forceRestart: true });
 }
-
 
 function applyPayload(payload, opts = {}) {
   const prevLatestKey = latest ? itemKey(latest) : '';
@@ -12437,6 +12410,11 @@ function supportedListingUrl(rawUrl) {
 }
 
 function requestListingUrlImport(rawUrl) {
+  if (!extensionPresent) {
+    setUrlImportStatus('확장 설치 필요', 'error');
+    showAppToast?.(EXT_REQUIRED_TITLE);
+    return;
+  }
   const url = supportedListingUrl(rawUrl);
   if (!url) {
     setUrlImportStatus('지원 URL 아님', 'error');
@@ -12463,6 +12441,9 @@ let __appStarted = false;
 function initMain() {
   if (__appStarted) return;
   __appStarted = true;
+  void refreshExtensionPresence();
+  if (extensionProbeTimer) window.clearInterval(extensionProbeTimer);
+  extensionProbeTimer = window.setInterval(() => void refreshExtensionPresence(), 4000);
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== window) return;
@@ -12527,6 +12508,62 @@ function initMain() {
   }
 }
 
+function applyExtensionUiState() {
+  const tip = EXT_REQUIRED_TITLE;
+  document.querySelectorAll('[data-needs-extension]').forEach((el) => {
+    const on = extensionPresent;
+    el.classList.toggle('is-ext-disabled', !on);
+    el.toggleAttribute('disabled', !on);
+    if (!on) {
+      el.setAttribute('title', tip);
+      el.setAttribute('aria-disabled', 'true');
+    } else {
+      el.removeAttribute('title');
+      el.removeAttribute('aria-disabled');
+    }
+  });
+  const urlForm = document.getElementById('urlImportForm');
+  const railForm = document.getElementById('railImportForm');
+  const urlInput = document.getElementById('urlImportInput');
+  const railInput = document.getElementById('railUrlInput');
+  const urlBtn = urlForm?.querySelector('button[type="submit"]');
+  const railBtn = railForm?.querySelector('button[type="submit"]');
+  for (const el of [urlInput, railInput, urlBtn, railBtn]) {
+    if (!el) continue;
+    el.classList.toggle('is-ext-disabled', !extensionPresent);
+    if ('disabled' in el) el.disabled = !extensionPresent;
+    if (!extensionPresent) el.setAttribute('title', tip);
+    else el.removeAttribute('title');
+  }
+  document.body.classList.toggle('ext-missing', !extensionPresent);
+  document.body.classList.toggle('ext-ready', extensionPresent);
+}
+
+function probeExtensionPresence() {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('message', onMsg);
+      resolve(Boolean(ok));
+    };
+    const onMsg = (ev) => {
+      if (ev.source !== window || ev.data?.type !== 'ULSA_EXT_PONG') return;
+      finish(true);
+    };
+    window.addEventListener('message', onMsg);
+    window.postMessage({ type: 'ULSA_EXT_PING' }, '*');
+    window.setTimeout(() => finish(false), 450);
+  });
+}
+
+async function refreshExtensionPresence() {
+  extensionPresent = await probeExtensionPresence();
+  applyExtensionUiState();
+  return extensionPresent;
+}
+
 function bootstrapApp() {
   window.addEventListener('ulsa:ai-ready', () => initMain(), { once: true });
   if (globalThis.__ulsaAiReady) initMain();
@@ -12544,10 +12581,14 @@ function bootstrapApp() {
     root.innerHTML = renderChampionshipEmptyState();
     void bindChampionshipEmptyState(root);
   };
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mountSampleLanding, { once: true });
-  } else {
+  const boot = () => {
     mountSampleLanding();
+    void refreshExtensionPresence();
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
   }
 }
 bootstrapApp();

@@ -339,7 +339,25 @@ const OPENAI_FAST_TIMEOUT_MS = GEMINI_FAST_TIMEOUT_MS;
 const OPENAI_GROUNDED_TIMEOUT_MS = GEMINI_GROUNDED_TIMEOUT_MS;
 const OPENAI_PRODUCT_TIMEOUT_MS = GEMINI_PRODUCT_TIMEOUT_MS;
 
+function resolveDemoImageLocalPath(u) {
+  try {
+    const raw = String(u || '').trim();
+    if (!raw) return '';
+    let pathname = raw;
+    if (/^https?:\/\//i.test(raw)) pathname = new URL(raw).pathname;
+    if (!pathname.startsWith('/demo-images/')) return '';
+    const rel = decodeURIComponent(pathname.slice('/demo-images/'.length));
+    if (!/^[a-z0-9][a-z0-9/_./-]{0,180}$/i.test(rel) || rel.includes('..')) return '';
+    const abs = path.resolve(path.join(DEMO_DIR, 'images', rel));
+    if (!abs.startsWith(path.resolve(DEMO_DIR))) return '';
+    return abs;
+  } catch {
+    return '';
+  }
+}
+
 function isAllowedListingImageUrl(u) {
+  if (resolveDemoImageLocalPath(u)) return true;
   try {
     const x = new URL(String(u).trim());
     if (x.protocol !== 'https:' && x.protocol !== 'http:') return false;
@@ -387,6 +405,24 @@ function optimizeImageUrlForAi(url) {
 
 /** Gemini REST: { inline_data: { mime_type, data: base64 } } */
 async function fetchImageUrlToInlinePart(url) {
+  const local = resolveDemoImageLocalPath(url);
+  if (local) {
+    let buf = await fs.readFile(local);
+    if (buf.length > MAX_IMAGE_BYTES) {
+      buf = await sharp(buf, { animated: false }).rotate().jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+    }
+    if (buf.length > MAX_IMAGE_BYTES) {
+      buf = await sharp(buf).resize({ width: 1200, withoutEnlargement: true }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
+    }
+    if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
+    const mime = buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : 'image/png';
+    return {
+      inline_data: {
+        mime_type: mime,
+        data: buf.toString('base64'),
+      },
+    };
+  }
   const imageUrl = optimizeImageUrlForAi(url);
   const res = await fetch(imageUrl, {
     redirect: 'follow',
@@ -2523,7 +2559,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (
+  if (req.method === 'GET' && url.pathname.startsWith('/demo-images/')) {
+    try {
+      const rel = decodeURIComponent(url.pathname.slice('/demo-images/'.length));
+      if (!/^[a-z0-9][a-z0-9/_./-]{0,180}$/i.test(rel) || rel.includes('..')) {
+        res.writeHead(400);
+        res.end('bad path');
+        return;
+      }
+      const filePath = path.join(DEMO_DIR, 'images', rel);
+      const abs = path.resolve(filePath);
+      if (!abs.startsWith(path.resolve(DEMO_DIR))) {
+        res.writeHead(400);
+        res.end('bad path');
+        return;
+      }
+      const buf = await fs.readFile(abs);
+      const ext = path.extname(abs).toLowerCase();
+      const type = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' });
+      res.end(buf);
+    } catch {
+      res.writeHead(404);
+      res.end('not found');
+    }
+    return;
+  }
+
+if (
     (req.method === 'GET' || req.method === 'HEAD') &&
     url.pathname === '/downloads/buy-or-bye-extension.zip'
   ) {

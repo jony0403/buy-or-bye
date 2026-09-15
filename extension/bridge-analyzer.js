@@ -3,9 +3,16 @@
   const PORTS = [3920, 3921];
 
   function isAnalyzerPage() {
-    if (location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') return false;
-    const p = Number(location.port);
-    return PORTS.includes(p);
+    const host = location.hostname;
+    if (host === '127.0.0.1' || host === 'localhost') {
+      return PORTS.includes(Number(location.port));
+    }
+    // championship / deployed analyzer
+    if (host.includes('buy-or-bye') && host.includes('railway.app')) return true;
+    if (typeof BUY_OR_BYE_ANALYZER_ORIGINS !== 'undefined') {
+      return BUY_OR_BYE_ANALYZER_ORIGINS.includes(location.origin);
+    }
+    return false;
   }
 
   if (!isAnalyzerPage()) return;
@@ -88,6 +95,11 @@
       '*'
     );
   }
+
+  window.addEventListener('message', (ev) => {
+    if (ev.source !== window || ev.data?.type !== 'ULSA_EXT_PING') return;
+    window.postMessage({ type: 'ULSA_EXT_PONG', at: Date.now() }, '*');
+  });
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== window || ev.data?.type !== 'MARKET_SCRAPE_REQUEST') return;

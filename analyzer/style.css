@@ -15625,3 +15625,48 @@ body.theme-dark .sample-ext-steps code {
   pointer-events: none;
   opacity: 0.72;
 }
+
+.sample-badge {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-right: 0.28rem;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  background: #fff3ea;
+  color: #d85700;
+  border: 1px solid rgba(255, 111, 15, 0.28);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+}
+.link--disabled,
+.seller-chat__listing-link--disabled,
+.is-ext-disabled,
+button.is-ext-disabled,
+input.is-ext-disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(0.15);
+}
+body.ext-missing .sample-ext-block {
+  border-color: rgba(255, 111, 15, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 111, 15, 0.08);
+}
+.sample-ext-steps {
+  display: block;
+}
+.sample-ext-steps[hidden] {
+  display: none !important;
+}
+.sample-ext-steps ol {
+  margin: 0.2rem 0 0.55rem;
+  padding-left: 1.2rem;
+}
+.sample-ext-steps li {
+  margin: 0.35rem 0;
+}
+.sample-fallback-banner,
+.championship-fallback-banner {
+  display: none !important;
+}

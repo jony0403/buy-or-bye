@@ -12,9 +12,9 @@
     "pageUrl": "https://www.bunjang.co.kr/products/demo-airpods-pro2-chronic",
     "exportedAt": "2026-09-10T08:00:00.000Z",
     "imageUrls": [
-      "https://images.unsplash.com/photo-1606220588913-b3aacb4d2f46?w=900&q=80",
-      "https://images.unsplash.com/photo-1572569511254-d8f925fe2cbb?w=900&q=80",
-      "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=900&q=80"
+      "/demo-images/airpods-pro2-chronic/1.png",
+      "/demo-images/airpods-pro2-chronic/2.png",
+      "/demo-images/airpods-pro2-chronic/3.png"
     ],
     "seller": {
       "nickname": "사운드창고",

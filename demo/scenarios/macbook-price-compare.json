@@ -12,9 +12,9 @@
     "pageUrl": "https://www.bunjang.co.kr/products/demo-macbook-price-compare",
     "exportedAt": "2026-09-13T01:45:00.000Z",
     "imageUrls": [
-      "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=900&q=80",
-      "https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=900&q=80",
-      "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=900&q=80"
+      "/demo-images/macbook-price-compare/1.png",
+      "/demo-images/macbook-price-compare/2.png",
+      "/demo-images/macbook-price-compare/3.png"
     ],
     "seller": {
       "nickname": "노트북정리중",

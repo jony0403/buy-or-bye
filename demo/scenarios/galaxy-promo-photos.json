@@ -12,9 +12,9 @@
     "pageUrl": "https://web.joongna.com/product/demo-galaxy-promo-photos",
     "exportedAt": "2026-09-12T11:10:00.000Z",
     "imageUrls": [
-      "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=900&q=80",
-      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=900&q=80",
-      "https://images.unsplash.com/photo-1592890288564-76628a30a657?w=900&q=80"
+      "/demo-images/galaxy-promo-photos/1.png",
+      "/demo-images/galaxy-promo-photos/2.png",
+      "/demo-images/galaxy-promo-photos/3.png"
     ],
     "seller": {
       "nickname": "모바일스토어24",

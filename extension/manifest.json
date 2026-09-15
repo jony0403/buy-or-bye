@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Buy or Bye - 중고매물 살까말까",
-  "version": "2.7.7",
+  "version": "2.7.8",
   "description": "번개장터·당근마켓·중고나라 매물을 모아 가격 참고자료·하자·네고까지 살까말까 판단을 돕습니다.",
-  "permissions": ["activeTab", "alarms", "scripting", "storage", "tabs"],
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -16,7 +22,8 @@
     "https://web.joongna.com/*",
     "https://*.joongna.com/*",
     "http://127.0.0.1:3920/*",
-    "http://localhost:3920/*"
+    "http://localhost:3920/*",
+    "https://buy-or-bye-championship-production.up.railway.app/*"
   ],
   "content_scripts": [
     {
@@ -42,8 +49,14 @@
       "run_at": "document_idle"
     },
     {
-      "matches": ["http://127.0.0.1:3920/*", "http://localhost:3920/*"],
-      "js": ["bridge-analyzer.js"],
+      "matches": [
+        "http://127.0.0.1:3920/*",
+        "http://localhost:3920/*",
+        "https://buy-or-bye-championship-production.up.railway.app/*"
+      ],
+      "js": [
+        "bridge-analyzer.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -55,7 +68,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon16.png", "icons/icon32.png", "icons/icon48.png", "icons/icon128.png"],
+      "resources": [
+        "icons/icon16.png",
+        "icons/icon32.png",
+        "icons/icon48.png",
+        "icons/icon128.png"
+      ],
       "matches": [
         "https://*.bunjang.co.kr/*",
         "https://bunjang.co.kr/*",
