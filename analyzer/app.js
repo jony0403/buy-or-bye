@@ -12530,5 +12530,24 @@ function initMain() {
 function bootstrapApp() {
   window.addEventListener('ulsa:ai-ready', () => initMain(), { once: true });
   if (globalThis.__ulsaAiReady) initMain();
+
+  // 게이트 대기 중이어도 샘플·확장 안내는 바로 붙인다.
+  const mountSampleLanding = () => {
+    const root = document.getElementById('current');
+    if (!root) return;
+    if (latest) return;
+    const needsMount =
+      !root.querySelector('[data-sample-landing]') ||
+      !root.querySelector('[data-demo-id]') ||
+      Boolean(root.querySelector('[data-demo-grid] .mini-muted'));
+    if (!needsMount) return;
+    root.innerHTML = renderChampionshipEmptyState();
+    void bindChampionshipEmptyState(root);
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mountSampleLanding, { once: true });
+  } else {
+    mountSampleLanding();
+  }
 }
 bootstrapApp();

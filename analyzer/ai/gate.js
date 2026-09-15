@@ -196,15 +196,25 @@
 
   async function tryUnlockDemoMode() {
     try {
-      const res = await fetch('/api/demo/status');
+      const res = await fetch('/api/demo/status', { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.serverKey) return false;
       const u = K();
       const token = String(data.serverKeyToken || '__SERVER_DEMO__');
-      const model = localStorage.getItem(u.STORAGE_KEY_MODEL) || u.DEFAULT_MODEL;
+      const model =
+        (typeof u.readStoredModel === 'function' ? u.readStoredModel() : null) ||
+        localStorage.getItem(u.STORAGE_KEY_MODEL) ||
+        u.DEFAULT_MODEL;
       localStorage.setItem(u.STORAGE_KEY_API, token);
+      localStorage.setItem(u.STORAGE_KEY_MODEL, model);
       localStorage.setItem(u.STORAGE_KEY_VERIFIED_AT, String(Date.now()));
+      if (u.STORAGE_KEY_API_LEGACY) localStorage.setItem(u.STORAGE_KEY_API_LEGACY, token);
+      if (u.STORAGE_KEY_MODEL_LEGACY) localStorage.setItem(u.STORAGE_KEY_MODEL_LEGACY, model);
+      if (u.STORAGE_KEY_VERIFIED_AT_LEGACY) {
+        localStorage.setItem(u.STORAGE_KEY_VERIFIED_AT_LEGACY, String(Date.now()));
+      }
       localStorage.setItem('ulsa_demo_mode', '1');
+      // 개인 키가 남아 게이트를 막는 경우 방지: 데모 모드면 서버 키로 바로 시작
       syncToExtension(token, model, Date.now());
       applyUnlock();
       return true;
@@ -224,6 +234,9 @@
       openSettings();
     });
 
+    // 서버에 키가 있으면 심사/데모는 게이트 없이 바로 시작 (개인 키 저장 여부와 무관)
+    if (await tryUnlockDemoMode()) return;
+
     const u = K();
     if (isConfigured()) {
       const apiKey = readApiKey();
@@ -231,8 +244,6 @@
       const verifiedAt = Number(readVerifiedAt()) || Date.now();
       syncToExtension(apiKey, model, verifiedAt);
       applyUnlock();
-    } else if (await tryUnlockDemoMode()) {
-      /* server-side demo key unlock */
     } else {
       applyLock();
     }

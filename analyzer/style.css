@@ -15479,6 +15479,11 @@ body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-load
   padding-top: 0.75rem;
   padding-bottom: 6rem;
 }
+.app-shell.is-empty-state {
+  overflow: auto !important;
+  height: auto !important;
+  min-height: 100svh;
+}
 .app-shell.is-empty-state .listing-cluster {
   display: block !important;
   grid-template-columns: none !important;
