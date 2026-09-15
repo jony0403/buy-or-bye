@@ -12290,12 +12290,12 @@ async function loadChampionshipDemo(id, opts = {}) {
   const res = await fetch(`/api/demo/scenarios/${encodeURIComponent(id)}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    showToast?.(data.error || '데모 매물을 불러오지 못했습니다.');
+    showToast?.(data.error || '샘플 매물을 불러오지 못했습니다.');
     return;
   }
   const listing = data.listing;
   if (!listing?.platform || !listing?.itemId) {
-    showToast?.('데모 매물 형식이 올바르지 않습니다.');
+    showToast?.('샘플 매물 형식이 올바르지 않습니다.');
     return;
   }
   activeDemoScenarioId = id;
@@ -12482,6 +12482,9 @@ function initMain() {
     renderItem(null);
     window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
   });
+
+  // 빈 화면은 index.html 정적 마크업이 아니라 샘플·확장 안내가 있는 랜딩으로 그린다.
+  if (!latest) renderItem(null);
 
   for (const delay of [0, 250, 800, 1600]) {
     window.setTimeout(() => {
