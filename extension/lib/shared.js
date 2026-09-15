@@ -639,10 +639,23 @@
             }
             const items = await harvestSearchListingsWithRetry(ad, ad.id === 'daangn' ? 10_000 : 8_000);
             const q = Root.getSearchQueryFromUrl?.(location.href) || '';
-            // 핵심 목록을 먼저 저장하고 응답한다. 이미지 보강을 기다리면 SPA 검색 탭이
-            // 닫히기 전에 5~10초 타임아웃이 나서 목록 전체가 0건 처리될 수 있다.
-            await Root.saveComps(ad.id, items, { searchUrl: location.href, query: q });
-            sendResponse({ ok: true, count: items.length, platform: ad.id });
+            // 탭이 곧 닫히므로, 이미지 보강을 짧게라도 기다린 뒤 저장한다.
+            // (보강 없이 저장하면 Step3 비교 매물 썸네일이 전부 빈 칸이 된다.)
+            let enriched = items;
+            if (typeof ad.enhanceSearchListings === 'function' && items.some((it) => !it?.imageUrl && it?.url)) {
+              const enhanceMs = ad.id === 'daangn' ? 5_500 : 3_500;
+              try {
+                const enhanced = await Promise.race([
+                  Promise.resolve(ad.enhanceSearchListings(items)),
+                  new Promise((resolve) => setTimeout(() => resolve(null), enhanceMs)),
+                ]);
+                if (Array.isArray(enhanced) && enhanced.length) enriched = enhanced;
+              } catch {
+                enriched = items;
+              }
+            }
+            await Root.saveComps(ad.id, enriched, { searchUrl: location.href, query: q });
+            sendResponse({ ok: true, count: enriched.length, platform: ad.id, withImages: enriched.filter((it) => it?.imageUrl).length });
             break;
           }
           case 'GET_JSON':
@@ -741,8 +754,23 @@
     if (flags.at && Date.now() - flags.at > 3 * 60 * 1000) return;
 
     const items = await harvestSearchListingsWithRetry(ad, ad.id === 'daangn' ? 9_000 : 7_000);
+    let enriched = items;
+    if (typeof ad.enhanceSearchListings === 'function' && items.length) {
+      try {
+        enriched = (await ad.enhanceSearchListings(items)) || items;
+      } catch {
+        enriched = items;
+      }
+    }
     const q = Root.getSearchQueryFromUrl?.(location.href) || '';
-    await Root.saveComps(ad.id, items, { searchUrl: location.href, query: q });
+    await Root.saveComps(ad.id, enriched, { searchUrl: location.href, query: q });
+    if (typeof ad.enhanceMissingSearchImages === 'function') {
+      try {
+        ad.enhanceMissingSearchImages(enriched, { searchUrl: location.href, query: q });
+      } catch {
+        /* ignore */
+      }
+    }
     const latest = await chrome.storage.local.get(['marketScrapeAutoCollect']);
     const currentFlags = latest.marketScrapeAutoCollect || flags;
     const next = { ...currentFlags, [ad.id]: false };

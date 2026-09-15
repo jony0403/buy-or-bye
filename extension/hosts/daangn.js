@@ -578,7 +578,7 @@
 
     for (const source of root.querySelectorAll('source[srcset]')) {
       const url = usableSearchImageUrl(firstSearchSrcsetUrl(source.getAttribute('srcset')));
-      if (isDaangnArticleImageUrl(url)) return url;
+      if (isDaangnArticleImageUrl(url) || isListingImageUrl(url)) return url;
     }
     return '';
   }
@@ -732,7 +732,9 @@
       targets.map(async (item) => {
         if (item.imageUrl) return;
         const imageUrl = await fetchSearchListingImage(item.url);
-        if (imageUrl && isDaangnArticleImageUrl(imageUrl)) item.imageUrl = imageUrl;
+        if (imageUrl && (isDaangnArticleImageUrl(imageUrl) || isListingImageUrl(imageUrl))) {
+          item.imageUrl = imageUrl;
+        }
       })
     );
 
@@ -822,7 +824,7 @@
       let best = null;
       for (const img of document.querySelectorAll('img')) {
         const url = imageFromImg(img, { relaxed: true });
-        if (!url || !isDaangnArticleImageUrl(url)) continue;
+        if (!url || !(isDaangnArticleImageUrl(url) || isListingImageUrl(url))) continue;
         const r = img.getBoundingClientRect?.();
         if (!r || r.width < 32 || r.height < 32) continue;
         const ix = r.left + r.width / 2;
@@ -948,7 +950,7 @@
         price: isFree ? 0 : price,
         priceLabel: isFree ? '나눔' : price != null ? formatWon(price) : priceM?.[0] || '—',
         url: link.href.split('?')[0],
-        imageUrl: imageUrl || '',
+        ...(imageUrl ? { imageUrl } : {}),
         ...(saleStatus ? { saleStatus } : {}),
       });
     };
@@ -984,6 +986,7 @@
     isSearchPage,
     harvestSearchListings,
     enhanceSearchListings: fillMissingSearchImages,
+    enhanceMissingSearchImages,
     guessItemId: () => extractItemIdFromUrl(),
     async fetchListing(itemId) {
       const p = await getProductFromPage();

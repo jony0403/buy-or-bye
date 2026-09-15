@@ -18,14 +18,12 @@
       if (!key) continue;
       const existingIndex = seen.get(key);
       if (existingIndex != null) {
-        if (Object.prototype.hasOwnProperty.call(item, 'imageUrl')) {
-          if (item.imageUrl) {
-            out[existingIndex] = { ...out[existingIndex], imageUrl: item.imageUrl };
-          } else if (out[existingIndex].imageUrl) {
-            out[existingIndex] = { ...out[existingIndex] };
-            delete out[existingIndex].imageUrl;
-          }
-        }
+        const prev = out[existingIndex];
+        const merged = { ...prev, ...item };
+        // 빈 imageUrl로 기존 썸네일을 지우지 않는다.
+        if (!item.imageUrl && prev.imageUrl) merged.imageUrl = prev.imageUrl;
+        if (!merged.imageUrl) delete merged.imageUrl;
+        out[existingIndex] = merged;
         continue;
       }
       seen.set(key, out.length);

@@ -436,6 +436,7 @@ function persistAiCaches() {
       JSON.stringify({
         relatedRequestedKeys: setToPersistableArray(relatedRequestedKeys),
         stageThreeActiveKeys: setToPersistableArray(stageThreeActiveKeys),
+        stageTwoCompletedKeys: setToPersistableArray(stageTwoCompletedKeys),
         stageFiveActiveKeys: setToPersistableArray(stageFiveActiveKeys),
         productSummaries: mapToPersistableObject(productSummaries),
         productRiskAnalyses: mapToPersistableObject(productRiskAnalyses),
@@ -464,6 +465,7 @@ function loadAiCaches() {
       const parsed = JSON.parse(raw);
       restorePersistedSet(relatedRequestedKeys, parsed.relatedRequestedKeys);
       restorePersistedSet(stageThreeActiveKeys, parsed.stageThreeActiveKeys);
+      restorePersistedSet(stageTwoCompletedKeys, parsed.stageTwoCompletedKeys);
       restorePersistedSet(stageFiveActiveKeys, parsed.stageFiveActiveKeys);
       restorePersistedMap(productSummaries, parsed.productSummaries);
       restorePersistedMap(productRiskAnalyses, parsed.productRiskAnalyses);
@@ -1191,6 +1193,9 @@ function isStepTwoFlowComplete(item) {
 }
 
 function isStepTwoDone(item) {
+  const key = summaryKey(item);
+  // Step 3 진입 후에는 Step 2 재분석(loading)으로 슬라이드가 뒤로 밀리지 않게 고정한다.
+  if (key && (stageTwoCompletedKeys.has(key) || stageThreeActiveKeys.has(key))) return true;
   return isStepTwoFlowComplete(item);
 }
 
@@ -1351,7 +1356,10 @@ function ensureStageTwoFollowups(item) {
 
 function syncStagePanels(item) {
   if (!$current || !item) return;
-  if (!isStepTwoDone(item)) {
+  const key = summaryKey(item);
+  // Step 3 진행 중이면 Step 2 재분석(loading)으로 패널을 걷어내지 않는다.
+  const holdFromStepThree = Boolean(key && (stageThreeActiveKeys.has(key) || stageTwoCompletedKeys.has(key)));
+  if (!isStepTwoDone(item) && !holdFromStepThree) {
     $current.querySelector('[data-stage-three-panel]')?.remove();
     $current.querySelector('[data-stage-four-panel]')?.remove();
     $current.querySelector('[data-stage-five-panel]')?.remove();
@@ -1376,9 +1384,18 @@ function canOpenStage(index) {
 
 function updateStageSlide() {
   const count = stageSlideCount();
+  const preferred = stageSlideIndex;
   stageSlideIndex = Math.max(0, Math.min(stageSlideIndex, count - 1));
-  while (stageSlideIndex > 0 && !canOpenStage(stageSlideIndex)) {
-    stageSlideIndex -= 1;
+  // Step 3 이상에서 작업 중이면 canOpenStage 일시 실패로 인덱스를 깎지 않는다.
+  const item = currentRenderedItem();
+  const key = summaryKey(item);
+  const holdStepThree = key && stageThreeActiveKeys.has(key) && preferred >= 2;
+  if (!holdStepThree) {
+    while (stageSlideIndex > 0 && !canOpenStage(stageSlideIndex)) {
+      stageSlideIndex -= 1;
+    }
+  } else if (stageSlideIndex < 2 && count > 2) {
+    stageSlideIndex = Math.min(2, count - 1);
   }
   $appShell?.setAttribute('data-stage-slide-index', String(stageSlideIndex));
   scheduleAutoRunNextStep();
@@ -1444,6 +1461,7 @@ function startStageTwo(item, key = summaryKey(item)) {
 
 function startStageThree(item, btn = null, key = summaryKey(item)) {
   if (!item || !key || !isStepTwoDone(item)) return false;
+  stageTwoCompletedKeys.add(key);
   const liveComps = effectiveStageThreeComps(item);
   const hasLiveListings = comparisonItems(liveComps).length > 0;
   const skipped = stageThreeComparisonSkippedKeys.has(key);
@@ -5127,6 +5145,9 @@ function renderSellerChatMessage(msg, index = -1) {
 }
 
 function renderSellerChatReplyForm(state) {
+  const busy = sellerChatReplyFormBusy(state);
+  const hasReply = Boolean(String(state?.sellerReply || '').trim());
+  const disabled = busy || !hasReply;
   return `
     <form class="seller-chat__empty-reply" data-seller-chat-reply-form>
       <span class="seller-chat__form-label seller-chat__form-label--reply">판매자 답변 입력</span>
@@ -5135,9 +5156,9 @@ function renderSellerChatReplyForm(state) {
         rows="2"
         placeholder="판매자 답변 붙여넣기: 예) 네 구성품은 박스랑 충전기 있고 하자는 없습니다."
         data-seller-chat-reply
-        ${sellerChatReplyFormBusy(state) ? 'disabled' : ''}
+        ${busy ? 'disabled' : ''}
       >${escapeHtml(state.sellerReply || '')}</textarea>
-      <button type="submit" class="seller-chat__send seller-chat__send--reply"${sellerChatReplyFormBusy(state) ? ' disabled' : ''}>답장 만들기</button>
+      <button type="submit" class="seller-chat__send seller-chat__send--reply"${disabled ? ' disabled' : ''} aria-disabled="${disabled ? 'true' : 'false'}">답장 만들기</button>
     </form>
   `;
 }
@@ -5376,7 +5397,10 @@ function refreshSellerChatDynamic(item, opts = {}) {
   });
   panel.querySelectorAll('.seller-chat__send').forEach((btn) => {
     const isReplySend = btn.classList.contains('seller-chat__send--reply');
-    btn.disabled = isReplySend ? sellerChatReplyFormBusy(state) : sellerChatFreeformInputBusy(state);
+    btn.disabled = isReplySend
+      ? sellerChatReplyFormBusy(state) || !String(state.sellerReply || '').trim()
+      : sellerChatFreeformInputBusy(state);
+    if (isReplySend) btn.setAttribute('aria-disabled', btn.disabled ? 'true' : 'false');
   });
   return true;
 }
@@ -6215,10 +6239,13 @@ function renderComparisonList(items, limit = COMPARISON_LIST_LIMIT) {
     .slice(0, limit)
     .map((c) => {
       const imageUrl = comparisonImageUrl(c);
+      const direct = imageUrl ? escapeAttr(imageUrl) : '';
+      const proxied = imageUrl ? escapeAttr(displayImageUrl(imageUrl)) : '';
+      // 마켓 CDN은 핫링크 차단이 잦아 프록시를 먼저 쓰고, 실패 시 원본 URL로 한 번 더 시도한다.
       return `<li title="${escapeAttr(`[${c.platformLabel || c.platform}] ${c.title || ''} ${c.priceLabel || ''}`)}">
           ${
             imageUrl
-              ? `<img class="comp-thumb" src="${escapeAttr(displayImageUrl(imageUrl))}" alt="" loading="lazy" referrerpolicy="no-referrer" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'comp-thumb comp-thumb--empty'}))" />`
+              ? `<img class="comp-thumb" src="${proxied || direct}" data-direct-src="${direct}" alt="" loading="lazy" referrerpolicy="no-referrer" decoding="async" onerror="if(this.dataset.directSrc&&this.src!==this.dataset.directSrc){this.src=this.dataset.directSrc;return;}this.replaceWith(Object.assign(document.createElement('span'),{className:'comp-thumb comp-thumb--empty'}))" />`
               : '<span class="comp-thumb comp-thumb--empty"></span>'
           }
           <span class="comp-copy">
@@ -10374,6 +10401,12 @@ function bindSellerChatFlow(root, item) {
     if (e.target.matches('[data-seller-chat-reply]')) {
       currentState.sellerReply = String(e.target.value || '');
       shouldPersist = true;
+      const replyBtn = e.target.closest('form')?.querySelector('.seller-chat__send--reply');
+      if (replyBtn) {
+        const disabled = sellerChatReplyFormBusy(currentState) || !String(currentState.sellerReply || '').trim();
+        replyBtn.disabled = disabled;
+        replyBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+      }
     }
     if (shouldPersist) persistAiCaches();
   });

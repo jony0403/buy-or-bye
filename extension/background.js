@@ -524,7 +524,7 @@ async function collectSearchTab(tabId, platform) {
   // ?? ???? load ?? ? React/Remix ??? ?? ???. 0? ??? ????
   // ???? ?? ?? ??? ?? ???? ???? ?? ?? ? ??? ??.
   await waitForTabComplete(tabId, platform === 'daangn' ? 8_000 : 6_000).catch(() => {});
-  const timeoutMs = platform === 'daangn' ? 15_000 : 12_000;
+  const timeoutMs = platform === 'daangn' ? 22_000 : 16_000;
   const startedAt = Date.now();
   let lastResult = null;
   while (Date.now() - startedAt < timeoutMs) {
@@ -533,7 +533,7 @@ async function collectSearchTab(tabId, platform) {
     const res = await sendMessageToTab(
       tabId,
       { type: 'COLLECT_SEARCH' },
-      Math.min(remaining, platform === 'daangn' ? 9_000 : 7_500)
+      Math.min(remaining, platform === 'daangn' ? 18_000 : 12_000)
     );
     lastResult = res;
     if (res?.ok && Number(res.count) > 0) return res;
@@ -755,7 +755,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg.type === 'OPEN_SEARCH_TABS') {
         const queries = dedupeSearchQueries(Array.isArray(msg.queries) ? msg.queries : [msg.query]);
         if (!queries.length) {
-          sendResponse({ ok: false, error: '검색어가 비었습니다.' });
+          sendResponse({ ok: false, error: '???? ?????.' });
           return;
         }
         searchCollectionGeneration += 1;
@@ -764,7 +764,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             await closeSearchCollectionTabsIfAny();
             await closeAllMatchingSearchTabs(queries, []);
             if (generation !== searchCollectionGeneration) {
-              return { ok: false, error: '검색이 취소되었습니다.' };
+              return { ok: false, error: '??? ???????.' };
             }
             const { marketScrapeLatest } = await chrome.storage.local.get('marketScrapeLatest');
             const forItemKey =
@@ -776,10 +776,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                 await closeTabIds(closeIds);
                 for (const id of closeIds) searchCollectionTabIds.delete(id);
               }
-              return { ok: false, error: '검색이 취소되었습니다.' };
+              return { ok: false, error: '??? ???????.' };
             }
             if (!closeIds.length) {
-              return { ok: false, error: '검색 탭을 열지 못했습니다.' };
+              return { ok: false, error: '?? ?? ?? ?????.' };
             }
             await persistSearchCollectionSession({
               forItemKey,
@@ -810,7 +810,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       if (typeof chrome.action?.openPopup !== 'function') {
-        sendResponse({ ok: false, error: 'openPopup 미지원' });
+        sendResponse({ ok: false, error: 'openPopup ???' });
         return;
       }
       await chrome.action.openPopup();
