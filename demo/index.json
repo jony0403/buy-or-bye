@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "title": "Buy or Bye 데모 매물",
-  "description": "확장 없이 바로 체험할 수 있는 선별 시나리오 5개. 기본은 라이브 Gemini 분석이며, 실패 시에만 캐시로 폴백합니다.",
+  "title": "샘플 매물",
+  "description": "확장 없이도 바로 분석 흐름을 볼 수 있는 선별 매물 5개입니다.",
   "scenarios": [
     {
       "id": "airpods-pro2-chronic",

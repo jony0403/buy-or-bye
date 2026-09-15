@@ -12147,29 +12147,31 @@ async function ensureListingImageAnalysis(item, opts = {}) {
 
 function renderChampionshipEmptyState() {
   return `
-    <article class="mini-card mini-card--empty championship-landing" data-championship-landing>
+    <article class="mini-card mini-card--empty sample-landing" data-sample-landing>
       <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="72" height="72" />
-      <p class="championship-kicker">Wanted AI Championship 2026 Demo</p>
-      <h2>Buy or Bye</h2>
-      <p class="empty">중고 매물의 정보 비대칭을 AI 다단계 분석으로 줄입니다. 확장 없이 아래 데모 5개로 바로 체험할 수 있습니다.</p>
-      <div class="championship-demo-grid" data-demo-grid>
-        <p class="mini-muted">데모 목록을 불러오는 중…</p>
-      </div>
-      <div class="championship-ext">
-        <h3>실제 매물도 분석하려면</h3>
-        <p class="empty empty-sub">Chrome 확장으로 당근·번개·중고나라 매물을 보낼 수 있습니다.</p>
-        <div class="championship-ext-actions">
-          <a class="btn" href="/downloads/buy-or-bye-extension.zip">확장 프로그램 ZIP 받기</a>
-          <button type="button" class="btn btn--ghost" data-ext-help>설치 방법</button>
+      <h2>매물 대기</h2>
+      <p class="empty">왼쪽 URL로 중고나라·번개장터·당근 링크를 불러오거나, 아래 샘플로 바로 분석을 시작해 보세요.</p>
+      <div class="sample-demo-block">
+        <p class="sample-section-label">샘플 매물</p>
+        <div class="sample-demo-grid" data-demo-grid>
+          <p class="mini-muted">샘플을 불러오는 중…</p>
         </div>
-        <ol class="championship-ext-steps" data-ext-steps hidden>
-          <li>ZIP을 풀어 폴더를 준비합니다.</li>
-          <li>Chrome에서 <code>chrome://extensions</code>를 엽니다.</li>
-          <li>개발자 모드를 켠 뒤 「압축해제된 확장 프로그램을 로드합니다」에서 폴더를 선택합니다.</li>
-          <li>매물 상세 페이지에서 확장 아이콘을 누르면 이 분석 웹으로 전송됩니다.</li>
+      </div>
+      <div class="sample-ext-block">
+        <p class="sample-section-label">확장 프로그램 <span class="mini-muted">(선택)</span></p>
+        <p class="empty empty-sub">실제 매물 페이지에서 한 번에 보내려면 Chrome 확장을 설치하세요.</p>
+        <div class="sample-ext-actions">
+          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip">ZIP 받기</a>
+          <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 보기</button>
+        </div>
+        <ol class="sample-ext-steps" data-ext-steps hidden>
+          <li>받은 ZIP을 풀어 폴더로 둡니다.</li>
+          <li>Chrome 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
+          <li>오른쪽 위 <strong>개발자 모드</strong>를 켭니다.</li>
+          <li><strong>압축해제된 확장 프로그램을 로드합니다</strong>에서 방금 푼 폴더를 선택합니다.</li>
+          <li>당근·번개·중고나라 매물 상세에서 확장 아이콘을 누르면 이 분석 화면으로 전송됩니다.</li>
         </ol>
       </div>
-      <p class="empty empty-sub championship-stack">스택: Chrome MV3 확장 · Node 분석 서버 · OpenAI GPT(검색·멀티모달·JSON 파이프라인)</p>
     </article>
   `;
 }
@@ -12178,7 +12180,7 @@ async function fetchDemoCatalog() {
   if (demoCatalogCache) return demoCatalogCache;
   const res = await fetch('/api/demo/scenarios');
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || '데모 목록을 불러오지 못했습니다.');
+  if (!res.ok) throw new Error(data.error || '샘플 목록을 불러오지 못했습니다.');
   demoCatalogCache = data;
   return data;
 }
@@ -12197,7 +12199,7 @@ async function bindChampionshipEmptyState(root) {
     grid.innerHTML = list
       .map(
         (s) => `
-        <button type="button" class="championship-demo-card" data-demo-id="${escapeAttr(s.id)}">
+        <button type="button" class="sample-demo-card" data-demo-id="${escapeAttr(s.id)}">
           <strong>${escapeHtml(s.label || s.id)}</strong>
           <span>${escapeHtml(s.blurb || '')}</span>
         </button>
@@ -12224,7 +12226,7 @@ function showDemoFallbackBanner(message) {
     document.body.appendChild(bar);
   }
   bar.hidden = false;
-  bar.textContent = message || '라이브 AI 호출에 실패해 데모 캐시 결과로 표시합니다.';
+  bar.textContent = message || '일시적으로 준비된 분석 결과로 표시합니다.';
 }
 
 function hideDemoFallbackBanner() {

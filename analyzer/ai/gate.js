@@ -131,7 +131,7 @@
     const submitBtn = form?.querySelector('button[type="submit"]');
 
     if (!apiKey) {
-      if (err) err.textContent = 'platform.openai.com에서 발급한 OpenAI API 키를 입력하세요.';
+      if (err) err.textContent = 'OpenAI API 키를 입력하세요.';
       return;
     }
 

@@ -14,18 +14,15 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-    <link rel="stylesheet" href="style.css?v=20260916-championship" />
+    <link rel="stylesheet" href="style.css?v=20260916-landing" />
   </head>
   <body>
     <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
       <div class="ai-gate__panel">
         <h2 id="aiGateTitle" class="ai-gate__title">OpenAI API 설정</h2>
           <p class="ai-gate__desc">
-          대회 데모 서버에 API 키가 설정돼 있으면 이 화면 없이 바로 시작할 수 있습니다.
-          개인 키로 쓰려면
           <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI Platform</a>
-          에서 발급한 API 키를 입력하세요. 키는 이 브라우저에만 저장됩니다.
-          <strong>저장할 때마다 서버가 OpenAI API로 연결을 테스트합니다.</strong>
+          에서 발급한 API 키를 입력하면 분석을 시작할 수 있습니다. 키는 이 브라우저에만 저장됩니다.
         </p>
         <form id="aiGateForm" class="ai-gate__form">
           <label class="ai-gate__label" for="aiApiKey">API 키</label>
@@ -233,8 +230,8 @@
         <article class="mini-card mini-card--empty">
           <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="72" height="72" />
           <h2>매물 대기</h2>
-          <p class="empty">왼쪽 URL 버튼을 눌러 중고나라·번개장터·당근 링크를 붙여넣거나, 매물 페이지 우측 하단의 확장 아이콘을 눌러 분석 웹으로 전송하세요.</p>
-          <p class="empty empty-sub">매물이 들어오면 제품 식별, 하자·고질병 체크, 가격 참고자료, 최종 구매 판단, 판매자 문구 추천까지 순서대로 정리됩니다.</p>
+          <p class="empty">왼쪽 URL로 매물 링크를 불러오거나, 샘플 매물로 바로 분석을 시작해 보세요.</p>
+          <p class="empty empty-sub">매물이 들어오면 제품 식별, 하자·고질병 체크, 가격 참고, 구매 판단까지 순서대로 정리됩니다.</p>
         </article>
       </section>
     </main>
@@ -276,7 +273,7 @@
 
     <script src="ai/config.js?v=20260916-openai"></script>
     <script src="ai/client.js?v=20260916-openai"></script>
-    <script src="ai/gate.js?v=20260916-openai"></script>
-    <script src="app.js?v=20260916-openai"></script>
+    <script src="ai/gate.js?v=20260916-landing"></script>
+    <script src="app.js?v=20260916-landing"></script>
   </body>
 </html>
