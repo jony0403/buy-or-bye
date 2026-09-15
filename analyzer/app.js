@@ -5935,8 +5935,11 @@ function scoreComparisonItems(item, comps) {
     .sort((a, b) => b.score - a.score || comparisonPlatformRank(a.candidate) - comparisonPlatformRank(b.candidate) || a.index - b.index);
 }
 
-function balancedComparisonItems(scoredItems, limit = 16) {
-  const platformOrder = ['joongna', 'bunjang', 'daangn'];
+const COMPARISON_LIST_LIMIT = 10;
+
+function balancedComparisonItems(scoredItems, limit = COMPARISON_LIST_LIMIT) {
+  // 번개·당근을 우선 균등 배분하고, 중고나라는 남는 칸만 채운다.
+  const platformOrder = ['bunjang', 'daangn', 'joongna'];
   const buckets = Object.fromEntries(platformOrder.map((id) => [id, []]));
   const fallback = [];
   for (const item of scoredItems) {
@@ -5944,7 +5947,12 @@ function balancedComparisonItems(scoredItems, limit = 16) {
     if (buckets[id]) buckets[id].push(item);
     else fallback.push(item);
   }
-  const quotas = { joongna: 6, bunjang: 6, daangn: 3 };
+  const half = Math.ceil(limit / 2);
+  const quotas = {
+    bunjang: half,
+    daangn: half,
+    joongna: Math.max(1, Math.floor(limit / 5)),
+  };
   const selected = [];
   const seen = new Set();
   const take = (entry) => {
@@ -5957,11 +5965,12 @@ function balancedComparisonItems(scoredItems, limit = 16) {
   for (const id of platformOrder) {
     for (const entry of buckets[id].slice(0, quotas[id])) take(entry);
   }
+  // 라운드로빈으로 플랫폼을 번갈아 채워 한쪽에 몰리지 않게 한다.
   let cursor = 0;
   while (selected.length < limit) {
     let progressed = false;
     for (const id of platformOrder) {
-      const entry = buckets[id][quotas[id] + cursor];
+      const entry = buckets[id][cursor];
       if (entry) progressed = take(entry) || progressed;
       if (selected.length >= limit) break;
     }
@@ -5969,14 +5978,29 @@ function balancedComparisonItems(scoredItems, limit = 16) {
     cursor += 1;
   }
   for (const entry of fallback) take(entry);
-  return selected.map(({ candidate }) => candidate);
+  // 최종 표시 순서도 번개↔당근 교차
+  const byPlatform = { bunjang: [], daangn: [], joongna: [], other: [] };
+  for (const entry of selected) {
+    const id = entry.candidate?.platform;
+    if (byPlatform[id]) byPlatform[id].push(entry);
+    else byPlatform.other.push(entry);
+  }
+  const interleaved = [];
+  const maxLen = Math.max(byPlatform.bunjang.length, byPlatform.daangn.length, byPlatform.joongna.length);
+  for (let i = 0; i < maxLen; i += 1) {
+    if (byPlatform.bunjang[i]) interleaved.push(byPlatform.bunjang[i]);
+    if (byPlatform.daangn[i]) interleaved.push(byPlatform.daangn[i]);
+    if (byPlatform.joongna[i]) interleaved.push(byPlatform.joongna[i]);
+  }
+  for (const entry of byPlatform.other) interleaved.push(entry);
+  return interleaved.slice(0, limit).map(({ candidate }) => candidate);
 }
 
-function comparisonFilterCandidates(item, comps, limit = 16) {
+function comparisonFilterCandidates(item, comps, limit = COMPARISON_LIST_LIMIT) {
   return balancedComparisonItems(scoreComparisonItems(item, comps), limit);
 }
 
-function fallbackComparisonMatches(item, comps, limit = 8) {
+function fallbackComparisonMatches(item, comps, limit = COMPARISON_LIST_LIMIT) {
   const scored = scoreComparisonItems(item, comps);
   const positive = scored.filter((entry) => entry.score > 0);
   const source = positive.length ? positive : scored;
@@ -6082,7 +6106,7 @@ function filteredComparisonItems(item, comps) {
       index,
       score: scoreMap.get(comparisonItemKey(candidate)) ?? 0,
     })),
-    matched.length
+    COMPARISON_LIST_LIMIT
   );
 }
 
@@ -6096,7 +6120,7 @@ function usedPriceGuideKey(item) {
 }
 
 function comparisonImageUrl(item) {
-  const url = String(item?.imageUrl || '').trim();
+  const url = String(item?.imageUrl || item?.thumbnailUrl || item?.imageUrls?.[0] || '').trim();
   if (!url) return '';
   let decoded = url.toLowerCase();
   for (let i = 0; i < 2; i += 1) {
@@ -6115,6 +6139,8 @@ function comparisonImageUrl(item) {
   )
     return '';
   if (/\.svg(?:$|[?#&])/i.test(decoded)) return '';
+  // 당근/번개 실매물 썸네일은 통과
+  if (/karrot|daangn|bunjang|bgzt|joongna|cloudfront|media\.|img\./i.test(decoded)) return url;
   if (/\/origin\/article\//i.test(decoded) && /karrotmarket|karroter|daangn|cloudfront/i.test(decoded)) return url;
   if (
     /\/_next\/static\/|\/static\/media\/|open[\s._-]*graph|opengraph|og[\s._-]*image|share[\s._-]*image|(?:^|[\/_.-])landing(?:[\/_.-]|$)|home[\s._-]*banner|(?:^|[\/_.-])intro(?:[\/_.-]|$)|(?:^|[\/_.-])brand(?:[\/_.-]|$)|(?:^|[\/_.-])marketing(?:[\/_.-]|$)|(?:^|[\/_.-])promotion(?:[\/_.-]|$)|(?:^|[\/_.-])promo(?:[\/_.-]|$)|(?:^|[\/_.-])download(?:[\/_.-]|$)|(?:^|[\/_.-])advert(?:[\/_.-]|$)|(?:^|[\/_.-])banner(?:[\/_.-]|$)/i.test(
@@ -6125,7 +6151,7 @@ function comparisonImageUrl(item) {
   return url;
 }
 
-function renderComparisonList(items, limit = 8) {
+function renderComparisonList(items, limit = COMPARISON_LIST_LIMIT) {
   const rows = items
     .slice(0, limit)
     .map((c) => {
@@ -6133,7 +6159,7 @@ function renderComparisonList(items, limit = 8) {
       return `<li title="${escapeAttr(`[${c.platformLabel || c.platform}] ${c.title || ''} ${c.priceLabel || ''}`)}">
           ${
             imageUrl
-              ? `<img class="comp-thumb" src="${escapeAttr(imageUrl)}" alt="" loading="lazy" />`
+              ? `<img class="comp-thumb" src="${escapeAttr(imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" decoding="async" />`
               : '<span class="comp-thumb comp-thumb--empty"></span>'
           }
           <span class="comp-copy">
@@ -8160,6 +8186,12 @@ function renderCompsBlock(item, comps) {
   const { filterKey, state: filterState } = resolvedComparisonFilterState(item, comps);
   const currentFilterKey = comparisonFilterKey(item, comps);
   const currentFilterState = currentFilterKey ? comparisonFilters.get(currentFilterKey) : null;
+  const allMatchedFull = (() => {
+    if (!filterState || filterState.status !== 'done') return [];
+    const all = comparisonItems(comps);
+    const accepted = new Set((filterState.matches || []).map((match) => String(match.key || '').trim()).filter(Boolean));
+    return all.filter((candidate) => accepted.has(comparisonItemKey(candidate)));
+  })();
   const allMatched = filteredComparisonItems(item, comps) || [];
   if (
     (!filterState || filterState.status === 'loading') &&
@@ -8175,20 +8207,22 @@ function renderCompsBlock(item, comps) {
     return `<p class="meta empty">동일 제품 판별에 실패했습니다.</p>`;
   }
   if (!allMatched.length) {
-    const key = summaryKey(item);
-    if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
-      return renderCompsLoading('AI가 더 맞는 검색어를 다시 생각하고 있습니다...', searchQueryRegenerations.get(key), 'searchQuery');
+    const emptyKey = summaryKey(item);
+    if ((stageThreeAutoQueryRetryCounts.get(emptyKey) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
+      return renderCompsLoading('AI가 더 맞는 검색어를 다시 생각하고 있습니다...', searchQueryRegenerations.get(emptyKey), 'searchQuery');
     }
-    return renderStageThreeEmptySearch(key);
+    return renderStageThreeEmptySearch(emptyKey);
   }
-  const st = compStats(allMatched);
+  const st = compStats(allMatchedFull.length ? allMatchedFull : allMatched);
+  const shown = allMatched.length;
+  const total = allMatchedFull.length || shown;
   const statsTxt = st
-    ? `${st.n}건 · 중앙 ${formatWon(st.median)} · ${formatWon(st.min)} ~ ${formatWon(st.max)}`
-    : `${allMatched.length}건`;
+    ? `${shown}건 표시${total > shown ? ` · 수집 ${total}건` : ''} · 중앙 ${formatWon(st.median)} · ${formatWon(st.min)} ~ ${formatWon(st.max)}`
+    : `${shown}건 표시`;
   const matchNote = filterState?.fallback
     ? 'AI 동일 제품 판별 결과가 없어 수집된 비교 매물을 그대로 표시합니다.'
     : '같은 제품으로 판별된 매물';
-  const listLimit = filterState?.fallback ? Math.max(allMatched.length, 8) : 8;
+  const listLimit = COMPARISON_LIST_LIMIT;
   const caution =
     '중고 매물 가격은 상태, 구성품, 보증, 판매완료 여부, 지역, 거래조건에 따라 크게 달라집니다. 가품일 가능성도 있으니 표시된 가격은 참고용 가격 자료로만 보고 그대로 믿고 구매 판단하면 안 됩니다.';
   return `
@@ -10894,15 +10928,16 @@ async function ensureUsedPriceGuide(item, opts = {}) {
       ...usedPriceGuidePayload(item, payloadComps),
       apiKey,
     });
-    await completeUsedPriceGuideProgress(item, () => {
-      if (selectedKey === summaryKey(item)) refreshStageThreeSection(item);
-    });
     const guide = data.guide || {};
     if (Array.isArray(guide.conditionPrices)) {
       guide.conditionPrices = contiguousConditionPrices(guide.conditionPrices);
     }
+    // 100%만 먼저 찍고 표는 늦게 뜨던 문제: done을 먼저 저장한 뒤 바로 그린다.
     usedPriceGuides.set(key, { status: 'done', guide });
     persistAiCaches();
+    const listingKey = usedPriceGuideProgressKey(item);
+    if (listingKey) usedPriceGuideProgresses.delete(listingKey);
+    if (selectedKey === summaryKey(item)) refreshStageThreeSection(item);
   } catch (e) {
     usedPriceGuides.set(key, {
       status: 'error',

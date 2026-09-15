@@ -15975,33 +15975,83 @@ body.theme-dark .sample-ext-shot img {
   display: none !important;
 }
 
-/* ===== Step 4 start card: stop horizontal squash (must beat body .app-shell rules) ===== */
+/* Public: settings button must never appear (even if old HTML/cache injects it) */
+body:not(.ulsa-dev-settings) [data-rail-action="settings"],
+body:not(.ulsa-dev-settings) .dashboard-rail__nav [data-rail-action="settings"],
+body:not(.ulsa-dev-settings) .dashboard-rail [data-rail-action="settings"],
+body:not(.ulsa-dev-settings) #btnAiSettings,
+body:not(.ulsa-dev-settings) [data-help-settings] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  left: -9999px !important;
+  opacity: 0 !important;
+  clip: rect(0, 0, 0, 0) !important;
+}
+body.ulsa-dev-settings [data-rail-action="settings"],
+body.ulsa-dev-settings .dashboard-rail__nav [data-rail-action="settings"],
+body.ulsa-dev-settings #btnAiSettings,
+body.ulsa-dev-settings [data-help-settings] {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: revert !important;
+  padding: revert !important;
+  overflow: visible !important;
+  position: static !important;
+  left: auto !important;
+  opacity: 1 !important;
+  clip: auto !important;
+}
+body.ulsa-dev-settings #btnAiSettings {
+  display: inline-flex !important;
+}
+body:not(.ulsa-dev-settings) #aiGate {
+  display: none !important;
+}
+
+/* ===== Step 4 start card: full-width like other step CTAs ===== */
 body .app-shell .stage-four-zone.is-active:has(.stage-four-start-card) .stage-four-zone-grid,
 body .app-shell.app-shell--slide .stage-four-zone.is-active:has(.stage-four-start-card) .stage-zone-grid,
 body .app-shell.app-shell--slide .stage-four-zone.is-active:has(.stage-four-start-card) .stage-four-zone-grid {
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
-  place-items: center !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  justify-content: stretch !important;
+  align-items: stretch !important;
+  place-items: stretch !important;
   width: 100% !important;
   max-width: 100% !important;
 }
 body .app-shell.app-shell--slide .stage-four-zone.is-active:has(.stage-four-start-card) {
-  width: min(100%, 38rem) !important;
-  max-width: calc(100vw - 3rem) !important;
-  padding: 0.92rem 1.05rem 1.15rem 1.05rem !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-inline: 0 !important;
+  padding: 1rem 1.2rem 1.15rem 5.35rem !important;
 }
 body .app-shell .stage-three-card.stage-four-start-card,
 body .app-shell .purchase-receipt-card.stage-start-card.stage-four-start-card,
 body .app-shell.app-shell--slide .stage-three-card.stage-four-start-card,
 body .app-shell.app-shell--slide .purchase-receipt-card.stage-start-card.stage-four-start-card {
   box-sizing: border-box !important;
-  width: min(100%, 32rem) !important;
-  max-width: 32rem !important;
-  min-height: clamp(16rem, 36svh, 22rem) !important;
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: clamp(11rem, 24svh, 15rem) !important;
   max-height: none !important;
-  margin: 0 auto !important;
-  padding: 1.5rem 1.45rem 1.55rem !important;
+  margin: 0 !important;
+  padding: clamp(1.35rem, 3vw, 2rem) clamp(2.2rem, 4.5vw, 3.6rem) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -16020,7 +16070,7 @@ body .app-shell .purchase-receipt-card.stage-start-card.stage-four-start-card .s
 body .app-shell.app-shell--slide .stage-three-card.stage-four-start-card .stage-two-ready,
 body .app-shell.app-shell--slide .purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-ready {
   width: 100% !important;
-  max-width: 28rem !important;
+  max-width: 54rem !important;
   margin-inline: auto !important;
   text-align: center !important;
   gap: 0.85rem !important;
@@ -16029,61 +16079,17 @@ body .app-shell .stage-three-card.stage-four-start-card .stage-two-ready h3,
 body .app-shell .purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-ready h3,
 body .app-shell.app-shell--slide .stage-three-card.stage-four-start-card .stage-two-ready h3,
 body .app-shell.app-shell--slide .purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-ready h3 {
-  font-size: clamp(1.08rem, 2.2vw, 1.32rem) !important;
-  line-height: 1.35 !important;
-  white-space: normal !important;
+  max-width: none !important;
+  font-size: clamp(1.05rem, 2vw, 1.35rem) !important;
+  line-height: 1.25 !important;
 }
 body .app-shell .stage-three-card.stage-four-start-card .stage-two-ready p:not(.stage-two-card-label),
 body .app-shell .purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-ready p:not(.stage-two-card-label),
 body .app-shell.app-shell--slide .stage-three-card.stage-four-start-card .stage-two-ready p:not(.stage-two-card-label),
 body .app-shell.app-shell--slide .purchase-receipt-card.stage-start-card.stage-four-start-card .stage-two-ready p:not(.stage-two-card-label) {
-  font-size: 0.9rem !important;
-  line-height: 1.5 !important;
-  max-width: 26rem !important;
+  max-width: 48rem !important;
   margin-inline: auto !important;
-}
-body .app-shell .stage-three-card.stage-four-start-card .stage-start-card__cta,
-body .app-shell .purchase-receipt-card.stage-start-card.stage-four-start-card .stage-start-card__cta {
-  display: inline-flex !important;
-  margin-top: 0.35rem !important;
-  min-height: 2.4rem !important;
-  padding: 0.55rem 1.1rem !important;
-}
-
-/* Public: settings button must never appear (even if old HTML/cache injects it) */
-[data-rail-action="settings"],
-#btnAiSettings,
-[data-help-settings] {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  position: absolute !important;
-  left: -9999px !important;
-}
-body.ulsa-dev-settings [data-rail-action="settings"],
-body.ulsa-dev-settings #btnAiSettings,
-body.ulsa-dev-settings [data-help-settings] {
-  display: flex !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
-  width: auto !important;
-  height: auto !important;
-  margin: revert !important;
-  padding: revert !important;
-  overflow: visible !important;
-  position: static !important;
-  left: auto !important;
-}
-body.ulsa-dev-settings #btnAiSettings {
-  display: inline-flex !important;
-}
-body:not(.ulsa-dev-settings) #aiGate {
-  display: none !important;
+  font-size: clamp(0.78rem, 1.15vw, 0.9rem) !important;
 }
 
 /* Fatal API error modal */

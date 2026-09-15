@@ -46,7 +46,7 @@
       el.remove();
     });
     document.querySelectorAll('.help-shortcuts div').forEach((row) => {
-      if (/AI 설정/i.test(row.textContent || '')) row.remove();
+      if (/AI 설정|설정\s*\(S\)|^설정$/i.test(row.textContent || '')) row.remove();
     });
     const gate = document.getElementById('aiGate');
     if (gate) {
@@ -56,7 +56,7 @@
   }
 
   function ensureDevSettingsButtons() {
-    const rail = document.querySelector('.dashboard-rail__nav, nav.dashboard-rail__nav, .dashboard-rail nav');
+    if (!isDevSettingsEnabled()) return;
     const shortcutsBtn = document.querySelector('[data-rail-action="shortcuts"]');
     if (shortcutsBtn && !document.querySelector('[data-rail-action="settings"]')) {
       const btn = document.createElement('button');
