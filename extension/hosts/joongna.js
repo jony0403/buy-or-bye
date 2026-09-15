@@ -351,7 +351,6 @@
     const items = [];
     const seen = new Set();
     for (const a of document.querySelectorAll('a[href*="/product/"]')) {
-      if (MS.isInsideNoiseSection?.(a)) continue;
       let url;
       try {
         url = new URL(a.href, location.origin);

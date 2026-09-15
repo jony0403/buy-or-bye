@@ -397,7 +397,7 @@ async function openSearchTabs(tab) {
   }
   if (!apiKey) {
     setStatus(
-      '확장에 API 키가 없습니다. `127.0.0.1:3920` 분석 웹을 열고 「저장하고 시작」으로 연결 테스트까지 완료하세요. (로컬 서버 `node analyzer-server.mjs` 필요)',
+      '확장프로그램에 API 키가 없습니다. `127.0.0.1:3920` 분석 웹을 열고 「저장하고 시작」으로 연결 테스트까지 완료하세요. (로컬 서버 `node analyzer-server.mjs` 필요)',
       'err'
     );
     return;
@@ -505,7 +505,7 @@ async function sendToWeb() {
 async function init() {
   const tab = await activeTab();
   if (!tab?.id || !isInjectable(tab.url)) {
-    showErrorPanel('번개장터·당근·중고나라 사이트에서 확장을 열어 주세요.');
+    showErrorPanel('번개장터·당근·중고나라 사이트에서 확장프로그램을 열어 주세요.');
     return;
   }
   if (isSearchPageUrl(tab.url)) {

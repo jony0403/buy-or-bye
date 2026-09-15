@@ -91,7 +91,7 @@
     return findProductInLoaderData(ctx?.state?.loaderData);
   }
 
-  const DETAIL_PATH_RE = /\/(?:kr\/)?buy-sell\/[^/?#]+-([a-z0-9]+)\/?$/i;
+  const DETAIL_PATH_RE = /\/(?:kr\/)?buy-sell\/(?:[^/?#]*-)?([a-z0-9]{6,})\/?$/i;
 
   function extractItemIdFromUrl(url = location.href) {
     try {
@@ -901,7 +901,7 @@
     };
 
     const pushSearchItem = (link, scope) => {
-      if (!link || MS.isInsideNoiseSection(link)) return;
+      if (!link) return;
       let path;
       try {
         path = new URL(link.href, location.origin).pathname;
@@ -959,7 +959,6 @@
     }
 
     for (const a of document.querySelectorAll('a[href*="/buy-sell/"]')) {
-      if (MS.isInsideNoiseSection(a)) continue;
       let path;
       try {
         path = new URL(a.href, location.origin).pathname;

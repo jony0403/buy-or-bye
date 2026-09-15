@@ -58,9 +58,12 @@ const productRiskYoutubeAnalyses = new Map();
 const listingTextAnalyses = new Map();
 /** @type {string} */
 let activeDemoScenarioId = '';
+let stayOnLanding = false;
+let landingHoldKey = '';
+let landingHoldExportedAt = '';
 let extensionPresent = false;
 let extensionProbeTimer = 0;
-const EXT_REQUIRED_TITLE = 'Chrome 확장 프로그램을 설치해야 사용할 수 있습니다.';
+const EXT_REQUIRED_TITLE = 'Chrome 확장프로그램을 설치해야 사용할 수 있습니다.';
 let demoFallbackUsed = false;
 let demoCatalogCache = null;
 const listingImageAnalyses = new Map();
@@ -8206,7 +8209,7 @@ function renderStageThreeEmptySearch(key = '') {
   return `
     <div class="stage-three-empty-search">
       <p class="stage-three-empty-search__text">비교 매물 목록을 가져오지 못했습니다.</p>
-      <p class="meta">아래 중고 시세 참고표만으로도 가격 판단은 가능합니다. 확장이 있으면 「다시 검색·정리」로 다시 시도하세요.</p>
+      <p class="meta">아래 중고 시세 참고표만으로도 가격 판단은 가능합니다. 확장프로그램이 있으면 「다시 검색·정리」로 다시 시도하세요.</p>
       ${
         key
           ? `<button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-skip-comps="${escapeAttr(key)}">비교 매물 스킵하고 계속</button>`
@@ -8228,7 +8231,7 @@ function renderStageThreeRestoredSearchState(item) {
     return `
       <div class="stage-three-restored-search">
         <p class="stage-three-status-pill">저장된 비교 결과 ${matchCount}건 · 새로고침·최근 매물에서 이어서 불러왔습니다.</p>
-        <p class="meta stage-three-restored-search__hint">목록을 다시 보려면 상단 「다시 검색·정리」를 누르세요. (확장 프로그램 필요)</p>
+        <p class="meta stage-three-restored-search__hint">목록을 다시 보려면 상단 「다시 검색·정리」를 누르세요. (확장프로그램 필요)</p>
       </div>
     `;
   }
@@ -8244,7 +8247,7 @@ function renderStageThreeInterruptedSearch(key = '') {
   if (typeof extensionPresent !== 'undefined' && !extensionPresent) {
     return `
       <div class="stage-three-empty-search">
-        <p class="stage-three-empty-search__text">확장 프로그램이 없어 비교 매물 검색을 건너뜁니다.</p>
+        <p class="stage-three-empty-search__text">확장프로그램이 없어 비교 매물 검색을 건너뜁니다.</p>
         <p class="meta">아래 중고 시세 참고표로 가격을 확인하세요.</p>
         ${
           key
@@ -10677,11 +10680,30 @@ function clearCurrentAnalysisState() {
   window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
 }
 
+function releaseLandingHold() {
+  stayOnLanding = false;
+  landingHoldKey = '';
+  landingHoldExportedAt = '';
+}
+
+function shouldStayOnLanding(incoming) {
+  if (!stayOnLanding) return false;
+  if (!incoming) return true;
+  const key = itemKey(incoming);
+  if (!landingHoldKey) return false;
+  if (key !== landingHoldKey) return false;
+  if (!incoming.exportedAt || !landingHoldExportedAt) return true;
+  return incoming.exportedAt === landingHoldExportedAt;
+}
+
 function startNewAnalysis() {
   closeRailPanel();
   favoriteCompareOpen = false;
   renderFavoriteComparePanel();
   saveDirectAiChatState();
+  stayOnLanding = true;
+  landingHoldKey = latest ? itemKey(latest) : '';
+  landingHoldExportedAt = latest?.exportedAt || '';
   latest = null;
   selectedKey = null;
   comps = null;
@@ -10691,7 +10713,7 @@ function startNewAnalysis() {
   if ($urlImportInput) $urlImportInput.value = '';
   if ($railUrlInput) $railUrlInput.value = '';
   if ($urlImportStatus) $urlImportStatus.textContent = '';
-  if ($railStatus) $railStatus.textContent = '새 매물 링크를 붙여넣거나 확장 프로그램에서 전송해 주세요.';
+  if ($railStatus) $railStatus.textContent = '새 매물 링크를 붙여넣거나 확장프로그램에서 전송해 주세요.';
   setHistoryOpen(false);
   renderDirectAiPanel();
   renderItem(null);
@@ -11399,6 +11421,7 @@ $favoriteCompareModal?.addEventListener('click', (e) => {
   comps = restoredStageThreeComps(found, found.comps || comps);
   favoriteCompareOpen = false;
   renderFavoriteComparePanel();
+  releaseLandingHold();
   renderItem(found, comps);
   refreshDirectAiPanelForListingChange();
   void ensureProductSummary(found);
@@ -11931,6 +11954,7 @@ function renderHistoryList() {
         }
         selectedKey = key;
         comps = restoredStageThreeComps(found, found.comps || comps);
+        releaseLandingHold();
         renderItem(found, comps);
         refreshDirectAiPanelForListingChange();
         void ensureProductSummary(found);
@@ -12410,14 +12434,14 @@ function renderChampionshipEmptyState() {
         <div class="sample-landing__hero-copy">
           <p class="sample-landing__eyebrow">BUY OR BYE</p>
           <h2>중고 매물, 링크 하나로 판단까지</h2>
-          <p>샘플로 먼저 둘러보거나 확장을 설치해 실제 매물을 불러오세요.</p>
+          <p>샘플로 먼저 둘러보거나 확장프로그램을 설치해 실제 매물을 불러오세요.</p>
         </div>
       </header>
       <div class="sample-copy-guide" data-sample-copy-guide>
         <p><strong>중고 매물을 살지 말지, 이 화면에서 바로 판단하세요.</strong></p>
-        <p>아래 샘플을 누르면 Step 1~5 분석 흐름을 확장 없이 먼저 볼 수 있습니다.</p>
-        <p>실제 당근·번개장터·중고나라 매물을 불러오려면 Chrome 확장을 설치해야 합니다.</p>
-        <p>확장이 없으면 실제 매물 전송과 Step 3 유사매물 자동 수집이 제한됩니다.</p>
+        <p>아래 샘플을 누르면 Step 1~5 분석 흐름을 확장프로그램 없이 먼저 볼 수 있습니다.</p>
+        <p>실제 당근·번개장터·중고나라 매물을 불러오려면 Chrome 확장프로그램을 설치해야 합니다.</p>
+        <p>확장프로그램이 없으면 실제 매물 전송과 Step 3 유사매물 자동 수집이 제한됩니다.</p>
       </div>
       <section class="sample-guide-block" aria-labelledby="sampleGuideTitle">
         <div class="sample-section-heading">
@@ -12433,7 +12457,7 @@ function renderChampionshipEmptyState() {
           </div>
           <div class="sample-guide-card">
             <span class="sample-guide-card__number">2</span>
-            <div><strong>실제 매물 전송</strong><p>확장 설치 후 판매글 우측 하단 버튼으로 매물을 가져옵니다.</p></div>
+            <div><strong>실제 매물 전송</strong><p>확장프로그램 설치 후 판매글 우측 하단 버튼으로 매물을 가져옵니다.</p></div>
           </div>
           <div class="sample-guide-card">
             <span class="sample-guide-card__number">3</span>
@@ -12444,8 +12468,8 @@ function renderChampionshipEmptyState() {
       <aside class="sample-extension-notice" data-ext-notice>
         <span class="material-symbols-rounded" aria-hidden="true">extension</span>
         <div>
-          <strong data-ext-status>확장을 설치해야 실제 매물을 분석할 수 있어요</strong>
-          <p>확장 없이도 샘플 체험은 가능하지만, 실제 매물 불러오기와 Step 3 유사매물 자동 수집은 제한됩니다.</p>
+          <strong data-ext-status>확장프로그램을 설치해야 실제 매물을 분석할 수 있어요</strong>
+          <p>확장프로그램 없이도 샘플 체험은 가능하지만, 실제 매물 불러오기와 Step 3 유사매물 자동 수집은 제한됩니다.</p>
         </div>
       </aside>
       <div class="sample-demo-block">
@@ -12454,7 +12478,7 @@ function renderChampionshipEmptyState() {
             <p class="sample-section-label">샘플로 먼저 체험하기</p>
             <p class="sample-section-desc">설치 전에 대표 분석 사례를 바로 실행해 볼 수 있습니다.</p>
           </div>
-          <span class="sample-section-chip">확장 없이 가능</span>
+          <span class="sample-section-chip">확장프로그램 없이 가능</span>
         </div>
         <div class="sample-demo-grid" data-demo-grid>
           <p class="mini-muted">샘플을 불러오는 중…</p>
@@ -12464,12 +12488,12 @@ function renderChampionshipEmptyState() {
         <div class="sample-section-heading">
           <div>
             <p class="sample-section-label">실제 매물 분석 준비</p>
-            <p class="sample-section-desc">Chrome 확장 설치 후 당근·번개장터·중고나라 판매글을 바로 전송하세요.</p>
+            <p class="sample-section-desc">Chrome 확장프로그램 설치 후 당근·번개장터·중고나라 판매글을 바로 전송하세요.</p>
           </div>
           <span class="sample-section-chip sample-section-chip--required">실사용 필수</span>
         </div>
         <div class="sample-ext-actions">
-          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip" download>확장 ZIP 받기</a>
+          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip" download>확장프로그램 ZIP 받기</a>
           <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 자세히</button>
         </div>
         <div class="sample-ext-steps" data-ext-steps hidden>
@@ -12495,13 +12519,13 @@ function renderChampionshipEmptyState() {
             <li>
               「Buy or Bye」가 보이면 설치 완료입니다.
               <figure class="sample-ext-shot">
-                <img src="/install-guide/04-installed.jpg" alt="설치된 Buy or Bye 확장" width="720" height="auto" loading="lazy" />
+                <img src="/install-guide/04-installed.jpg" alt="설치된 Buy or Bye 확장프로그램" width="720" height="auto" loading="lazy" />
               </figure>
             </li>
             <li>
               Chrome 툴바의 <strong>퍼즐</strong> 버튼을 누른 뒤, 「Buy or Bye」 옆 <strong>핀</strong>을 눌러 아이콘을 고정합니다.
               <figure class="sample-ext-shot">
-                <img src="/install-guide/05-pin-extension.jpg" alt="Chrome 확장 목록에서 Buy or Bye 핀 고정" width="720" height="auto" loading="lazy" />
+                <img src="/install-guide/05-pin-extension.jpg" alt="Chrome 확장프로그램 목록에서 Buy or Bye 핀 고정" width="720" height="auto" loading="lazy" />
               </figure>
             </li>
             <li>
@@ -12619,17 +12643,28 @@ async function loadChampionshipDemo(id) {
     persistAiCaches();
   }
   // 판매글 입력값만 넣고 Step 1~ 전부 라이브 AI
+  releaseLandingHold();
   applyPayload({ latest: listing, history: [listing], comps: null }, { forceRestart: true });
 }
 
 function applyPayload(payload, opts = {}) {
+  if (Array.isArray(payload?.history)) history = payload.history;
+  if (!opts.forceRestart && shouldStayOnLanding(payload?.latest ?? null)) {
+    latest = null;
+    selectedKey = null;
+    comps = null;
+    if (!$current.querySelector('[data-sample-landing]')) renderItem(null);
+    else renderHistoryList();
+    return;
+  }
+  if (payload?.latest) releaseLandingHold();
+
   const prevLatestKey = latest ? itemKey(latest) : '';
   const prevExportedAt = latest?.exportedAt || '';
   const previousSelectedKey = selectedKey;
   const hadRenderedItem = Boolean($current.querySelector('[data-stage-one-zone]'));
 
   latest = payload?.latest ?? latest;
-  history = Array.isArray(payload?.history) ? payload.history : history;
 
   const latestKey = latest ? itemKey(latest) : '';
   const latestUpdated =
@@ -12712,7 +12747,7 @@ function supportedListingUrl(rawUrl) {
 
 function requestListingUrlImport(rawUrl) {
   if (!extensionPresent) {
-    setUrlImportStatus('확장 설치 필요', 'error');
+    setUrlImportStatus('확장프로그램 설치 필요', 'error');
     showAppToast?.(EXT_REQUIRED_TITLE);
     return;
   }
@@ -12762,7 +12797,7 @@ function initMain() {
         stageThreeSearchProgresses.delete(summaryKey(activeItem));
         comps = {
           ...emptyComparisonComps(activeItem),
-          collectionError: d.error || '확장 프로그램이 검색 탭을 열지 못했습니다.',
+          collectionError: d.error || '확장프로그램이 검색 탭을 열지 못했습니다.',
         };
         refreshStageThreeSection(activeItem);
         showAppToast(d.error || '비교 매물 검색을 시작하지 못했습니다.');
@@ -12778,6 +12813,7 @@ function initMain() {
         if ($urlImportInput) $urlImportInput.value = '';
         if ($railUrlInput) $railUrlInput.value = '';
         if (d.listing) {
+          releaseLandingHold();
           activateListingItem(d.listing, { skipIfSameActive: true });
           closeRailPanel();
         } else {
@@ -12856,8 +12892,8 @@ function applyExtensionUiState() {
   });
   document.querySelectorAll('[data-ext-status]').forEach((status) => {
     status.textContent = extensionPresent
-      ? '확장이 연결되었습니다 — 실제 매물을 바로 가져올 수 있어요'
-      : '확장을 설치해야 실제 매물을 분석할 수 있어요';
+      ? '확장프로그램이 연결되었습니다 — 실제 매물을 바로 가져올 수 있어요'
+      : '확장프로그램을 설치해야 실제 매물을 분석할 수 있어요';
   });
   document.body.classList.toggle('ext-missing', !extensionPresent);
   document.body.classList.toggle('ext-ready', extensionPresent);

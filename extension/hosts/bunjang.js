@@ -320,11 +320,10 @@
     };
 
     for (const a of document.querySelectorAll('a[href*="/product/"], a[href*="/products/"], a[href*="/posts/"]')) {
-      if (MS.isInsideNoiseSection(a)) continue;
       const card = a.closest('article, li, div[class*="Product"], div[class*="product"], div[class*="item"]') || a.parentElement;
       const text = card?.innerText || '';
-      if (/광고|AD\b/i.test(text.slice(0, 30))) continue;
-      const priceM = text.match(/([\d,]+)\s*원/);
+      if (/\uAD11\uACE0|AD\b/i.test(text.slice(0, 30))) continue;
+      const priceM = text.match(/([\d,]+)\s*\uC6D0/);
       add(a.href, cardTitle(a, card), priceM?.[0], cardImageUrl(card));
     }
     return items;
