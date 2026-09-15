@@ -11,8 +11,8 @@
   };
 
   Root.buildDaangnSearchUrl = (query) => {
-    const u = new URL('https://www.daangn.com/kr/buy-sell/');
-    u.searchParams.set('search', String(query || '').trim());
+    const u = new URL('https://www.daangn.com/kr/search/buy-sell/');
+    u.searchParams.set('q', String(query || '').trim());
     return u.href;
   };
 
@@ -45,7 +45,9 @@
     try {
       const u = new URL(url);
       if (!u.hostname.includes('daangn.com')) return false;
-      return /\/kr\/buy-sell\/?$/.test(u.pathname) && u.searchParams.has('search');
+      const q = u.searchParams.get('q') || u.searchParams.get('search') || u.searchParams.get('keyword');
+      if (!q) return false;
+      return /buy-sell|search/i.test(u.pathname);
     } catch {
       return false;
     }

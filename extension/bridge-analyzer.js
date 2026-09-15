@@ -1,4 +1,4 @@
-/** 분석 페이지(localhost) ↔ 확장 storage 브릿지 */
+/** ?? ???(localhost) ? ?? storage ??? */
 (() => {
   const PORTS = [3920, 3921];
 
@@ -16,6 +16,8 @@
   }
 
   if (!isAnalyzerPage()) return;
+  if (globalThis.__buyOrByeAnalyzerBridgeInstalled) return;
+  globalThis.__buyOrByeAnalyzerBridgeInstalled = true;
 
   document.addEventListener('ulsa-ai-settings', (ev) => {
     const d = ev.detail;
@@ -23,10 +25,10 @@
     try {
       chrome.storage.local.set({
         ulsaOpenAiApiKey: d.apiKey,
-        ulsaOpenAiModel: d.model || 'gpt-5.6-terra',
+        ulsaOpenAiModel: d.model || 'gemini-3.5-flash-lite',
         ulsaOpenAiVerifiedAt: d.verifiedAt || Date.now(),
         ulsaGeminiApiKey: d.apiKey,
-        ulsaGeminiModel: d.model || 'gpt-5.6-terra',
+        ulsaGeminiModel: d.model || 'gemini-3.5-flash-lite',
         ulsaGeminiVerifiedAt: d.verifiedAt || Date.now(),
       });
     } catch {
@@ -39,10 +41,10 @@
     try {
       chrome.storage.local.set({
         ulsaOpenAiApiKey: ev.data.apiKey,
-        ulsaOpenAiModel: ev.data.model || 'gpt-5.6-terra',
+        ulsaOpenAiModel: ev.data.model || 'gemini-3.5-flash-lite',
         ulsaOpenAiVerifiedAt: ev.data.verifiedAt || Date.now(),
         ulsaGeminiApiKey: ev.data.apiKey,
-        ulsaGeminiModel: ev.data.model || 'gpt-5.6-terra',
+        ulsaGeminiModel: ev.data.model || 'gemini-3.5-flash-lite',
         ulsaGeminiVerifiedAt: ev.data.verifiedAt || Date.now(),
       });
     } catch {
@@ -108,38 +110,85 @@
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== window || ev.data?.type !== 'MARKET_SCRAPE_OPEN_SEARCH_TABS') return;
+    const now = Date.now();
+    const qKey = JSON.stringify(Array.isArray(ev.data.queries) ? ev.data.queries : [ev.data.query || '']);
+    if (
+      globalThis.__buyOrByeBridgeSearchAt &&
+      now - globalThis.__buyOrByeBridgeSearchAt < 2500 &&
+      globalThis.__buyOrByeBridgeSearchKey === qKey
+    ) {
+      return;
+    }
+    globalThis.__buyOrByeBridgeSearchAt = now;
+    globalThis.__buyOrByeBridgeSearchKey = qKey;
     const queries = Array.isArray(ev.data.queries)
       ? ev.data.queries.map((q) => String(q || '').trim()).filter(Boolean)
       : [String(ev.data.query || '').trim()].filter(Boolean);
     if (!queries.length) {
-      window.postMessage({ type: 'MARKET_SCRAPE_SEARCH_TABS_RESULT', ok: false, error: '검색어가 비었습니다.' }, '*');
+      window.postMessage({ type: 'MARKET_SCRAPE_SEARCH_TABS_RESULT', ok: false, error: '???? ?????.' }, '*');
       return;
     }
-    try {
-      chrome.runtime.sendMessage({ type: 'OPEN_SEARCH_TABS', query: queries[0], queries }, (res) => {
-        const runtimeError = chrome.runtime.lastError?.message || '';
+    const forItemKey = String(ev.data.forItemKey || '').trim();
+    const listing = ev.data.listing && typeof ev.data.listing === 'object' ? ev.data.listing : null;
+
+    const sendOpen = () => {
+      try {
+        chrome.runtime.sendMessage(
+          { type: 'OPEN_SEARCH_TABS', query: queries[0], queries, forItemKey: forItemKey || undefined },
+          (res) => {
+            const runtimeError = chrome.runtime.lastError?.message || '';
+            postSearchTabsResult({
+              ok: Boolean(res?.ok) && !runtimeError,
+              error: runtimeError || res?.error || '',
+              query: res?.query || queries[0],
+              queries: res?.queries || queries,
+              forItemKey: res?.forItemKey || forItemKey,
+            });
+          }
+        );
+      } catch (e) {
         postSearchTabsResult({
-          ok: Boolean(res?.ok) && !runtimeError,
-          error: runtimeError || res?.error || '',
-          query: res?.query || queries[0],
-          queries: res?.queries || queries,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+          query: queries[0],
+          queries,
+          forItemKey,
         });
-      });
-    } catch (e) {
-      postSearchTabsResult({
-        ok: false,
-        error: e instanceof Error ? e.message : String(e),
-        query: queries[0],
-        queries,
-      });
+      }
+    };
+
+    // ??/? ?? ??? ?? ??? ??? storage latest? ?? ???
+    if (listing?.platform && listing?.itemId) {
+      try {
+        chrome.storage.local.get(['marketScrapeHistory'], (res) => {
+          const history = Array.isArray(res.marketScrapeHistory) ? res.marketScrapeHistory : [];
+          const key = `${listing.platform}:${listing.itemId}`;
+          const nextHistory = [listing, ...history.filter((h) => `${h.platform}:${h.itemId}` !== key)].slice(0, 40);
+          chrome.storage.local.set(
+            {
+              marketScrapeLatest: listing,
+              marketScrapeHistory: nextHistory,
+            },
+            () => sendOpen()
+          );
+        });
+      } catch {
+        sendOpen();
+      }
+    } else {
+      sendOpen();
     }
   });
 
-  window.addEventListener('message', (ev) => {
+window.addEventListener('message', (ev) => {
     if (ev.source !== window || ev.data?.type !== 'MARKET_SCRAPE_IMPORT_URL') return;
     const url = String(ev.data.url || '').trim();
+    const now = Date.now();
+    if (url && globalThis.__buyOrByeBridgeImportAt && now - globalThis.__buyOrByeBridgeImportAt < 2500 && globalThis.__buyOrByeBridgeImportUrl === url) return;
+    globalThis.__buyOrByeBridgeImportAt = now;
+    globalThis.__buyOrByeBridgeImportUrl = url;
     if (!url) {
-      postUrlImportResult({ ok: false, error: 'URL이 비었습니다.' });
+      postUrlImportResult({ ok: false, error: 'URL? ?????.' });
       return;
     }
     try {

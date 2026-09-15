@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-/** 분석 페이지 + OpenAI API 프록시 (클라이언트 헤더 또는 OPENAI_API_KEY) */
+/** ?? ??? + OpenAI API ??? (????? ?? ?? OPENAI_API_KEY) */
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import crypto from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || process.env.ANALYZER_PORT) || 3920;
 const HOST = String(process.env.HOST || process.env.ANALYZER_HOST || '0.0.0.0').trim() || '0.0.0.0';
-const SERVER_OPENAI_KEY = String(process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || '').trim();
-const SERVER_GEMINI_KEY = SERVER_OPENAI_KEY; // legacy alias
+const SERVER_GEMINI_KEY = String(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '').trim();
+const SERVER_OPENAI_KEY = SERVER_GEMINI_KEY; // legacy alias
 const DEMO_MODE = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true' || Boolean(SERVER_GEMINI_KEY);
 const DEMO_DAILY_LIMIT = Math.max(5, Number(process.env.DEMO_DAILY_LIMIT) || 40);
 const PUBLIC_ANALYZER_ORIGIN = String(process.env.PUBLIC_ANALYZER_ORIGIN || '').trim().replace(/\/$/, '');
@@ -20,11 +21,17 @@ const PROMPTS_DIR = path.join(__dirname, 'prompts');
 const DEMO_DIR = path.join(__dirname, 'demo');
 const DOWNLOADS_DIR = path.join(__dirname, 'public', 'downloads');
 const DEMO_SERVER_KEY_TOKEN = '__SERVER_DEMO__';
+const IMAGE_PROXY_SECRET = crypto.randomBytes(32);
+const MAX_PROXY_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_REQUEST_BODY_BYTES = Math.max(
+  256 * 1024,
+  Number(process.env.MAX_REQUEST_BODY_BYTES) || 2 * 1024 * 1024
+);
 
-/** IP별 일일 Gemini 호출 카운트 (데모 남용 방지) */
+/** IP? ?? Gemini ?? ??? (?? ?? ??) */
 const demoRateBuckets = new Map();
 
-/** 번개·당근 검색창 쿼리 상한(한글 제품명+세대); clamp 시 한 어절·한 낱말 중간 절단 방지 로직과 함께 사용 */
+/** ????? ??? ?? ??(?? ???+??); clamp ? ? ???? ?? ?? ?? ?? ??? ?? ?? */
 const MAX_SEARCH_QUERY_CHARS = 96;
 
 const MIME = {
@@ -35,6 +42,9 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.json': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
 };
 
 async function loadPrompt(name) {
@@ -67,8 +77,23 @@ function renderPrompt(template, vars) {
   return String(template).replace(/\{\{(\w+)\}\}/g, (_, key) => String(vars[key] ?? ''));
 }
 
-function corsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function allowedCorsOrigin(req) {
+  const origin = String(req?.headers?.origin || '').trim();
+  if (!origin) return '';
+  const allowed = new Set([
+    `http://127.0.0.1:${PORT}`,
+    `http://localhost:${PORT}`,
+  ]);
+  if (PUBLIC_ANALYZER_ORIGIN) allowed.add(PUBLIC_ANALYZER_ORIGIN);
+  return allowed.has(origin) ? origin : '';
+}
+
+function corsHeaders(res, req = res.req) {
+  const origin = allowedCorsOrigin(req);
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
@@ -78,18 +103,22 @@ function corsHeaders(res) {
 
 function resolveRequestApiKey(req) {
   const header =
-    String(req.headers['x-openai-key'] || req.headers['x-ai-key'] || req.headers['x-gemini-key'] || '').trim() ||
+    String(req.headers['x-gemini-key'] || '').trim() ||
+    String(req.headers['x-openai-key'] || '').trim() ||
+    String(req.headers['x-ai-key'] || '').trim() ||
     String(req.headers.authorization || '')
       .replace(/^Bearer\s+/i, '')
       .trim();
   if (header && header !== DEMO_SERVER_KEY_TOKEN) return header;
-  return SERVER_OPENAI_KEY;
+  return SERVER_GEMINI_KEY;
 }
 
 function resolveRequestModel(req) {
   return (
-    String(req.headers['x-openai-model'] || req.headers['x-ai-model'] || req.headers['x-gemini-model'] || '').trim() ||
-    DEFAULT_OPENAI_MODEL
+    String(req.headers['x-gemini-model'] || '').trim() ||
+    String(req.headers['x-openai-model'] || '').trim() ||
+    String(req.headers['x-ai-model'] || '').trim() ||
+    DEFAULT_GEMINI_MODEL
   );
 }
 
@@ -108,7 +137,7 @@ function consumeDemoRateLimit(req) {
   if (used >= DEMO_DAILY_LIMIT) {
     return {
       ok: false,
-      error: `데모 API 일일 한도(${DEMO_DAILY_LIMIT}회)를 초과했습니다. 잠시 후 다시 시도하거나 캐시 폴백을 사용하세요.`,
+      error: `?? API ?? ??(${DEMO_DAILY_LIMIT}?)? ??????. ?? ? ?? ????? ?? ??? ?????.`,
     };
   }
   demoRateBuckets.set(key, used + 1);
@@ -128,7 +157,21 @@ async function readDemoJson(relPath) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
+    let total = 0;
+    let rejected = false;
+    req.on('data', (chunk) => {
+      if (rejected) return;
+      total += chunk.length;
+      if (total > MAX_REQUEST_BODY_BYTES) {
+        rejected = true;
+        chunks.length = 0;
+        const error = new Error('Request body is too large.');
+        error.statusCode = 413;
+        reject(error);
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
@@ -140,24 +183,29 @@ function json(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-/** Google Search 연동 + 사진·글 — 제품 파악 후 번개·당근용 검색어 한 줄 (브랜드/제품 예시 없음) */
+function errorHttpStatus(error, fallback = 502) {
+  const status = Number(error?.statusCode);
+  return Number.isInteger(status) && status >= 400 && status <= 599 ? status : fallback;
+}
+
+/** Google Search ?? + ???? ? ?? ?? ? ?????? ??? ? ? (???/?? ?? ??) */
 function buildWebGroundedSearchQueryPrompt(title, body, imageCount) {
   const t = String(title || '').slice(0, 500);
   const b = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
   const n = Number(imageCount) || 0;
   const media =
     n > 0
-      ? `상품 사진 ${n}장이 이 메시지에 첨부되어 있습니다.\n`
-      : '사진이 없습니다. 제목·본문과 웹 검색으로 판단하세요.\n';
+      ? `?? ?? ${n}?? ? ???? ???? ????.\n`
+      : '??? ????. ?????? ? ???? ?????.\n';
   return renderPrompt(PROMPTS.searchQuerySingle, {
     media,
     title: t,
-    body: b || '(없음)',
+    body: b || '(??)',
     MAX_SEARCH_QUERY_CHARS,
   });
 }
 
-/** Google Search 연동 + 사진·글 — 품질 확인/자동 선택용 검색 후보 최대 3개 */
+/** Google Search ?? + ???? ? ?? ??/?? ??? ?? ?? ?? 3? */
 function buildWebGroundedSearchCandidatesPrompt(title, body, imageCount, maxQueries = 3) {
   const t = String(title || '').slice(0, 500);
   const b = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
@@ -165,13 +213,13 @@ function buildWebGroundedSearchCandidatesPrompt(title, body, imageCount, maxQuer
   const max = Math.min(Math.max(Number(maxQueries) || 3, 1), 3);
   const media =
     n > 0
-      ? `상품 사진 ${n}장이 이 메시지에 첨부되어 있습니다.\n`
-      : '사진이 없습니다. 제목·본문과 웹 검색으로 판단하세요.\n';
+      ? `?? ?? ${n}?? ? ???? ???? ????.\n`
+      : '??? ????. ?????? ? ???? ?????.\n';
   return renderPrompt(PROMPTS.searchQueryCandidates, {
     media,
     max,
     title: t,
-    body: b || '(없음)',
+    body: b || '(??)',
     MAX_SEARCH_QUERY_CHARS,
   });
 }
@@ -182,12 +230,12 @@ function buildProductIdentifyPrompt(title, body, imageCount) {
   const n = Number(imageCount) || 0;
   const media =
     n > 0
-      ? `상품 사진 ${n}장이 이 메시지에 첨부되어 있습니다.\n`
-      : '사진이 없습니다. 제목·본문으로 판단하세요.\n';
+      ? `?? ?? ${n}?? ? ???? ???? ????.\n`
+      : '??? ????. ??????? ?????.\n';
   return renderPrompt(PROMPTS.productIdentify, {
     media,
     title: t,
-    body: b || '(없음)',
+    body: b || '(??)',
   });
 }
 
@@ -196,20 +244,20 @@ function buildProductRiskPrompt({ productName, summary, title, body }) {
     .replace(/\s+/g, ' ')
     .trim();
   return renderPrompt(PROMPTS.productRisk, {
-    productName: name || '(불명)',
-    description: String(summary?.description || '').replace(/\s+/g, ' ').trim() || '(없음)',
-    makerOrSeller: String(summary?.makerOrSeller || '').replace(/\s+/g, ' ').trim() || '(없음)',
-    newPrice: String(summary?.newPrice || '').replace(/\s+/g, ' ').trim() || '(없음)',
-    title: String(title || '').replace(/\s+/g, ' ').trim().slice(0, 500) || '(없음)',
-    body: String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1800) || '(없음)',
+    productName: name || '(??)',
+    description: String(summary?.description || '').replace(/\s+/g, ' ').trim() || '(??)',
+    makerOrSeller: String(summary?.makerOrSeller || '').replace(/\s+/g, ' ').trim() || '(??)',
+    newPrice: String(summary?.newPrice || '').replace(/\s+/g, ' ').trim() || '(??)',
+    title: String(title || '').replace(/\s+/g, ' ').trim().slice(0, 500) || '(??)',
+    body: String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1800) || '(??)',
   });
 }
 
 function buildProductRiskJsonPrompt({ productName, researchText }) {
   const name = String(productName || '').replace(/\s+/g, ' ').trim();
   return renderPrompt(PROMPTS.productRiskJson, {
-    productName: name || '(불명)',
-    researchText: String(researchText || '').trim() || '(조사 메모 없음)',
+    productName: name || '(??)',
+    researchText: String(researchText || '').trim() || '(?? ?? ??)',
   });
 }
 
@@ -223,9 +271,9 @@ function buildProductRiskYoutubeCommentPrompt(payload, videos) {
     .slice(0, 6);
   return renderPrompt(PROMPTS.productRiskYoutubeComment, {
     productName:
-      String(payload.productName || payload.summary?.productName || '').replace(/\s+/g, ' ').trim() || '(불명)',
-    description: String(payload.summary?.description || '').replace(/\s+/g, ' ').trim() || '(없음)',
-    issues: issues.length ? issues.join('\n') : '(없음)',
+      String(payload.productName || payload.summary?.productName || '').replace(/\s+/g, ' ').trim() || '(??)',
+    description: String(payload.summary?.description || '').replace(/\s+/g, ' ').trim() || '(??)',
+    issues: issues.length ? issues.join('\n') : '(??)',
     videosJson: JSON.stringify(
       videos.map((video) => ({
         videoId: video.videoId,
@@ -242,8 +290,8 @@ function normalizeQueryCandidate(raw) {
   const s = String(raw || '')
     .replace(/```(?:json)?/gi, ' ')
     .replace(/```/g, ' ')
-    .replace(/^[-*•\d.]+\s*/, '')
-    .replace(/^["'`「」]|["'`「」]$/g, '')
+    .replace(/^[-*?\d.]+\s*/, '')
+    .replace(/^["'`??]|["'`??]$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!s || /^json$/i.test(s) || /^[{\[]/.test(s) || /["']?queries["']?\s*:/.test(s)) return '';
@@ -251,7 +299,7 @@ function normalizeQueryCandidate(raw) {
   return s;
 }
 
-/** JSON {"query":"..."} 또는 레거시 한 줄 — 형식 파싱만 (의미 보정 없음) */
+/** JSON {"query":"..."} ?? ??? ? ? ? ?? ??? (?? ?? ??) */
 function parseSearchQuerySingle(text, fallbackTitle = '') {
   const raw = String(text || '').trim();
   if (!raw) return '';
@@ -303,7 +351,7 @@ function parseQueryCandidates(text, _title, maxQueries = 3) {
     const lines = raw
       .replace(/```(?:json)?/gi, '\n')
       .replace(/[{}\[\]"]/g, ' ')
-      .split(/\r?\n|[,，]/)
+      .split(/\r?\n|[,?]/)
       .map((x) => x.trim())
       .filter(Boolean);
     candidates.push(...lines);
@@ -323,8 +371,8 @@ function parseQueryCandidates(text, _title, maxQueries = 3) {
   return out;
 }
 
-const DEFAULT_OPENAI_MODEL = 'gpt-5.6-terra';
-const DEFAULT_GEMINI_MODEL = DEFAULT_OPENAI_MODEL; // legacy alias
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
+const DEFAULT_OPENAI_MODEL = DEFAULT_GEMINI_MODEL; // legacy alias
 
 const MAX_INLINE_IMAGES = 3;
 const LISTING_IMAGE_ANALYSIS_BATCH_SIZE = 10;
@@ -397,7 +445,7 @@ function optimizeImageUrlForAi(url) {
   } catch {
     /* keep raw */
   }
-  // 번개 이미지는 파일명에 폭이 들어오는 경우가 많아, 제품 식별에는 충분한 400px급으로 낮춘다.
+  // ?? ???? ???? ?? ???? ??? ??, ?? ???? ??? 400px??? ???.
   s = s.replace(/_w\d+\.(webp|jpg|jpeg|png)(?=$|[?#])/i, '_w400.$1');
   s = s.replace(/([?&](?:w|width|size)=)\d+/i, '$1400');
   return s;
@@ -414,7 +462,7 @@ async function fetchImageUrlToInlinePart(url) {
     if (buf.length > MAX_IMAGE_BYTES) {
       buf = await sharp(buf).resize({ width: 1200, withoutEnlargement: true }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
     }
-    if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
+    if (buf.length > MAX_IMAGE_BYTES) throw new Error('??? ?? ??');
     const mime = buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : 'image/png';
     return {
       inline_data: {
@@ -434,9 +482,9 @@ async function fetchImageUrlToInlinePart(url) {
     },
     signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`이미지 HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`??? HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
+  if (buf.length > MAX_IMAGE_BYTES) throw new Error('??? ?? ??');
   let mime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
   if (!mime.startsWith('image/')) {
     const p = String(imageUrl).toLowerCase();
@@ -603,7 +651,7 @@ function buildImageGridBoardOverlaySvg(imageWidth, imageHeight, pad, cols = 25, 
           ${labels.join('\n')}
         </g>
         <rect x="${Math.max(8, p * 0.16)}" y="${Math.max(7, p * 0.12)}" width="${Math.max(108, fontSize * 7.8)}" height="${fontSize * 1.9}" rx="${fontSize * 0.75}" fill="rgba(17,24,39,0.82)"/>
-        <text x="${Math.max(18, p * 0.34)}" y="${Math.max(7, p * 0.12) + fontSize * 1.34}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25×25 GRID</text>
+        <text x="${Math.max(18, p * 0.34)}" y="${Math.max(7, p * 0.12) + fontSize * 1.34}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25?25 GRID</text>
       </svg>
     `),
   };
@@ -665,7 +713,7 @@ function buildImageGridOverlaySvg(width, height, cols = 25, rows = 25) {
         ${labels.join('\n')}
       </g>
       <rect x="6" y="6" width="${Math.max(92, fontSize * 7.4)}" height="${fontSize * 1.85}" rx="${fontSize * 0.75}" fill="rgba(17,24,39,0.78)"/>
-      <text x="${fontSize}" y="${fontSize * 1.35}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25×25 GRID</text>
+      <text x="${fontSize}" y="${fontSize * 1.35}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25?25 GRID</text>
     </svg>
   `);
 }
@@ -726,7 +774,7 @@ async function createImageGridPart(buf, preNormalized = null) {
       },
     };
   } catch (e) {
-    console.warn('[listing-image] 그리드 이미지 생성 실패:', e instanceof Error ? e.message : e);
+    console.warn('[listing-image] ??? ??? ?? ??:', e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -743,9 +791,9 @@ async function fetchImageUrlToInlineSource(url) {
     },
     signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`이미지 HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`??? HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
+  if (buf.length > MAX_IMAGE_BYTES) throw new Error('??? ?? ??');
   let mime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
   if (!mime.startsWith('image/')) {
     const p = String(imageUrl).toLowerCase();
@@ -799,7 +847,7 @@ async function fetchListingImageInlineParts(urls) {
       continue;
     }
     const u = targets[i] || '';
-    console.warn('[search-query] 이미지 로드 생략:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
+    console.warn('[search-query] ??? ?? ??:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
   }
   return parts;
 }
@@ -826,13 +874,13 @@ async function fetchListingImageSources(urls, maxImages = Infinity) {
       continue;
     }
     const u = target.url || '';
-    console.warn('[listing-image] 이미지 로드 생략:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
+    console.warn('[listing-image] ??? ?? ??:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
   }
   return sources;
 }
 
 function extractGeminiText(data) {
-  // OpenAI Responses / Chat Completions 겸용
+  // OpenAI Responses / Chat Completions ??
   if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
   if (Array.isArray(data?.output)) {
     const chunks = [];
@@ -909,100 +957,106 @@ function geminiPartsToResponsesInput(parts) {
 }
 
 /** @param {object[]} parts Gemini-style parts: { text } or { inline_data } */
+const GEMINI_MAX_INFLIGHT = Math.max(1, Number(process.env.GEMINI_MAX_INFLIGHT) || 3);
+let geminiInFlight = 0;
+
+async function withGeminiSlot(fn) {
+  while (geminiInFlight >= GEMINI_MAX_INFLIGHT) {
+    await new Promise((resolve) => setTimeout(resolve, 80));
+  }
+  geminiInFlight += 1;
+  try {
+    return await fn();
+  } finally {
+    geminiInFlight -= 1;
+  }
+}
+
 async function geminiGenerateFromParts(apiKey, model, parts, opts = {}) {
-  return openaiGenerateFromParts(apiKey, model, parts, opts);
+  const m = String(model || DEFAULT_GEMINI_MODEL).replace(/^\s+|\s+$/g, '');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    m
+  )}:generateContent`;
+  const temperature = opts.temperature ?? 0.2;
+  // 3.5-flash-lite rejects thinkingConfig; 3.6/3.1 accept thinkingBudget:0
+  const supportsThinkingBudget = /gemini-3(?:\.6|\.1|\.7|\.8|-flash-preview)/i.test(m);
+  const thinkingBudget =
+    opts.thinkingBudget != null
+      ? Number(opts.thinkingBudget)
+      : opts.allowThinking || !supportsThinkingBudget
+        ? undefined
+        : 0;
+  let maxOutputTokens = opts.maxOutputTokens;
+  if (maxOutputTokens != null && Number(maxOutputTokens) > 0 && Number(maxOutputTokens) < 256) {
+    maxOutputTokens = 256;
+  }
+  // gemini-3.6-flash: google_search + application/json => empty candidates
+  let useGoogleSearch = Boolean(opts.useGoogleSearch);
+  let responseMimeType = opts.responseMimeType || '';
+  if (useGoogleSearch && responseMimeType === 'application/json') {
+    useGoogleSearch = false;
+  }
+
+  const payload = {
+    contents: [{ role: 'user', parts }],
+    generationConfig: { temperature },
+  };
+  if (maxOutputTokens != null) payload.generationConfig.maxOutputTokens = maxOutputTokens;
+  if (responseMimeType) payload.generationConfig.responseMimeType = responseMimeType;
+  if (thinkingBudget != null && Number.isFinite(thinkingBudget)) {
+    payload.generationConfig.thinkingConfig = { thinkingBudget };
+  }
+  if (useGoogleSearch) payload.tools = [{ google_search: {} }];
+
+  async function once() {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(opts.timeoutMs || GEMINI_FAST_TIMEOUT_MS),
+    });
+    const raw = await res.text();
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error(cleanUpstreamErrorText(raw, `Gemini HTTP ${res.status}`));
+    }
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
+      throw new Error(cleanUpstreamErrorText(msg, `Gemini HTTP ${res.status}`));
+    }
+    return data;
+  }
+
+  let data = await withGeminiSlot(once);
+  let text = extractGeminiText(data);
+  const finishReason = String(data?.candidates?.[0]?.finishReason || '');
+  if (!text && /MAX_TOKENS/i.test(finishReason)) {
+    payload.generationConfig.maxOutputTokens = Math.max(
+      Number(payload.generationConfig.maxOutputTokens) || 0,
+      2048
+    );
+    if (supportsThinkingBudget) payload.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    data = await once();
+    text = extractGeminiText(data);
+  }
+  if (!text && payload.tools) {
+    delete payload.tools;
+    data = await once();
+    text = extractGeminiText(data);
+  }
+  if (!text && payload.generationConfig.responseMimeType) {
+    delete payload.generationConfig.responseMimeType;
+    data = await once();
+    text = extractGeminiText(data);
+  }
+  if (!text) throw new Error('Gemini ??? ???? ????.');
+  return text;
 }
 
 async function openaiGenerateFromParts(apiKey, model, parts, opts = {}) {
-  const m = String(model || DEFAULT_OPENAI_MODEL).replace(/^\s+|\s+$/g, '');
-  // GPT-5 / GPT-5.6 / GPT-6 / o-series often reject custom temperature
-  const supportsCustomTemperature = !/^(gpt-5|gpt-6|o[0-9])/i.test(m);
-  const temperature = opts.temperature ?? 0.2;
-  const timeoutMs = opts.timeoutMs || OPENAI_FAST_TIMEOUT_MS;
-  const wantJson = opts.responseMimeType === 'application/json';
-  const useSearch = Boolean(opts.useGoogleSearch);
-
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-  };
-
-  // 1) Responses API (web_search 지원)
-  if (useSearch) {
-    const payload = {
-      model: m,
-      input: [
-        {
-          role: 'user',
-          content: geminiPartsToResponsesInput(parts),
-        },
-      ],
-      tools: [{ type: 'web_search' }],
-    };
-    if (supportsCustomTemperature) payload.temperature = temperature;
-    if (opts.maxOutputTokens != null) payload.max_output_tokens = opts.maxOutputTokens;
-    if (wantJson) {
-      payload.text = { format: { type: 'json_object' } };
-    }
-    try {
-      const res = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      const raw = await res.text();
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error(cleanUpstreamErrorText(raw, `OpenAI HTTP ${res.status}`));
-      }
-      if (!res.ok) {
-        const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
-        throw new Error(cleanUpstreamErrorText(msg, `OpenAI HTTP ${res.status}`));
-      }
-      const text = extractGeminiText(data);
-      if (text) return text;
-    } catch (e) {
-      console.warn('[openai] Responses+web_search 실패, Chat Completions로 재시도:', e instanceof Error ? e.message : e);
-    }
-  }
-
-  // 2) Chat Completions (멀티모달·JSON)
-  const chatPayload = {
-    model: m,
-    messages: [
-      {
-        role: 'user',
-        content: geminiPartsToOpenAIContent(parts),
-      },
-    ],
-  };
-  if (supportsCustomTemperature) chatPayload.temperature = temperature;
-  if (opts.maxOutputTokens != null) chatPayload.max_tokens = opts.maxOutputTokens;
-  if (wantJson) chatPayload.response_format = { type: 'json_object' };
-
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(chatPayload),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const raw = await res.text();
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    throw new Error(cleanUpstreamErrorText(raw, `OpenAI HTTP ${res.status}`));
-  }
-  if (!res.ok) {
-    const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
-    throw new Error(cleanUpstreamErrorText(msg, `OpenAI HTTP ${res.status}`));
-  }
-  const text = extractGeminiText(data);
-  if (!text) throw new Error('OpenAI 응답에 텍스트가 없습니다.');
-  return text;
+  return geminiGenerateFromParts(apiKey, model, parts, opts);
 }
 
 function normalizeProductImageUrl(raw) {
@@ -1029,9 +1083,21 @@ function uniqueImageUrls(urls) {
   return out;
 }
 
+function productImageProxySignature(url) {
+  return crypto.createHmac('sha256', IMAGE_PROXY_SECRET).update(String(url || '')).digest('hex');
+}
+
+function validProductImageProxySignature(url, signature) {
+  const expected = Buffer.from(productImageProxySignature(url), 'hex');
+  const actual = Buffer.from(String(signature || ''), 'hex');
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
 function productImageProxyUrl(raw) {
   const u = normalizeProductImageUrl(raw);
-  return u ? `/api/image-proxy?url=${encodeURIComponent(u)}` : '';
+  if (!u) return '';
+  const sig = productImageProxySignature(u);
+  return `/api/image-proxy?url=${encodeURIComponent(u)}&sig=${sig}`;
 }
 
 async function isReachableProductImage(raw) {
@@ -1098,17 +1164,17 @@ async function fetchDuckDuckGoImageUrls(query) {
 function cleanProductName(raw, fallback = '') {
   let s = String(raw || fallback || '')
     .replace(/```(?:json)?/gi, ' ')
-    .replace(/["'`「」]/g, '')
-    .replace(/\bproductName\b\s*[:：]\s*/i, '')
-    .replace(/\bsearchQuery\b\s*[:：].*$/i, '')
+    .replace(/["'`??]/g, '')
+    .replace(/\bproductName\b\s*[:?]\s*/i, '')
+    .replace(/\bsearchQuery\b\s*[:?].*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
-  const openParen = Math.max(s.lastIndexOf('('), s.lastIndexOf('（'), s.lastIndexOf('['), s.lastIndexOf('［'));
-  const closeParen = Math.max(s.lastIndexOf(')'), s.lastIndexOf('）'), s.lastIndexOf(']'), s.lastIndexOf('］'));
+  const openParen = Math.max(s.lastIndexOf('('), s.lastIndexOf('?'), s.lastIndexOf('['), s.lastIndexOf('?'));
+  const closeParen = Math.max(s.lastIndexOf(')'), s.lastIndexOf('?'), s.lastIndexOf(']'), s.lastIndexOf('?'));
   if (openParen >= 0 && closeParen < openParen) s = s.slice(0, openParen).trim();
   s = s
-    .replace(/[({（［\[]+\s*$/g, '')
-    .replace(/\s*[,，:：]\s*$/g, '')
+    .replace(/[({??\[]+\s*$/g, '')
+    .replace(/\s*[,?:?]\s*$/g, '')
     .trim();
   return preserveVariantTokens(s || String(fallback || '').trim(), fallback);
 }
@@ -1173,12 +1239,12 @@ function parseProductSummary(text, fallbackTitle) {
       productImageUrl: 'productImageUrl',
     };
     const keyPattern = Object.keys(keyMap).join('|');
-    const re = new RegExp(`(?:^|[\\n,])\\s*["']?(${keyPattern})["']?\\s*[:：]\\s*([^\\n]+)`, 'gi');
+    const re = new RegExp(`(?:^|[\\n,])\\s*["']?(${keyPattern})["']?\\s*[:?]\\s*([^\\n]+)`, 'gi');
     for (const match of raw.matchAll(re)) {
       const rawKey = Object.keys(keyMap).find((k) => k.toLowerCase() === String(match[1]).toLowerCase());
       const key = keyMap[rawKey];
       const value = String(match[2] || '')
-        .replace(/^["'`「」]+|["'`「」]+$/g, '')
+        .replace(/^["'`??]+|["'`??]+$/g, '')
         .replace(/,\s*$/, '')
         .trim();
       if (key && value) parsed[key] = value;
@@ -1189,13 +1255,13 @@ function parseProductSummary(text, fallbackTitle) {
   const parsedQueries = Array.isArray(parsed.searchQueries)
     ? parsed.searchQueries
     : typeof parsed.searchQueries === 'string'
-      ? parsed.searchQueries.split(/\s*(?:[,，;；]|\n)\s*/g)
+      ? parsed.searchQueries.split(/\s*(?:[,?;?]|\n)\s*/g)
       : [];
   const rawAsDescription = raw
     .replace(/```(?:json)?/gi, ' ')
     .replace(
       new RegExp(
-        `(?:productName|newPrice|description|makerOrSeller|searchQuery|searchQueries|newPriceSourceUrl|productImageUrl)\\s*[:：]`,
+        `(?:productName|newPrice|description|makerOrSeller|searchQuery|searchQueries|newPriceSourceUrl|productImageUrl)\\s*[:?]`,
         'gi'
       ),
       ' '
@@ -1246,7 +1312,7 @@ function normalizeRiskItems(items) {
 
 function parseProductRisk(text, productName = '') {
   const raw = String(text || '').trim();
-  const name = String(productName || '제품').replace(/\s+/g, ' ').trim();
+  const name = String(productName || '??').replace(/\s+/g, ' ').trim();
   let jsonText = raw
     .replace(/^\s*```(?:json)?\s*/i, '')
     .replace(/\s*```\s*$/i, '')
@@ -1311,7 +1377,7 @@ function normalizeProductRiskYoutubeVideos(items) {
       seen.add(id);
       return {
         url: `https://www.youtube.com/watch?v=${id}`,
-        title: String(video?.title || '관련 YouTube 영상').replace(/\s+/g, ' ').trim().slice(0, 90),
+        title: String(video?.title || '?? YouTube ??').replace(/\s+/g, ' ').trim().slice(0, 90),
         thumbnailUrl: String(video?.thumbnailUrl || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`).trim(),
         summary: String(video?.summary || video?.buyerNote || video?.usedBuyerNote || '')
           .replace(/\s+/g, ' ')
@@ -1335,10 +1401,10 @@ function youtubeSearchTerms(payload) {
     .filter(Boolean);
   const suffixes = [
     ...issueTerms.slice(0, 2),
-    '고질병',
-    '결함',
-    '리뷰',
-    '언박싱',
+    '???',
+    '??',
+    '??',
+    '???',
   ];
   const queries = [];
   for (const suffix of suffixes) {
@@ -1391,7 +1457,7 @@ async function fetchYoutubeOEmbedVideo(videoId) {
     return {
       videoId: id,
       url,
-      title: title || '관련 YouTube 영상',
+      title: title || '?? YouTube ??',
       thumbnailUrl: String(data?.thumbnail_url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`).trim(),
       summary: '',
     };
@@ -1412,7 +1478,7 @@ async function fetchYoutubeSearchVideos(query, seenIds) {
       'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.6',
     },
   });
-  if (!res.ok) throw new Error(`YouTube 검색 HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`YouTube ?? HTTP ${res.status}`);
   const html = await res.text();
   const ids = parseYoutubeInitialVideoIds(html);
   const videos = [];
@@ -1438,7 +1504,7 @@ async function searchYoutubeVideosFromPage(payload) {
       const found = await fetchYoutubeSearchVideos(query, seenIds);
       videos.push(...found);
     } catch (e) {
-      console.warn('[product-risk-youtube] YouTube 검색 실패:', query, e instanceof Error ? e.message : e);
+      console.warn('[product-risk-youtube] YouTube ?? ??:', query, e instanceof Error ? e.message : e);
     }
     if (videos.length >= 3) break;
   }
@@ -1447,7 +1513,7 @@ async function searchYoutubeVideosFromPage(payload) {
     search: {
       query: attempted[0] || '',
       queries: attempted,
-      note: videos.length ? 'YouTube 검색 페이지에서 영상 ID를 확보하고 oEmbed로 재생 가능 여부를 확인했습니다.' : '',
+      note: videos.length ? 'YouTube ?? ????? ?? ID? ???? oEmbed? ?? ?? ??? ??????.' : '',
     },
   };
 }
@@ -1528,7 +1594,7 @@ async function addYoutubeBuyerComments(apiKey, model, payload, videos) {
       summary: comments.get(video.videoId) || video.summary || '',
     }));
   } catch (e) {
-    console.warn('[product-risk-youtube] 코멘트 생성 실패:', e instanceof Error ? e.message : e);
+    console.warn('[product-risk-youtube] ??? ?? ??:', e instanceof Error ? e.message : e);
     return videos;
   }
 }
@@ -1594,11 +1660,11 @@ function normalizeImageLevel(raw) {
   return ['safe', 'caution', 'risk', 'neutral'].includes(level) ? level : 'neutral';
 }
 
-function cleanUpstreamErrorText(text, fallback = '외부 AI 서버 오류') {
+function cleanUpstreamErrorText(text, fallback = 'remote AI error') {
   const raw = String(text || '').trim();
   if (!raw) return fallback;
   if (/(quota|rate limit|rate-limits|resource_exhausted|too many requests|429|exceeded your current quota)/i.test(raw)) {
-    return 'OpenAI API 사용량 한도를 초과했습니다. platform.openai.com 결제/쿼터를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
+    return 'Gemini API quota exceeded. Check Google AI Studio billing/quota, retry later, or use another API key.';
   }
   if (/<!doctype|<html|<title>/i.test(raw)) {
     const title = raw.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
@@ -1610,10 +1676,10 @@ function cleanUpstreamErrorText(text, fallback = '외부 AI 서버 오류') {
 function normalizeImageLabel(raw, level = 'neutral') {
   const value = String(raw || '').replace(/\s+/g, ' ').trim();
   if (value) return value.slice(0, 14);
-  if (level === 'risk') return '주의 사진';
-  if (level === 'caution') return '확인 필요';
-  if (level === 'safe') return '상태 확인';
-  return '사진 근거';
+  if (level === 'risk') return '?? ??';
+  if (level === 'caution') return '?? ??';
+  if (level === 'safe') return '?? ??';
+  return '?? ??';
 }
 
 function normalizeGridSizeCells(raw) {
@@ -1757,7 +1823,7 @@ function normalizeImageDefects(items) {
       )
         .replace(/\s+/g, '')
         .trim();
-      const description = String(defect.description || defect.detail || defect.label || '하자 의심')
+      const description = String(defect.description || defect.detail || defect.label || '?? ??')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 80);
@@ -1867,30 +1933,14 @@ async function runWebGroundedSearchQuery(apiKey, model, title, body, inlineParts
     });
     if (parseSearchQuerySingle(fastText, title)) return { text: fastText, pipeline: 'multimodal_fast_json' };
   } catch (e) {
-    console.warn('[search-query] 빠른 멀티모달 실패, Google Search 재시도:', e instanceof Error ? e.message : e);
-  }
-
-  try {
-    const text = await geminiGenerateFromParts(apiKey, model, parts, {
-      useGoogleSearch: true,
-      temperature: 0.1,
-      maxOutputTokens: 200,
-      responseMimeType: 'application/json',
-      timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
-    });
-    if (parseSearchQuerySingle(text, title)) return { text, pipeline: 'google_search_json' };
-  } catch (e) {
-    console.warn(
-      '[search-query] Google Search+JSON 실패, JSON 멀티모달 재시도:',
-      e instanceof Error ? e.message : e
-    );
+    console.warn('[search-query] ?? ???? ??, Google Search ???:', e instanceof Error ? e.message : e);
   }
 
   const text = await geminiGenerateFromParts(apiKey, model, parts, {
     temperature: 0.1,
-    maxOutputTokens: 200,
+    maxOutputTokens: 512,
     responseMimeType: 'application/json',
-    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+    timeoutMs: GEMINI_FAST_TIMEOUT_MS,
   });
   return { text, pipeline: 'multimodal_json_fallback' };
 }
@@ -1912,34 +1962,16 @@ async function runWebGroundedSearchCandidates(apiKey, model, title, body, inline
     }
   } catch (e) {
     console.warn(
-      '[search-query] 빠른 후보 멀티모달 실패, Google Search 재시도:',
-      e instanceof Error ? e.message : e
-    );
-  }
-
-  try {
-    const text = await geminiGenerateFromParts(apiKey, model, parts, {
-      useGoogleSearch: true,
-      temperature: 0.1,
-      maxOutputTokens: 260,
-      responseMimeType: 'application/json',
-      timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
-    });
-    if (parseQueryCandidates(text, title, maxQueries).length) {
-      return { text, pipeline: 'google_search_candidates_json' };
-    }
-  } catch (e) {
-    console.warn(
-      '[search-query] Google Search+JSON 후보 실패, JSON 멀티모달 재시도:',
+      '[search-query] ?? ?? ???? ??, Google Search ???:',
       e instanceof Error ? e.message : e
     );
   }
 
   const text = await geminiGenerateFromParts(apiKey, model, parts, {
     temperature: 0.1,
-    maxOutputTokens: 260,
+    maxOutputTokens: 512,
     responseMimeType: 'application/json',
-    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+    timeoutMs: GEMINI_FAST_TIMEOUT_MS,
   });
   return { text, pipeline: 'multimodal_candidates_json_fallback' };
 }
@@ -1949,8 +1981,8 @@ async function runProductIdentify(apiKey, model, title, body, inlineParts) {
   const parts =
     inlineParts.length > 0 ? [{ text: prompt }, ...inlineParts] : [{ text: prompt }];
   return geminiGenerateFromParts(apiKey, model, parts, {
-    useGoogleSearch: true,
     temperature: 0.05,
+    maxOutputTokens: 1024,
     responseMimeType: 'application/json',
     timeoutMs: GEMINI_PRODUCT_TIMEOUT_MS,
   });
@@ -1963,9 +1995,10 @@ async function runProductInfoLookup(apiKey, model, productName) {
     productName: name,
   });
   return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
-    useGoogleSearch: true,
     temperature: 0.15,
-    timeoutMs: GEMINI_PRODUCT_TIMEOUT_MS,
+    maxOutputTokens: 1200,
+    responseMimeType: 'application/json',
+    timeoutMs: GEMINI_FAST_TIMEOUT_MS,
   });
 }
 
@@ -2036,7 +2069,7 @@ function buildAccessoryCheckResearchPrompt(payload) {
 function buildAccessoryCheckJsonPrompt(payload, researchText) {
   return renderPrompt(PROMPTS.accessoryCheckJson, {
     productName: payload.productName || '',
-    researchText: String(researchText || '').trim() || '(조사 메모 없음)',
+    researchText: String(researchText || '').trim() || '(?? ?? ??)',
     title: payload.title || '',
     body: String(payload.body || '').slice(0, 4000),
     summaryJson: JSON.stringify(payload.summary || null),
@@ -2152,21 +2185,80 @@ function parseComparisonFilter(text) {
   };
 }
 
+function formatWonLabel(n) {
+  return `${Number(n).toLocaleString('ko-KR')}\uC6D0`;
+}
+
+function parseUsedPriceBand(label) {
+  const text = String(label || '').replace(/\s+/g, '');
+  if (!text) return null;
+  const nums = [...text.matchAll(/(\d{1,3}(?:,\d{3})+|\d{4,})/g)]
+    .map((match) => Number(String(match[1]).replace(/,/g, '')))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!nums.length) return null;
+  const openHigh = /^[~\uFF5E]/.test(text) || text.includes('\uC774\uD558') || text.includes('\uAE4C\uC9C0');
+  const openLow = /[~\uFF5E]$/.test(text) || text.includes('\uC774\uC0C1');
+  if (nums.length >= 2) {
+    return { min: Math.min(nums[0], nums[1]), max: Math.max(nums[0], nums[1]) };
+  }
+  if (openHigh) return { min: null, max: nums[0] };
+  if (openLow) return { min: nums[0], max: null };
+  return { min: nums[0], max: nums[0] };
+}
+
+function stitchConditionPrices(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length < 2) return list;
+  const parsed = list.map((row) => ({
+    row,
+    band: parseUsedPriceBand(row.priceLabel),
+  }));
+  const withBand = parsed.filter((item) => item.band && (item.band.min != null || item.band.max != null));
+  if (withBand.length < 2) return list;
+  for (const item of withBand) {
+    if (item.band.max == null) item.band.max = item.band.min;
+    if (item.band.min == null) item.band.min = item.band.max;
+  }
+  for (let i = 0; i < withBand.length - 1; i += 1) {
+    const higher = withBand[i];
+    const lower = withBand[i + 1];
+    const higherFloor = Number(higher.band.min);
+    if (!Number.isFinite(higherFloor) || higherFloor <= 1) continue;
+    lower.band.max = higherFloor - 1;
+    if (!Number.isFinite(Number(lower.band.min)) || lower.band.min > lower.band.max) {
+      lower.band.min = lower.band.max;
+    }
+  }
+  return parsed.map((item, index) => {
+    if (!item.band || (item.band.min == null && item.band.max == null)) return item.row;
+    const { min, max } = item.band;
+    let priceLabel = item.row.priceLabel;
+    if (index === 0 && max != null && (min == null || min === max)) priceLabel = '~' + formatWonLabel(max);
+    else if (min != null && max != null) {
+      priceLabel = min === max ? formatWonLabel(min) : formatWonLabel(min) + '~' + formatWonLabel(max);
+    } else if (max != null) priceLabel = '~' + formatWonLabel(max);
+    else if (min != null) priceLabel = formatWonLabel(min) + '~';
+    return { ...item.row, priceLabel };
+  });
+}
+
 function normalizeConditionPrices(items) {
-  return (Array.isArray(items) ? items : [])
-    .map((item) => ({
-      condition: String(item?.condition || '').replace(/\s+/g, ' ').trim(),
-      priceLabel: String(item?.priceLabel || '').replace(/\s+/g, ' ').trim(),
-      comment: String(item?.comment || '').replace(/\s+/g, ' ').trim(),
-    }))
-    .filter((item) => item.condition || item.priceLabel || item.comment)
-    .slice(0, 6);
+  return stitchConditionPrices(
+    (Array.isArray(items) ? items : [])
+      .map((item) => ({
+        condition: String(item?.condition || '').replace(/\s+/g, ' ').trim(),
+        priceLabel: String(item?.priceLabel || '').replace(/\s+/g, ' ').trim(),
+        comment: String(item?.comment || '').replace(/\s+/g, ' ').trim(),
+      }))
+      .filter((item) => item.condition || item.priceLabel || item.comment)
+      .slice(0, 6)
+  );
 }
 
 function parseUsedPriceGuide(text) {
   const parsed = parseJsonObject(text);
   return {
-    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '상태별 중고 가격 참고표')
+    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '\uC0C1\uD0DC\uBCC4 \uC911\uACE0 \uAC00\uACA9 \uCC38\uACE0\uD45C')
       .replace(/\s+/g, ' ')
       .trim(),
     summary: String(parsed.summary || recoverJsonStringField(text, 'summary') || '')
@@ -2179,7 +2271,7 @@ function parseUsedPriceGuide(text) {
     recommendedAction: String(parsed.recommendedAction || recoverJsonStringField(text, 'recommendedAction') || '')
       .replace(/\s+/g, ' ')
       .trim(),
-    confidence: String(parsed.confidence || recoverJsonStringField(text, 'confidence') || '낮음')
+    confidence: String(parsed.confidence || recoverJsonStringField(text, 'confidence') || '\uB0AE\uC74C')
       .replace(/\s+/g, ' ')
       .trim(),
     sourceNote: String(parsed.sourceNote || recoverJsonStringField(text, 'sourceNote') || '')
@@ -2215,7 +2307,7 @@ function parsePurchaseReceipt(text) {
   const verdict = String(parsed.verdict || 'hold').toLowerCase();
   return {
     verdict: ['buy', 'check_buy', 'negotiate', 'hold', 'pass'].includes(verdict) ? verdict : 'hold',
-    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '구매 판단 보류')
+    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '?? ?? ??')
       .replace(/\s+/g, ' ')
       .trim(),
     summary: String(parsed.summary || recoverJsonStringField(text, 'summary') || '')
@@ -2240,7 +2332,7 @@ function parsePurchaseReceipt(text) {
     cautions: normalizeReceiptList(parsed.cautions, 4),
     disclaimer:
       String(parsed.disclaimer || recoverJsonStringField(text, 'disclaimer') || '').replace(/\s+/g, ' ').trim() ||
-      '이 영수증은 AI가 제한된 화면 정보와 수집된 비교 매물을 바탕으로 만든 참고 의견입니다. 가격은 감정가나 확정 기준이 아니라 구매 판단용 참고자료이며, 실제 하자·구성품·거래 조건은 직접 확인해야 합니다.',
+      '? ???? AI? ??? ?? ??? ??? ?? ??? ???? ?? ?? ?????. ??? ???? ?? ??? ??? ?? ??? ??????, ?? ????????? ??? ?? ???? ???.',
     parseOk: Boolean(Object.keys(parsed).length),
   };
 }
@@ -2253,19 +2345,19 @@ function applyComparisonReliabilityToReceipt(receipt, comparison = {}, usedPrice
   const reliable = comparison?.isPriceReliable !== false && pricedSampleCount >= minCount;
   if (reliable) return receipt;
 
-  const reason = '같은 제품으로 판별된 비교 매물의 가격 표본이 부족해 가격은 제한적인 참고자료로만 볼 수 있습니다.';
+  const reason = '?? ???? ??? ?? ??? ?? ??? ??? ??? ???? ?????? ? ? ????.';
   return {
     ...receipt,
     verdict: receipt.verdict === 'pass' ? 'pass' : 'hold',
-    fairPriceLabel: '가격 참고 제한',
-    negotiationPriceLabel: '표본 부족',
-    maxBuyPriceLabel: '표본 부족',
+    fairPriceLabel: '?? ?? ??',
+    negotiationPriceLabel: '?? ??',
+    maxBuyPriceLabel: '?? ??',
     priceReason: receipt.priceReason ? `${reason} ${receipt.priceReason}` : reason,
-    summary: receipt.summary ? `${receipt.summary} 다만 ${reason}` : reason,
+    summary: receipt.summary ? `${receipt.summary} ?? ${reason}` : reason,
     cautions: normalizeReceiptList([reason, ...(receipt.cautions || [])], 4),
     disclaimer:
       receipt.disclaimer ||
-      '비교 표본이 부족해 가격과 네고가는 제한적인 참고자료로만 볼 수 있습니다. 이 영수증은 AI 참고 의견이며 실제 거래 조건은 직접 확인해야 합니다.',
+      '?? ??? ??? ??? ???? ???? ?????? ? ? ????. ? ???? AI ?? ???? ?? ?? ??? ?? ???? ???.',
   };
 }
 
@@ -2302,12 +2394,12 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
   for (const s of list) {
     const index = Number(s?.index) || messageParts.length + 1;
     if (s?.part) {
-      messageParts.push({ text: `${index}번 사진 원본입니다. 실제 하자 여부를 먼저 이 원본에서 확인하세요.` });
+      messageParts.push({ text: `${index}? ?? ?????. ?? ?? ??? ?? ? ???? ?????.` });
       messageParts.push(s.part);
     }
     if (s?.gridPart) {
       messageParts.push({
-        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요.`,
+        text: `${index}? ??? 25?(A-Y) ? 25?(1-25) ?? ???? ??? ??? ?? ??????. defects[].gridCenter? defects[].gridSizeCells? ??? ? ??? ???? ???? ?????.`,
       });
       messageParts.push(s.gridPart);
     }
@@ -2318,9 +2410,9 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
       const w = Number(s?.width) || 0;
       const h = Number(s?.height) || 0;
       const index = Number(s?.index) || i + 1;
-      const gridNote = s?.gridPart ? '원본 다음에 25×25 그리드 보드 이미지가 이어짐' : '그리드 이미지 생성 실패, 원본만 제공됨';
-      if (w > 0 && h > 0) return `${index}번 사진: ${w}×${h}px (${gridNote})`;
-      return `${index}번 사진: 해상도 미확인 (${gridNote})`;
+      const gridNote = s?.gridPart ? '?? ??? 25?25 ??? ?? ???? ???' : '??? ??? ?? ??, ??? ???';
+      if (w > 0 && h > 0) return `${index}? ??: ${w}?${h}px (${gridNote})`;
+      return `${index}? ??: ??? ??? (${gridNote})`;
     })
     .join('\n');
   const prompt = renderPrompt(PROMPTS.listingImageAnalysis, {
@@ -2352,10 +2444,10 @@ function buildSellerChatPromptVars(payload) {
     mode: String(payload.mode || 'first'),
     tone: String(payload.tone || 'polite'),
     toneLabel: String(payload.toneLabel || ''),
-    toneNote: String(payload.toneNote || '').trim() || '(없음)',
+    toneNote: String(payload.toneNote || '').trim() || '(??)',
     requestKind: String(payload.requestKind || 'freeform'),
-    userText: String(payload.message || payload.userText || payload.keywordText || '').trim() || '(없음)',
-    keywordText: String(payload.keywordText || payload.message || payload.userText || '').trim() || '(없음)',
+    userText: String(payload.message || payload.userText || payload.keywordText || '').trim() || '(??)',
+    keywordText: String(payload.keywordText || payload.message || payload.userText || '').trim() || '(??)',
     chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
     conversationStateJson: JSON.stringify(payload.conversationState || null),
     replyAnalysisJson: JSON.stringify(payload.replyAnalysis || null),
@@ -2417,7 +2509,7 @@ function parseSellerChatMessages(text) {
 
 function buildSellerReplyAnalysisPrompt(payload) {
   return renderPrompt(PROMPTS.sellerReplyAnalysis, {
-    sellerReply: String(payload.sellerReply || payload.message || '').trim() || '(없음)',
+    sellerReply: String(payload.sellerReply || payload.message || '').trim() || '(??)',
     chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
     listingJson: JSON.stringify(payload.listing || null),
     summaryJson: JSON.stringify(payload.summary || null),
@@ -2439,19 +2531,12 @@ function parseSellerReplyAnalysis(text) {
   };
 }
 
-/** API 키 유효성 + 선택 모델 사용 가능 여부 (REST models 목록) */
+/** API ? ??? + ?? ?? ?? ?? ?? (REST models ??) */
 async function verifyGeminiApiKey(apiKey, modelId) {
-  return verifyOpenAIApiKey(apiKey, modelId);
-}
-
-async function verifyOpenAIApiKey(apiKey, modelId) {
   const key = String(apiKey || '').trim();
-  if (!key) throw new Error('API 키가 비었습니다.');
-  const mid = String(modelId || DEFAULT_OPENAI_MODEL).trim();
-  const res = await fetch('https://api.openai.com/v1/models', {
-    headers: { Authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(20_000),
-  });
+  if (!key) throw new Error('API ?? ?? ????.');
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models';
+  const res = await fetch(url, { headers: { 'x-goog-api-key': key } });
   const raw = await res.text();
   let data;
   try {
@@ -2461,27 +2546,34 @@ async function verifyOpenAIApiKey(apiKey, modelId) {
   }
   if (!res.ok) {
     const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
-    throw new Error(cleanUpstreamErrorText(msg, `OpenAI HTTP ${res.status}`));
+    throw new Error(msg);
   }
-  const models = Array.isArray(data?.data) ? data.data : [];
-  if (!models.length) throw new Error('모델 목록을 가져오지 못했습니다. API 키를 확인하세요.');
+  const models = data?.models || [];
+  if (!models.length) throw new Error('?? ??? ?? ??? ?? ????. API ?? ?????.');
+  const mid = String(modelId || DEFAULT_GEMINI_MODEL).trim();
   const okModel = models.some((m) => {
-    const id = String(m?.id || '');
-    return id === mid || id.startsWith(`${mid}-`) || mid.startsWith(id);
+    const name = m?.name || '';
+    return name === `models/${mid}` || name.endsWith(`/${mid}`);
   });
-  // 일부 최신 모델은 /v1/models 목록에 늦게 뜨므로, 키가 유효하면 통과시키고 실제 호출에서 검증
   if (!okModel) {
     const sample = models
       .slice(0, 8)
-      .map((m) => m.id)
+      .map((m) => m.name?.replace(/^models\//, ''))
       .filter(Boolean)
       .join(', ');
-    console.warn(`[openai] 목록에 없는 모델 선택: ${mid} (예: ${sample || '—'})`);
+    throw new Error(
+      `??? ??(${mid})?(?) ? API ?? ? ? ????. ?? ??? ?????. (?: ${sample || '??'})`
+    );
   }
   return { ok: true, model: mid };
 }
 
+async function verifyOpenAIApiKey(apiKey, modelId) {
+  return verifyGeminiApiKey(apiKey, modelId);
+}
+
 const server = http.createServer(async (req, res) => {
+  res.req = req;
   const host = req.headers.host || `127.0.0.1:${PORT}`;
   const url = new URL(req.url || '/', `http://${host}`);
 
@@ -2510,14 +2602,15 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/demo/status') {
-    json(res, 200, {
+    const payload = {
       demoMode: DEMO_MODE,
       serverKey: Boolean(SERVER_GEMINI_KEY),
       dailyLimit: DEMO_DAILY_LIMIT,
       publicOrigin: PUBLIC_ANALYZER_ORIGIN || null,
       extensionDownloadUrl: '/downloads/buy-or-bye-extension.zip',
       serverKeyToken: DEMO_SERVER_KEY_TOKEN,
-    });
+    };
+    json(res, DEMO_MODE && !SERVER_GEMINI_KEY ? 503 : 200, payload);
     return;
   }
 
@@ -2535,13 +2628,13 @@ const server = http.createServer(async (req, res) => {
     try {
       const id = decodeURIComponent(url.pathname.slice('/api/demo/scenarios/'.length));
       if (!isSafeDemoId(id)) {
-        json(res, 400, { error: '잘못된 데모 id입니다.' });
+        json(res, 400, { error: '??? ?? id???.' });
         return;
       }
       const scenario = await readDemoJson(path.join('scenarios', `${id}.json`));
       json(res, 200, scenario);
     } catch {
-      json(res, 404, { error: '데모 시나리오를 찾지 못했습니다.' });
+      json(res, 404, { error: '?? ????? ?? ?????.' });
     }
     return;
   }
@@ -2550,13 +2643,13 @@ const server = http.createServer(async (req, res) => {
     try {
       const id = decodeURIComponent(url.pathname.slice('/api/demo/cache/'.length));
       if (!isSafeDemoId(id)) {
-        json(res, 400, { error: '잘못된 데모 id입니다.' });
+        json(res, 400, { error: '??? ?? id???.' });
         return;
       }
       const cache = await readDemoJson(path.join('cache', `${id}.json`));
       json(res, 200, cache);
     } catch {
-      json(res, 404, { error: '데모 캐시를 찾지 못했습니다.' });
+      json(res, 404, { error: '?? ??? ?? ?????.' });
     }
     return;
   }
@@ -2615,7 +2708,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { ok: false, error: 'X-OpenAI-Key 또는 X-Gemini-Key 헤더가 필요합니다.' });
+        json(res, 400, { ok: false, error: 'X-OpenAI-Key ?? X-Gemini-Key ??? ?????.' });
         return;
       }
       const result = await verifyGeminiApiKey(apiKey, model);
@@ -2631,7 +2724,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2639,7 +2732,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const imageUrls = body.imageUrls;
@@ -2684,7 +2777,7 @@ if (
         rawText: rawOut,
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -2694,7 +2787,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2702,7 +2795,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const inlineParts = await fetchListingImageInlineParts(body.imageUrls);
@@ -2742,16 +2835,16 @@ if (
           productImageUrl: '',
         };
       } catch (e) {
-        throw new Error(`제품 식별은 됐지만 상세 정보 조회에 실패했습니다: ${e instanceof Error ? e.message : e}`);
+        console.warn('[product-summary] detail lookup skipped:', e instanceof Error ? e.message : e);
       }
       json(res, 200, {
         summary,
         model,
         usedImages: inlineParts.length,
-        pipeline: 'identify_then_google_search_lookup',
+        pipeline: 'identify_then_fast_lookup',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -2761,7 +2854,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2769,7 +2862,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -2786,7 +2879,7 @@ if (
         pipeline: 'gemini_google_search_product_risk_research_then_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -2796,7 +2889,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2804,7 +2897,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -2823,7 +2916,7 @@ if (
         pipeline: 'gemini_google_search_product_risk_youtube',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -2833,7 +2926,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2841,7 +2934,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -2862,7 +2955,7 @@ if (
         pipeline: 'gemini_listing_text_analysis_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -2872,7 +2965,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2880,7 +2973,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -2901,7 +2994,7 @@ if (
         pipeline: 'gemini_accessory_check_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -2911,7 +3004,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2919,7 +3012,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls : [];
@@ -2929,7 +3022,7 @@ if (
         json(res, 200, {
           analysis: {
             images: [],
-            overall: '분석할 수 있는 매물 사진을 불러오지 못했습니다.',
+            overall: '??? ? ?? ?? ??? ???? ?????.',
             parseOk: true,
           },
           model,
@@ -2982,8 +3075,8 @@ if (
           imageHeight: Number(s.height) || 0,
           debugGridImageUrl: debugGridByIndex.get(idx) || '',
           debugGridMeta: debugGridMetaByIndex.get(idx) || null,
-          label: '추가 사진',
-          comment: 'AI가 이 사진에 대한 개별 코멘트를 반환하지 않았습니다. 원본 매물 사진으로 함께 확인하세요.',
+          label: '?? ??',
+          comment: 'AI? ? ??? ?? ?? ???? ???? ?????. ?? ?? ???? ?? ?????.',
           level: 'neutral',
         });
       }
@@ -2997,10 +3090,10 @@ if (
           imageHeight: 0,
           debugGridImageUrl: '',
           debugGridMeta: null,
-          label: loadedIndexSet.size ? '분석 생략' : '사진 확인',
+          label: loadedIndexSet.size ? '?? ??' : '?? ??',
           comment: loadedIndexSet.size
-            ? '분석 서버가 이 사진을 불러오지 못했습니다. 위 매물 사진과 동일한 원본으로 직접 확인하세요.'
-            : '분석할 수 있는 매물 사진을 불러오지 못했습니다.',
+            ? '?? ??? ? ??? ???? ?????. ? ?? ??? ??? ???? ?? ?????.'
+            : '??? ? ?? ?? ??? ???? ?????.',
           level: 'neutral',
         });
       }
@@ -3009,7 +3102,7 @@ if (
         parsedBatches
           .map((p) => String(p.overall || '').trim())
           .filter(Boolean)
-          .join(' ') || '사진별 상태 코멘트';
+          .join(' ') || '??? ?? ???';
       json(res, 200, {
         analysis: {
           images,
@@ -3023,7 +3116,7 @@ if (
         pipeline: 'gemini_listing_image_analysis_json_batches',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3033,7 +3126,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3041,7 +3134,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const rawOut = await runComparisonFilter(apiKey, model, body);
@@ -3052,7 +3145,7 @@ if (
         pipeline: 'gemini_comparison_same_product_filter',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3062,7 +3155,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3070,7 +3163,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const rawOut = await runUsedPriceGuide(apiKey, model, body);
@@ -3081,7 +3174,7 @@ if (
         pipeline: 'gemini_used_price_guide_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3091,7 +3184,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3099,7 +3192,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const rawOut = await runPurchaseReceipt(apiKey, model, body);
@@ -3110,7 +3203,7 @@ if (
         pipeline: 'gemini_purchase_receipt_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3120,7 +3213,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3128,12 +3221,12 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const prompt = String(body.prompt || '').trim();
       if (!prompt) {
-        json(res, 400, { error: '프롬프트를 입력하세요.' });
+        json(res, 400, { error: '????? ?????.' });
         return;
       }
       const answer = await runDirectAiChat(apiKey, model, prompt);
@@ -3143,7 +3236,7 @@ if (
         pipeline: 'gemini_google_search_direct_chat',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3153,7 +3246,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3161,7 +3254,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const prompt = buildSellerChatAssistantPrompt(body);
@@ -3184,7 +3277,7 @@ if (
         pipeline: 'gemini_seller_chat_assistant_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3194,7 +3287,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3202,7 +3295,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const prompt = buildSellerChatKeywordsPrompt(body);
@@ -3222,7 +3315,7 @@ if (
         pipeline: 'gemini_seller_chat_keywords_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3232,7 +3325,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3240,7 +3333,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const prompt = buildSellerChatMessagesPrompt(body);
@@ -3262,7 +3355,7 @@ if (
         pipeline: 'gemini_seller_chat_messages_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3272,7 +3365,7 @@ if (
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
+        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3280,7 +3373,7 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const prompt = buildSellerReplyAnalysisPrompt(body);
@@ -3299,7 +3392,7 @@ if (
         pipeline: 'gemini_seller_reply_analysis_json',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
@@ -3311,17 +3404,17 @@ if (
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
+        json(res, 400, { error: 'JSON ??? ???? ????.' });
         return;
       }
       const productName = String(body.productName || '').trim();
       const searchQuery = String(body.searchQuery || '').trim();
       const query = productName || searchQuery;
       if (!query) {
-        json(res, 400, { error: '제품명 또는 검색어가 필요합니다.' });
+        json(res, 400, { error: '??? ?? ???? ?????.' });
         return;
       }
-      const searchText = `${query} 공식 제품 이미지`;
+      const searchText = `${query} ?? ?? ???`;
       const directUrls = await fetchDuckDuckGoImageUrls(searchText);
       const imageUrls = directUrls.map(productImageProxyUrl).filter(Boolean);
       json(res, 200, {
@@ -3329,16 +3422,22 @@ if (
         source: imageUrls.length ? 'duckduckgo_images' : 'none',
       });
     } catch (e) {
-      json(res, 502, { error: e instanceof Error ? e.message : String(e) });
+      json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
     }
     return;
   }
 
   if (req.method === 'GET' && url.pathname === '/api/image-proxy') {
     const target = normalizeProductImageUrl(url.searchParams.get('url'));
+    const signature = url.searchParams.get('sig');
     if (!target) {
       res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('이미지 URL이 올바르지 않습니다.');
+      res.end('??? URL? ???? ????.');
+      return;
+    }
+    if (!validProductImageProxySignature(target, signature)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('???? ?? ??? ?????.');
       return;
     }
     try {
@@ -3355,10 +3454,17 @@ if (
       const type = upstream.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
       if (!upstream.ok || !type.startsWith('image/')) {
         res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('이미지를 가져오지 못했습니다.');
+        res.end('???? ???? ?????.');
         return;
       }
+      const declaredSize = Number(upstream.headers.get('content-length')) || 0;
+      if (declaredSize > MAX_PROXY_IMAGE_BYTES) {
+        throw new Error('Remote image is too large.');
+      }
       const buf = Buffer.from(await upstream.arrayBuffer());
+      if (buf.length > MAX_PROXY_IMAGE_BYTES) {
+        throw new Error('Remote image is too large.');
+      }
       res.writeHead(200, {
         'Content-Type': type,
         'Cache-Control': 'public, max-age=86400',
@@ -3387,11 +3493,12 @@ if (
     return;
   }
 
-  /* 정적 파일 */
+  /* ?? ?? */
   let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
   filePath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
-  const abs = path.join(ANALYZER_DIR, filePath);
-  if (!abs.startsWith(ANALYZER_DIR)) {
+  const abs = path.resolve(path.join(ANALYZER_DIR, filePath));
+  const analyzerRoot = path.resolve(ANALYZER_DIR);
+  if (abs !== analyzerRoot && !abs.startsWith(analyzerRoot + path.sep)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
@@ -3414,9 +3521,9 @@ if (
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Buy or Bye · 중고매물 살까말까: http://127.0.0.1:${PORT}/`);
+  console.log(`Buy or Bye ? ???? ????: http://127.0.0.1:${PORT}/`);
   console.log(`bind: ${HOST}:${PORT}`);
   if (DEMO_MODE) console.log(`demo mode: on (server key ${SERVER_GEMINI_KEY ? 'ready' : 'missing'})`);
   if (PUBLIC_ANALYZER_ORIGIN) console.log(`public origin: ${PUBLIC_ANALYZER_ORIGIN}`);
-  console.log('종료: Ctrl+C');
+  console.log('??: Ctrl+C');
 });

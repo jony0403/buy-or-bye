@@ -14,14 +14,26 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-    <link rel="stylesheet" href="style.css?v=20260916-landing5" />
+    <link rel="stylesheet" href="style.css?v=20260916-step3fix" />
   </head>
   <body>
-    <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle">
+    <div id="apiFatalModal" class="api-fatal-modal" hidden aria-hidden="true" role="alertdialog" aria-modal="true" aria-labelledby="apiFatalTitle" aria-describedby="apiFatalBody">
+      <div class="api-fatal-modal__panel">
+        <p class="api-fatal-modal__eyebrow">API / 서버 오류</p>
+        <h2 id="apiFatalTitle" class="api-fatal-modal__title">분석을 진행할 수 없습니다</h2>
+        <p id="apiFatalBody" class="api-fatal-modal__body"></p>
+        <div class="api-fatal-modal__actions">
+          <button type="button" class="btn btn-secondary" data-api-fatal-close>닫기</button>
+          <button type="button" class="btn" data-api-fatal-retry hidden>다시 시도</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="aiGate" class="ai-gate" role="dialog" aria-modal="true" aria-labelledby="aiGateTitle" hidden aria-hidden="true">
       <div class="ai-gate__panel">
-        <h2 id="aiGateTitle" class="ai-gate__title">OpenAI API 설정</h2>
+        <h2 id="aiGateTitle" class="ai-gate__title">Gemini API 설정</h2>
           <p class="ai-gate__desc">
-          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">OpenAI Platform</a>
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>
           에서 발급한 API 키를 입력하면 분석을 시작할 수 있습니다. 키는 이 브라우저에만 저장됩니다.
         </p>
         <form id="aiGateForm" class="ai-gate__form">
@@ -35,7 +47,7 @@
             placeholder="여기에 API 키 붙여넣기"
             required
           />
-          <label class="ai-gate__label" for="aiModel">OpenAI 모델</label>
+          <label class="ai-gate__label" for="aiModel">Gemini 모델</label>
           <select id="aiModel" name="model" class="ai-gate__select"></select>
           <p id="aiGateError" class="ai-gate__error" role="alert"></p>
           <button type="submit" class="btn ai-gate__submit">저장하고 시작</button>
@@ -43,7 +55,7 @@
       </div>
     </div>
 
-    <div id="appShell" class="app-shell app-shell--locked app-shell--slide is-empty-state" inert>
+    <div id="appShell" class="app-shell app-shell--slide is-empty-state">
       <aside class="dashboard-rail" aria-label="주요 기능">
         <button type="button" class="dashboard-rail__logo dashboard-rail__home" data-home-action aria-label="처음 화면으로 돌아가기" title="처음 화면으로">
           <img src="/icons/icon48.png" alt="" width="28" height="28" />
@@ -75,10 +87,6 @@
           <button type="button" class="dashboard-rail__btn" data-rail-action="shortcuts" aria-label="단축키 보기" title="단축키 보기 (?)">
             <span class="material-symbols-rounded" aria-hidden="true">keyboard</span>
             <small>단축키</small>
-          </button>
-          <button type="button" class="dashboard-rail__btn" data-rail-action="settings" aria-label="AI 설정" title="AI 설정 (S)">
-            <span class="material-symbols-rounded" aria-hidden="true">settings</span>
-            <small>설정</small>
           </button>
           <button type="button" class="dashboard-rail__btn" data-rail-action="reanalyze" aria-label="현재 매물 다시 분석" title="전체 재분석 (R)">
             <span class="material-symbols-rounded" aria-hidden="true">refresh</span>
@@ -161,7 +169,6 @@
                 <div><dt><kbd>D</kbd></dt><dd>다크모드 전환</dd></div>
                 <div><dt><kbd>H</kbd></dt><dd>최근 매물 열기/닫기</dd></div>
                 <div><dt><kbd>T</kbd></dt><dd>자동진행 켜기/끄기</dd></div>
-                <div><dt><kbd>S</kbd></dt><dd>AI 설정 열기</dd></div>
               </dl>
             </section>
             <section>
@@ -200,7 +207,7 @@
             class="url-import__input"
             type="url"
             inputmode="url"
-            placeholder="중고나라·번개장터·당근 링크 붙여넣기"
+            placeholder="매물 URL 붙여넣기"
             aria-label="매물 URL"
           />
           <button type="submit" id="btnUrlImport" class="btn btn-small url-import__submit">불러오기</button>
@@ -214,7 +221,6 @@
         <div class="top-actions">
           <button type="button" id="btnLayoutMode" class="btn btn-secondary btn-small mode-toggle" aria-pressed="true" title="레이아웃 전환 (L)">스크롤식</button>
           <button type="button" id="btnHistory" class="btn btn-secondary btn-small" title="최근 매물 (H)">최근 매물</button>
-          <button type="button" id="btnAiSettings" class="btn btn-secondary btn-small" title="AI 설정 (S)">AI 설정</button>
           <button type="button" id="btnRefresh" class="btn" title="전체 재분석 (R)">새로 분석</button>
         </div>
       </header>
@@ -228,28 +234,111 @@
     <main class="analysis-board" id="analysisBoard">
       <section class="listing-cluster" id="current">
         <article class="mini-card mini-card--empty sample-landing" data-sample-landing>
-          <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="72" height="72" />
-          <h2>매물 대기</h2>
-          <p class="empty">왼쪽 URL로 중고나라·번개장터·당근 링크를 불러오거나, 아래 샘플로 바로 분석을 시작해 보세요.</p>
+          <header class="sample-landing__hero">
+            <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="64" height="64" />
+            <div class="sample-landing__hero-copy">
+              <p class="sample-landing__eyebrow">BUY OR BYE</p>
+              <h2>중고 매물, 링크 하나로 판단까지</h2>
+              <p>샘플로 먼저 둘러보거나 확장을 설치해 실제 매물을 불러오세요.</p>
+            </div>
+          </header>
+          <div class="sample-copy-guide" data-sample-copy-guide>
+            <p><strong>중고 매물을 살지 말지, 이 화면에서 바로 판단하세요.</strong></p>
+            <p>아래 샘플을 누르면 Step 1~5 분석 흐름을 확장 없이 먼저 볼 수 있습니다.</p>
+            <p>실제 당근·번개장터·중고나라 매물을 불러오려면 Chrome 확장을 설치해야 합니다.</p>
+            <p>확장이 없으면 실제 매물 전송과 Step 3 유사매물 자동 수집이 제한됩니다.</p>
+          </div>
+          <section class="sample-guide-block" aria-labelledby="sampleGuideTitleStatic">
+            <div class="sample-section-heading">
+              <div>
+                <p class="sample-section-label" id="sampleGuideTitleStatic">처음이라면 이렇게 시작하세요</p>
+                <p class="sample-section-desc">복잡한 설정 없이 아래 순서대로 진행하면 됩니다.</p>
+              </div>
+            </div>
+            <div class="sample-guide-grid">
+              <div class="sample-guide-card">
+                <span class="sample-guide-card__number">1</span>
+                <div><strong>샘플로 체험</strong><p>아래 샘플을 눌러 Step 1~5 분석 흐름을 먼저 확인합니다.</p></div>
+              </div>
+              <div class="sample-guide-card">
+                <span class="sample-guide-card__number">2</span>
+                <div><strong>실제 매물 전송</strong><p>확장 설치 후 판매글 우측 하단 버튼으로 매물을 가져옵니다.</p></div>
+              </div>
+              <div class="sample-guide-card">
+                <span class="sample-guide-card__number">3</span>
+                <div><strong>단계별 확인</strong><p>제품·하자·시세·최종 판단·협상 문구까지 차례로 확인합니다.</p></div>
+              </div>
+            </div>
+          </section>
+          <aside class="sample-extension-notice" data-ext-notice>
+            <span class="material-symbols-rounded" aria-hidden="true">extension</span>
+            <div>
+              <strong data-ext-status>확장을 설치해야 실제 매물을 분석할 수 있어요</strong>
+              <p>확장 없이도 샘플 체험은 가능하지만, 실제 매물 불러오기와 Step 3 유사매물 자동 수집은 제한됩니다.</p>
+            </div>
+          </aside>
           <div class="sample-demo-block">
-            <p class="sample-section-label">샘플 매물</p>
+            <div class="sample-section-heading">
+              <div>
+                <p class="sample-section-label">샘플로 먼저 체험하기</p>
+                <p class="sample-section-desc">설치 전에 대표 분석 사례를 바로 실행해 볼 수 있습니다.</p>
+              </div>
+              <span class="sample-section-chip">확장 없이 가능</span>
+            </div>
             <div class="sample-demo-grid" data-demo-grid>
               <p class="mini-muted">샘플을 불러오는 중…</p>
             </div>
           </div>
-          <div class="sample-ext-block">
-            <p class="sample-section-label">확장 프로그램 <span class="mini-muted">(선택)</span></p>
-            <p class="empty empty-sub">실제 매물 페이지에서 한 번에 보내려면 Chrome 확장을 설치하세요.</p>
+          <div class="sample-ext-block" data-ext-block>
+            <div class="sample-section-heading">
+              <div>
+                <p class="sample-section-label">실제 매물 분석 준비</p>
+                <p class="sample-section-desc">Chrome 확장 설치 후 당근·번개장터·중고나라 판매글을 바로 전송하세요.</p>
+              </div>
+              <span class="sample-section-chip sample-section-chip--required">실사용 필수</span>
+            </div>
             <div class="sample-ext-actions">
-              <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip">ZIP 받기</a>
-              <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 보기</button>
+              <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip" download>확장 ZIP 받기</a>
+              <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 자세히</button>
             </div>
             <ol class="sample-ext-steps" data-ext-steps hidden>
-              <li>받은 ZIP을 풀어 폴더로 둡니다.</li>
-              <li>Chrome 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
-              <li>오른쪽 위 <strong>개발자 모드</strong>를 켭니다.</li>
-              <li><strong>압축해제된 확장 프로그램을 로드합니다</strong>에서 방금 푼 폴더를 선택합니다.</li>
-              <li>당근·번개·중고나라 매물 상세에서 확장 아이콘을 누르면 이 분석 화면으로 전송됩니다.</li>
+              <li>
+                ZIP을 풀어 <code>buy-or-bye-extension</code> 폴더를 만듭니다.
+                <figure class="sample-ext-shot">
+                  <img src="/install-guide/03-select-folder.jpg" alt="압축 푼 buy-or-bye-extension 폴더" width="720" height="auto" loading="lazy" />
+                </figure>
+              </li>
+              <li>
+                <code>chrome://extensions</code>에서 <strong>개발자 모드</strong>를 켭니다.
+                <figure class="sample-ext-shot">
+                  <img src="/install-guide/01-developer-mode.jpg" alt="개발자 모드 스위치" width="720" height="auto" loading="lazy" />
+                </figure>
+              </li>
+              <li>
+                <strong>압축해제된 확장 프로그램을 로드합니다</strong>에서 폴더를 선택합니다.
+                <figure class="sample-ext-shot">
+                  <img src="/install-guide/02-load-unpacked.jpg" alt="압축해제된 확장 프로그램 로드" width="720" height="auto" loading="lazy" />
+                </figure>
+              </li>
+              <li>
+                「Buy or Bye」가 보이면 설치 완료입니다.
+                <figure class="sample-ext-shot">
+                  <img src="/install-guide/04-installed.jpg" alt="설치된 Buy or Bye 확장" width="720" height="auto" loading="lazy" />
+                </figure>
+              </li>
+              <li>
+                Chrome 툴바의 <strong>퍼즐</strong> 버튼을 누른 뒤, 「Buy or Bye」 옆 <strong>핀</strong>을 눌러 아이콘을 고정합니다.
+                <figure class="sample-ext-shot">
+                  <img src="/install-guide/05-pin-extension.jpg" alt="Chrome 확장 목록에서 Buy or Bye 핀 고정" width="720" height="auto" loading="lazy" />
+                </figure>
+              </li>
+              <li>
+                당근·번개장터·중고나라 <strong>매물 상세 페이지</strong>로 이동하면, 화면 <strong>우측 하단</strong>에 이 버튼이 나타납니다. 누르면 매물이 이 분석 화면으로 전송됩니다.
+                <figure class="sample-ext-shot sample-ext-shot--fab">
+                  <img src="/install-guide/06-extension-icon.jpg" alt="매물 페이지 우측 하단 Buy or Bye 전송 버튼" width="320" height="auto" loading="lazy" />
+                  <figcaption>매물 상세 페이지 우측 하단에 보이는 전송 버튼</figcaption>
+                </figure>
+              </li>
             </ol>
           </div>
         </article>
@@ -270,6 +359,8 @@
     <section id="favoriteCompareModal" class="favorite-compare-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="favoriteCompareTitle"></section>
     <button type="button" id="drawerBackdrop" class="drawer-backdrop" hidden aria-label="최근 매물 닫기"></button>
 
+    </div>
+
     <div id="lightbox" class="lightbox" hidden aria-hidden="true">
       <div class="lightbox-content">
         <button type="button" class="lightbox-close" id="lightboxClose" aria-label="닫기" title="닫기 (Esc)">×</button>
@@ -289,11 +380,10 @@
         <i></i>
       </div>
     </div>
-    </div>
 
-    <script src="ai/config.js?v=20260916-landing5"></script>
-    <script src="ai/client.js?v=20260916-landing5"></script>
-    <script src="ai/gate.js?v=20260916-landing5"></script>
-    <script src="app.js?v=20260916-landing5"></script>
+    <script src="ai/config.js?v=20260916-releasehardening"></script>
+    <script src="ai/client.js?v=20260916-releasehardening"></script>
+    <script src="ai/gate.js?v=20260916-releasehardening"></script>
+    <script src="app.js?v=20260916-step3fix"></script>
   </body>
 </html>

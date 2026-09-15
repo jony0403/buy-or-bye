@@ -53,15 +53,20 @@
     return new Promise((resolve) => {
       chrome.storage.local.get(['marketScrapeLatest', 'marketScrapeComps'], (res) => {
         const latest = res.marketScrapeLatest;
-        const forItemKey = latest ? `${latest.platform}:${latest.itemId}` : null;
         const prev = res.marketScrapeComps || {};
+        // 검색 시작 시 고정한 대상 키를 우선한다. 검색 도중 최근 매물이 바뀌어도
+        // 결과가 다른 매물에 붙어서는 안 된다.
+        const forItemKey =
+          prev.forItemKey || (latest ? `${latest.platform}:${latest.itemId}` : null);
         const prevPlatform = prev[platform] || null;
         const list = mergeCompItems(prevPlatform?.items, items);
         const next = {
           forItemKey: forItemKey || prev.forItemKey || null,
+          generation: prev.generation,
           status: prev.status || 'collecting',
           startedAt: prev.startedAt || Date.now(),
           expected: prev.expected || null,
+          expectedQueries: prev.expectedQueries || null,
         };
         for (const id of PLATFORM_IDS) next[id] = prev[id] || null;
         next[platform] = {

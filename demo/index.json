@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "샘플 매물",
-  "description": "확장 없이도 바로 분석 흐름을 볼 수 있는 선별 매물 5개입니다.",
+  "description": "확장 없이도 바로 분석 흐름을 볼 수 있는 선별 매물입니다. Step 1부터 실시간 AI로 분석합니다.",
   "scenarios": [
     {
       "id": "airpods-pro2-chronic",
@@ -32,6 +32,12 @@
       "label": "본문 누락",
       "blurb": "아이패드 — 상태·잠금·구성 설명이 빈약한 판매글",
       "highlight": "listing-text"
+    },
+    {
+      "id": "phone-screen-crack",
+      "label": "파손·하자 표시",
+      "blurb": "아이폰 — 액정 금가 사진으로 동그라미 표시를 체험",
+      "highlight": "damage"
     }
   ]
 }

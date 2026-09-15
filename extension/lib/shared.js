@@ -7,7 +7,10 @@
   Root.__activeInstanceId = INSTANCE_ID;
 
   Root.register = (adapter) => {
-    if (adapter?.id) adapters.push(adapter);
+    if (!adapter?.id) return;
+    const existingIndex = adapters.findIndex((item) => item?.id === adapter.id);
+    if (existingIndex >= 0) adapters[existingIndex] = adapter;
+    else adapters.push(adapter);
   };
 
   Root.getAdapter = () => {
@@ -399,7 +402,7 @@
       throw new Error('분석 웹에서 OpenAI API 키를 먼저 저장하세요.');
     }
 
-    const model = st.ulsaOpenAiModel || st.ulsaGeminiModel || 'gpt-5.6-terra';
+    const model = st.ulsaOpenAiModel || st.ulsaGeminiModel || 'gemini-3.5-flash-lite';
     const res = await fetch('http://127.0.0.1:3920/api/search-query', {
       method: 'POST',
       headers: {
@@ -588,6 +591,7 @@
     updateFloatingVisibility();
 
     chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+      if (Root.__activeInstanceId !== INSTANCE_ID) return undefined;
       if (!msg?.type) return undefined;
       (async () => {
         switch (msg.type) {
@@ -633,14 +637,10 @@
               sendResponse({ ok: false, error: '검색 결과 페이지가 아닙니다.' });
               break;
             }
-            let items = ad.harvestSearchListings?.() || [];
-            const q =
-              new URL(location.href).searchParams.get('q') ||
-              new URL(location.href).searchParams.get('search') ||
-              '';
-            if (typeof ad.enhanceSearchListings === 'function') {
-              items = await ad.enhanceSearchListings(items, { searchUrl: location.href, query: q });
-            }
+            const items = await harvestSearchListingsWithRetry(ad, ad.id === 'daangn' ? 10_000 : 8_000);
+            const q = Root.getSearchQueryFromUrl?.(location.href) || '';
+            // 핵심 목록을 먼저 저장하고 응답한다. 이미지 보강을 기다리면 SPA 검색 탭이
+            // 닫히기 전에 5~10초 타임아웃이 나서 목록 전체가 0건 처리될 수 있다.
             await Root.saveComps(ad.id, items, { searchUrl: location.href, query: q });
             sendResponse({ ok: true, count: items.length, platform: ad.id });
             break;
@@ -713,6 +713,24 @@
     void Root.tryAutoCollectSearch?.();
   };
 
+  async function harvestSearchListingsWithRetry(ad, timeoutMs = 7_000) {
+    const startedAt = Date.now();
+    let best = [];
+    let stableCount = 0;
+    while (Date.now() - startedAt < timeoutMs) {
+      const items = ad.harvestSearchListings?.() || [];
+      if (items.length > best.length) {
+        best = items;
+        stableCount = 0;
+      } else if (items.length && items.length === best.length) {
+        stableCount += 1;
+      }
+      if (best.length && stableCount >= 1) break;
+      await new Promise((resolve) => setTimeout(resolve, best.length ? 450 : 800));
+    }
+    return best;
+  }
+
   Root.tryAutoCollectSearch = async () => {
     const ad = Root.getAdapter();
     if (!ad?.isSearchPage?.() || typeof ad.harvestSearchListings !== 'function') return;
@@ -722,22 +740,8 @@
     if (!flags?.[ad.id]) return;
     if (flags.at && Date.now() - flags.at > 3 * 60 * 1000) return;
 
-    let items = [];
-    const firstWaitMs = ad.id === 'daangn' ? 1800 : 1000;
-    const retryWaitMs = ad.id === 'daangn' ? 900 : 700;
-    for (let i = 0; i < 3; i += 1) {
-      await new Promise((r) => setTimeout(r, i === 0 ? firstWaitMs : retryWaitMs));
-      items = ad.harvestSearchListings();
-      const withImage = items.filter((item) => item.imageUrl).length;
-      if (items.length && (ad.id !== 'daangn' || withImage > 0 || i >= 2)) break;
-    }
-    const q =
-      new URL(location.href).searchParams.get('q') ||
-      new URL(location.href).searchParams.get('search') ||
-      '';
-    if (typeof ad.enhanceSearchListings === 'function') {
-      items = await ad.enhanceSearchListings(items, { searchUrl: location.href, query: q });
-    }
+    const items = await harvestSearchListingsWithRetry(ad, ad.id === 'daangn' ? 9_000 : 7_000);
+    const q = Root.getSearchQueryFromUrl?.(location.href) || '';
     await Root.saveComps(ad.id, items, { searchUrl: location.href, query: q });
     const latest = await chrome.storage.local.get(['marketScrapeAutoCollect']);
     const currentFlags = latest.marketScrapeAutoCollect || flags;

@@ -78,6 +78,7 @@ const stageThreeAutoQueryRetryCounts = new Map();
 const stageThreeCollectionFinalizingKeys = new Map();
 const stageThreeSearchProgresses = new Map();
 const stageThreeCollectionTimeoutTimers = new Map();
+const stageThreeLiveSearchAttemptedKeys = new Set();
 const usedPriceGuideProgresses = new Map();
 const directAiChat = {
   open: false,
@@ -115,7 +116,6 @@ const APP_SHORTCUT_GROUPS = [
       ['D', '다크모드 전환'],
       ['H', '최근 매물 열기/닫기'],
       ['T', '자동진행 켜기/끄기'],
-      ['S', 'AI 설정 열기'],
     ],
   },
   {
@@ -156,10 +156,10 @@ const activeAiAbortControllers = new Set();
 let pendingImportUrl = '';
 const RECEIPT_PRINT_SCROLL_MS = 6600;
 const MIN_PRICE_REFERENCE_MATCHES = 5;
-const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 0;
-const STAGE_THREE_COLLECTION_TIMEOUT_MS = 10_000;
+const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
+const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v15';
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v16';
 const LISTING_IMAGE_OVERLAY_VERSION = 25;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
@@ -176,6 +176,7 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v10',
   'ulsa_ai_analysis_cache_v11',
   'ulsa_ai_analysis_cache_v13',
+  'ulsa_ai_analysis_cache_v15',
 ];
 
 function mapToPersistableObject(map) {
@@ -332,6 +333,20 @@ function isStageThreeCacheSettled(status) {
   return status === 'done' || status === 'error';
 }
 
+function isUsableComparisonFilterState(state) {
+  if (!isStageThreeCacheSettled(state?.status)) return false;
+  if (state?.skipped || state?.status === 'error') return true;
+  return Array.isArray(state?.matches) && state.matches.length > 0;
+}
+
+function hasRestorableComparisonListings(listingKey) {
+  if (!listingKey) return false;
+  const comparisonKey = findListingStageCacheKey(comparisonFilters, listingKey);
+  return isUsableComparisonFilterState(comparisonFilters.get(comparisonKey)) &&
+    Array.isArray(comparisonFilters.get(comparisonKey)?.matches) &&
+    comparisonFilters.get(comparisonKey).matches.length > 0;
+}
+
 function hasSettledStageThreeCache(listingKey) {
   if (!listingKey) return false;
   const comparisonKey = findListingStageCacheKey(comparisonFilters, listingKey);
@@ -339,7 +354,7 @@ function hasSettledStageThreeCache(listingKey) {
   return Boolean(
     comparisonKey &&
       guideKey &&
-      isStageThreeCacheSettled(comparisonFilters.get(comparisonKey)?.status) &&
+      isUsableComparisonFilterState(comparisonFilters.get(comparisonKey)) &&
       isStageThreeCacheSettled(usedPriceGuides.get(guideKey)?.status)
   );
 }
@@ -350,14 +365,13 @@ function restoredStageThreeComps(item, rawComps) {
   const active = activeCompsForItem(item, rawComps);
   if (active) return active;
   if (stageThreeComparisonSkippedKeys.has(key)) return emptyComparisonComps(item);
-  if (hasSettledStageThreeCache(key)) {
+  if (hasRestorableComparisonListings(key)) {
     stageThreeSearchProgresses.delete(key);
     clearStageThreeCollectionTimeout(key);
     return emptyComparisonComps(item);
   }
-  if (relatedRequestedKeys.has(key) || stageThreeActiveKeys.has(key)) {
-    if (rawComps?.status === 'collecting' && rawComps.forItemKey === itemKey(item)) return rawComps;
-    return null;
+  if (rawComps?.status === 'collecting' && (!rawComps.forItemKey || rawComps.forItemKey === itemKey(item))) {
+    return rawComps;
   }
   return null;
 }
@@ -382,6 +396,7 @@ function ensureListingStageCacheAlias(map, listingKey, targetKey) {
   if (!sourceKey || sourceKey === targetKey) return false;
   const source = map.get(sourceKey);
   if (!isStageThreeCacheSettled(source?.status)) return false;
+  if (map === comparisonFilters && !isUsableComparisonFilterState(source)) return false;
   map.set(targetKey, { ...source });
   persistAiCaches();
   return true;
@@ -457,7 +472,11 @@ function loadAiCaches() {
         (state) => state?.status !== 'done' || Number(state.overlayVersion) >= LISTING_IMAGE_OVERLAY_VERSION
       );
       restorePersistedMap(accessoryChecks, parsed.accessoryChecks);
-      restorePersistedMap(comparisonFilters, parsed.comparisonFilters);
+      restorePersistedMap(
+        comparisonFilters,
+        parsed.comparisonFilters,
+        (state) => isUsableComparisonFilterState(state)
+      );
       restorePersistedSet(stageThreeComparisonSkippedKeys, parsed.stageThreeComparisonSkippedKeys);
       restorePersistedMap(usedPriceGuides, parsed.usedPriceGuides);
       restorePersistedMap(purchaseReceipts, parsed.purchaseReceipts);
@@ -467,14 +486,20 @@ function loadAiCaches() {
       /* ignore stale cache */
     }
   }
-  for (const key of [...comparisonFilters.keys(), ...usedPriceGuides.keys(), ...purchaseReceipts.keys()]) {
+  for (const [cacheKey, state] of [...comparisonFilters.entries()]) {
+    if (isUsableComparisonFilterState(state)) continue;
+    comparisonFilters.delete(cacheKey);
+  }
+  for (const key of [...comparisonFilters.keys()]) {
     const listingKey = listingKeyFromStageCacheKey(key);
-    if (!listingKey) continue;
+    const state = comparisonFilters.get(key);
+    if (!listingKey || !isUsableComparisonFilterState(state)) continue;
     relatedRequestedKeys.add(listingKey);
     stageThreeActiveKeys.add(listingKey);
   }
   for (const key of [...usedPriceGuides.keys(), ...purchaseReceipts.keys()]) {
-    if (key && !comparisonFilters.has(key)) comparisonFilters.set(key, { status: 'done', matches: [] });
+    const listingKey = listingKeyFromStageCacheKey(key);
+    if (listingKey) stageThreeActiveKeys.add(listingKey);
   }
   for (const [key, state] of purchaseReceipts.entries()) {
     if (state?.status === 'done') purchaseReceiptPrintedKeys.add(key);
@@ -1247,10 +1272,9 @@ function forceFinalizeStageThreeCollection(item) {
 }
 
 function effectiveStageThreeComps(item, nextComps = comps) {
-  if (nextComps && isCompsCollected(nextComps)) return nextComps;
+  if (nextComps && (isCompsCollected(nextComps) || nextComps.status === 'collecting')) return nextComps;
   const key = summaryKey(item);
   if (key && stageThreeComparisonSkippedKeys.has(key)) return emptyComparisonComps(item);
-  if (key && hasSettledStageThreeCache(key)) return emptyComparisonComps(item);
   return nextComps;
 }
 
@@ -1417,12 +1441,18 @@ function startStageTwo(item, key = summaryKey(item)) {
 
 function startStageThree(item, btn = null, key = summaryKey(item)) {
   if (!item || !key || !isStepTwoDone(item)) return false;
-  if (stageThreeActiveKeys.has(key) && relatedRequestedKeys.has(key)) return false;
+  const liveComps = effectiveStageThreeComps(item);
+  const hasLiveListings = comparisonItems(liveComps).length > 0;
+  const skipped = stageThreeComparisonSkippedKeys.has(key);
+  const collecting = liveComps?.status === 'collecting' && (!liveComps.forItemKey || liveComps.forItemKey === itemKey(item));
+  if (stageThreeActiveKeys.has(key) && relatedRequestedKeys.has(key) && (hasLiveListings || skipped || collecting)) {
+    return false;
+  }
   stageThreeActiveKeys.add(key);
   relatedRequestedKeys.add(key);
   persistAiCaches();
   playStageStartMotion();
-  openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn);
+  openRelatedSearchForItem(item, stageThreeSearchQueries(item), btn, { force: !hasLiveListings && !collecting });
   return true;
 }
 
@@ -1567,12 +1597,89 @@ function formatWon(n) {
   return `${Number(n).toLocaleString('ko-KR')}원`;
 }
 
+function parseUsedPriceBand(label) {
+  const text = String(label || '').replace(/\s+/g, '');
+  if (!text || /판단어려움|확인필요|정보부족/.test(text)) return null;
+  const nums = [...text.matchAll(/(\d{1,3}(?:,\d{3})+|\d{4,})/g)]
+    .map((match) => Number(String(match[1]).replace(/,/g, '')))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!nums.length) return null;
+  const openHigh = /^[~～]/.test(text) || /이하|까지/.test(text);
+  const openLow = /[~～]$/.test(text) || /이상/.test(text);
+  if (nums.length >= 2) {
+    return { min: Math.min(nums[0], nums[1]), max: Math.max(nums[0], nums[1]) };
+  }
+  if (openHigh) return { min: null, max: nums[0] };
+  if (openLow) return { min: nums[0], max: null };
+  return { min: nums[0], max: nums[0] };
+}
+
+function formatUsedPriceBand(min, max, { first = false } = {}) {
+  if (min == null && max == null) return '';
+  if (first && max != null && (min == null || min === max)) return `~${formatWon(max)}`;
+  if (min != null && max != null) {
+    if (min === max) return formatWon(min);
+    return `${formatWon(min)}~${formatWon(max)}`;
+  }
+  if (max != null) return `~${formatWon(max)}`;
+  return `${formatWon(min)}~`;
+}
+
+function contiguousConditionPrices(rows) {
+  const list = (Array.isArray(rows) ? rows : []).filter(Boolean);
+  if (list.length < 2) return list;
+  const parsed = list.map((row) => ({
+    row,
+    band: parseUsedPriceBand(row.priceLabel),
+  }));
+  const withBand = parsed.filter((item) => item.band && (item.band.min != null || item.band.max != null));
+  if (withBand.length < 2) return list;
+  for (const item of withBand) {
+    if (item.band.max == null) item.band.max = item.band.min;
+    if (item.band.min == null) item.band.min = item.band.max;
+  }
+  for (let i = 0; i < withBand.length - 1; i += 1) {
+    const higher = withBand[i];
+    const lower = withBand[i + 1];
+    const higherFloor = Number(higher.band.min);
+    if (!Number.isFinite(higherFloor) || higherFloor <= 1) continue;
+    lower.band.max = higherFloor - 1;
+    if (!Number.isFinite(Number(lower.band.min)) || lower.band.min > lower.band.max) {
+      lower.band.min = lower.band.max;
+    }
+  }
+  return parsed.map((item, index) => {
+    if (!item.band || (item.band.min == null && item.band.max == null)) return item.row;
+    return {
+      ...item.row,
+      priceLabel: formatUsedPriceBand(item.band.min, item.band.max, { first: index === 0 }),
+    };
+  });
+}
+
 function getAiApiKey() {
   if (typeof globalThis.UlsaAi?.readStoredApiKey === 'function') {
     return globalThis.UlsaAi.readStoredApiKey();
   }
   const keyName = globalThis.UlsaAi?.STORAGE_KEY_API;
   return keyName ? localStorage.getItem(keyName)?.trim() || '' : '';
+}
+
+function reportAiFailure(errorOrMessage, title) {
+  const msg = errorOrMessage instanceof Error ? errorOrMessage.message : String(errorOrMessage || '');
+  try {
+    const u = globalThis.UlsaAi;
+    if (typeof u?.notifyApiFatal === 'function') {
+      u.notifyApiFatal(msg);
+      return;
+    }
+    if (typeof u?.showApiFatalError === 'function') {
+      const classified = typeof u.classifyApiFatal === 'function' ? u.classifyApiFatal(msg) : null;
+      u.showApiFatalError(classified || { title: title || 'AI 분석 오류', body: msg });
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 function summaryKey(item) {
@@ -3384,10 +3491,17 @@ const DIRECT_AI_ACTIONS = [
     chipLabel: 'AI 설정',
     aliases: ['설정', 'ai 설정', 'ai설정', 'api 설정', 'api설정', '키 설정', '키설정', 'api 키', 'apikey', 'gemini'],
     preconditions() {
+      if (!(globalThis.UlsaAi?.isDevSettingsEnabled?.() || new URLSearchParams(location.search).get('devSettings') === '1')) {
+        return { ok: false, message: 'AI 설정은 개발자 전용입니다.' };
+      }
       return { ok: true };
     },
     async run() {
-      document.getElementById('btnAiSettings')?.click();
+      if (!(globalThis.UlsaAi?.isDevSettingsEnabled?.() || new URLSearchParams(location.search).get('devSettings') === '1')) {
+        return { message: 'AI 설정은 개발자 전용입니다.' };
+      }
+      if (typeof globalThis.__ulsaOpenDevSettings === 'function') globalThis.__ulsaOpenDevSettings();
+      else document.getElementById('btnAiSettings')?.click();
       return { message: 'AI 설정 창을 열었습니다.' };
     },
   },
@@ -5664,12 +5778,31 @@ function stageThreeSearchQueries(item) {
   const key = summaryKey(item);
   const state = key ? productSummaries.get(key) : null;
   const queries = productSummaryQueries(state?.summary, item);
-  return queries.length ? queries : [fallbackSearchQuery(item)].filter(Boolean);
+  const expanded = [];
+  const seen = new Set();
+  for (const raw of queries.length ? queries : [fallbackSearchQuery(item)]) {
+    pushUniqueSearchQuery(expanded, seen, raw);
+    const words = normalizeStageThreeSearchQuery(raw).split(/\s+/).filter(Boolean);
+    if (words.length > 3) pushUniqueSearchQuery(expanded, seen, words.slice(0, 3).join(' '));
+    if (words.length > 2) pushUniqueSearchQuery(expanded, seen, words.slice(0, 2).join(' '));
+  }
+  if (!expanded.length) return [];
+  // 쇼핑 검색은 2단어보다 3단어(브랜드+모델+세부형)가 정확하면서 결과도 충분하다.
+  // 긴 AI 문구를 첫 검색어로 쓰면 세 플랫폼 모두 0건이 되는 경우가 있어 3단어형을 우선한다.
+  const primary =
+    expanded
+      .filter((query) => query.split(/\s+/).length === 3)
+      .sort((a, b) => a.length - b.length)[0] ||
+    expanded
+      .filter((query) => query.split(/\s+/).length === 2)
+      .sort((a, b) => b.length - a.length)[0] ||
+    expanded[0];
+  return [primary, ...expanded.filter((query) => query !== primary)].slice(0, 4);
 }
 
 function activeCompsForItem(item, rawComps) {
-  if (!item || !rawComps?.forItemKey) return null;
-  if (rawComps.forItemKey !== itemKey(item)) return null;
+  if (!item || !rawComps) return null;
+  if (rawComps.forItemKey && rawComps.forItemKey !== itemKey(item)) return null;
   if (rawComps.status === 'collected') return rawComps;
   if (rawComps.bunjang || rawComps.daangn || rawComps.joongna) return rawComps;
   if (rawComps.status === 'collecting') return rawComps;
@@ -6899,7 +7032,7 @@ function reportAccessoryQuestions(analysis) {
 }
 
 function renderReportConditionPriceTable(guide) {
-  const rows = (Array.isArray(guide?.conditionPrices) ? guide.conditionPrices : []).filter(Boolean);
+  const rows = contiguousConditionPrices((Array.isArray(guide?.conditionPrices) ? guide.conditionPrices : []).filter(Boolean));
   if (!rows.length) return '<p class="report-muted">상태별 가격표가 없습니다.</p>';
   return `
     <table class="report-table">
@@ -7998,13 +8131,24 @@ function renderCompsBlock(item, comps) {
         'searchQuery'
       );
     }
-    if (key && hasSettledStageThreeCache(key)) return renderStageThreeRestoredSearchState(item);
+    if (key && hasRestorableComparisonListings(key)) return renderStageThreeRestoredSearchState(item);
     if (key && stageThreeActiveKeys.has(key)) return renderStageThreeInterruptedSearch(key);
     return renderStageThreeInterruptedSearch(key);
   }
   const all = comparisonItems(comps);
   if (!all.length) {
-    if (key && hasSettledStageThreeCache(key)) return renderStageThreeRestoredSearchState(item);
+    if (comps?.collectionError) {
+      return `
+        <div class="stage-three-empty-search">
+          <p class="stage-three-empty-search__text">비교 매물 검색을 시작하지 못했습니다.</p>
+          <p class="meta">${escapeHtml(comps.collectionError)}</p>
+          <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>
+            다시 검색
+          </button>
+        </div>
+      `;
+    }
+    if (key && hasRestorableComparisonListings(key)) return renderStageThreeRestoredSearchState(item);
     if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
       return renderCompsLoading('AI가 검색어를 다시 조정 중입니다...', searchQueryRegenerations.get(key), 'searchQuery');
     }
@@ -8061,10 +8205,13 @@ function renderCompsBlock(item, comps) {
 function renderStageThreeEmptySearch(key = '') {
   return `
     <div class="stage-three-empty-search">
-      <p class="stage-three-empty-search__text">매물을 찾지 못했습니다.</p>
-      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>
-        다시 검색
-      </button>
+      <p class="stage-three-empty-search__text">비교 매물 목록을 가져오지 못했습니다.</p>
+      <p class="meta">아래 중고 시세 참고표만으로도 가격 판단은 가능합니다. 확장이 있으면 「다시 검색·정리」로 다시 시도하세요.</p>
+      ${
+        key
+          ? `<button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-skip-comps="${escapeAttr(key)}">비교 매물 스킵하고 계속</button>`
+          : ''
+      }
     </div>
   `;
 }
@@ -8077,25 +8224,47 @@ function renderStageThreeRestoredSearchState(item) {
     return `<p class="stage-three-status-pill">비교 매물 스킵됨</p>`;
   }
   const matchCount = Array.isArray(filterState?.matches) ? filterState.matches.length : 0;
-  const summary =
-    matchCount > 0
-      ? `저장된 비교 결과 ${matchCount}건`
-      : '저장된 Step 3 결과';
+  if (matchCount > 0) {
+    return `
+      <div class="stage-three-restored-search">
+        <p class="stage-three-status-pill">저장된 비교 결과 ${matchCount}건 · 새로고침·최근 매물에서 이어서 불러왔습니다.</p>
+        <p class="meta stage-three-restored-search__hint">목록을 다시 보려면 상단 「다시 검색·정리」를 누르세요. (확장 프로그램 필요)</p>
+      </div>
+    `;
+  }
   return `
     <div class="stage-three-restored-search">
-      <p class="stage-three-status-pill">${escapeHtml(summary)} · 새로고침·최근 매물에서 이어서 불러왔습니다.</p>
-      <p class="meta stage-three-restored-search__hint">비교 매물 목록을 다시 보려면 상단 「다시 검색·정리」를 누르세요.</p>
+      <p class="stage-three-status-pill">비교 매물 없이 시세 참고표로 이어서 불러왔습니다.</p>
+      <p class="meta stage-three-restored-search__hint">목록이 필요하면 상단 「다시 검색·정리」를 누르세요. 없어도 아래 시세표로 판단 가능합니다.</p>
     </div>
   `;
 }
 
 function renderStageThreeInterruptedSearch(key = '') {
+  if (typeof extensionPresent !== 'undefined' && !extensionPresent) {
+    return `
+      <div class="stage-three-empty-search">
+        <p class="stage-three-empty-search__text">확장 프로그램이 없어 비교 매물 검색을 건너뜁니다.</p>
+        <p class="meta">아래 중고 시세 참고표로 가격을 확인하세요.</p>
+        ${
+          key
+            ? `<button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-skip-comps="${escapeAttr(key)}">비교 매물 스킵하고 계속</button>`
+            : ''
+        }
+      </div>
+    `;
+  }
   return `
     <div class="stage-three-empty-search">
       <p class="stage-three-empty-search__text">이전 검색이 완료되지 않았습니다.</p>
       <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>
         다시 검색
       </button>
+      ${
+        key
+          ? `<button type="button" class="chip-btn chip-btn--ghost stage-three-empty-search__btn" data-stage-three-skip-comps="${escapeAttr(key)}">스킵하고 계속</button>`
+          : ''
+      }
     </div>
   `;
 }
@@ -8153,7 +8322,7 @@ function renderUsedPriceGuideBlock(item, comps) {
     `;
   }
   const guide = state.guide || {};
-  const rows = Array.isArray(guide.conditionPrices) ? guide.conditionPrices : [];
+  const rows = contiguousConditionPrices(Array.isArray(guide.conditionPrices) ? guide.conditionPrices : []);
   const rowHtml = rows.length
     ? rows
         .slice(0, 6)
@@ -8621,16 +8790,20 @@ function updateDefectMarkerFrames(root = document) {
 }
 
 function updateLightboxOverlayFrame() {
-  if (!$lightboxOverlay || !$lightboxImg || !$lightboxImg.complete || !$lightboxImg.naturalWidth || !$lightboxImg.naturalHeight) {
+  if (!$lightboxOverlay || !$lightboxImg) return;
+  // object-fit:contain 기준으로 오버레이만 맞춘다. img width/height를 강제하면
+  // max-width/max-height와 어긋나 동그라미가 옆으로 밀린다.
+  $lightboxImg.style.width = '';
+  $lightboxImg.style.height = '';
+  if (!$lightboxImg.complete || !$lightboxImg.naturalWidth || !$lightboxImg.naturalHeight) {
     return;
   }
-  const wrapRect = $lightboxImg.parentElement?.getBoundingClientRect();
+  const wrap = $lightboxImg.parentElement;
+  const wrapRect = wrap?.getBoundingClientRect();
   if (!wrapRect?.width || !wrapRect?.height) return;
   const dims = markerImageDimensions($lightboxImg);
   const frame = containImageFrame(wrapRect.width, wrapRect.height, dims.width, dims.height);
   if (!frame) return;
-  $lightboxImg.style.width = `${frame.width}px`;
-  $lightboxImg.style.height = `${frame.height}px`;
   $lightboxOverlay.style.width = `${frame.width}px`;
   $lightboxOverlay.style.height = `${frame.height}px`;
   $lightboxOverlay.style.left = `${frame.left}px`;
@@ -8857,6 +9030,11 @@ function openLightbox(src, opts = {}) {
   $lightbox.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
   setLightboxImage(lightboxState.items[lightboxState.index], { opening: true });
+  window.requestAnimationFrame(() => {
+    updateLightboxOverlayFrame();
+    window.setTimeout(updateLightboxOverlayFrame, 40);
+    window.setTimeout(updateLightboxOverlayFrame, 320);
+  });
 }
 
 function closeLightbox() {
@@ -8947,33 +9125,11 @@ function moveLightbox(dir, opts = {}) {
 
 function bindImageZoom(root) {
   root?.querySelectorAll('img.zoomable').forEach((img) => {
+    if (img.dataset.zoomBound === '1') return;
+    img.dataset.zoomBound = '1';
     img.addEventListener('error', () => {
       img.closest('.product-image-strip')?.remove();
     });
-    const renderedBounds = () => {
-      const rect = img.getBoundingClientRect();
-      const naturalWidth = img.naturalWidth || rect.width;
-      const naturalHeight = img.naturalHeight || rect.height;
-      const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
-      const width = naturalWidth * scale;
-      const height = naturalHeight * scale;
-      return {
-        left: rect.left + (rect.width - width) / 2,
-        right: rect.left + (rect.width + width) / 2,
-        top: rect.top + (rect.height - height) / 2,
-        bottom: rect.top + (rect.height + height) / 2,
-      };
-    };
-    const isInsideRenderedImage = (event) => {
-      if (!(event instanceof MouseEvent)) return true;
-      const bounds = renderedBounds();
-      return (
-        event.clientX >= bounds.left &&
-        event.clientX <= bounds.right &&
-        event.clientY >= bounds.top &&
-        event.clientY <= bounds.bottom
-      );
-    };
     const open = () => {
       let items = [];
       try {
@@ -8981,7 +9137,9 @@ function bindImageZoom(root) {
       } catch {
         items = [];
       }
-      openLightbox(img.getAttribute('data-full') || img.src, {
+      const src = img.getAttribute('data-full') || img.currentSrc || img.src;
+      if (!src) return;
+      openLightbox(src, {
         items,
         index: Number(img.getAttribute('data-lightbox-index')) || 0,
         label: img.getAttribute('data-label') || '',
@@ -8989,14 +9147,10 @@ function bindImageZoom(root) {
         level: img.getAttribute('data-level') || 'neutral',
       });
     };
-    img.addEventListener('mousemove', (e) => {
-      img.style.cursor = isInsideRenderedImage(e) ? 'zoom-in' : 'default';
-    });
-    img.addEventListener('mouseleave', () => {
-      img.style.cursor = '';
-    });
+    img.style.cursor = 'zoom-in';
     img.addEventListener('click', (e) => {
-      if (!isInsideRenderedImage(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
       open();
     });
     img.addEventListener('keydown', (e) => {
@@ -9134,6 +9288,7 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   ) {
     return;
   }
+  stageThreeLiveSearchAttemptedKeys.add(key);
   const isolated = opts.isolated === true;
   resetStageThreeComparisonWork(item, { clearGuide: !isolated, clearReceipt: !isolated, clearSearchQuery: true });
   stageThreeComparisonSkippedKeys.delete(key);
@@ -9151,7 +9306,8 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   comps = collectingComparisonComps(item);
   armStageThreeHardDeadline(item);
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
-  window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
+  // OPEN_SEARCH_TABS가 확장 저장소를 원자적으로 초기화한다. 별도 CLEAR 메시지를
+  // 먼저 보내면 비동기 storage 작업 순서에 따라 새 수집 결과를 다시 지울 수 있다.
   for (const filterKey of [...comparisonFilters.keys()]) {
     if (filterKey.startsWith(`${key}::`)) {
       comparisonFilters.delete(filterKey);
@@ -9175,12 +9331,44 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   if (selectedKey === key) void ensureUsedPriceGuide(item);
   if (!extensionPresent) {
     showAppToast?.(EXT_REQUIRED_TITLE);
+    comps = {
+      forItemKey: listingKey,
+      status: 'collected',
+      collectedAt: new Date().toISOString(),
+      bunjang: null,
+      daangn: null,
+      joongna: null,
+      extensionMissing: true,
+    };
+    if (key) stageThreeSearchProgresses.delete(key);
     if (btn) btn.disabled = false;
     if (selectedKey === key) refreshStageThreeSection(item);
     return;
   }
   if (btn) btn.disabled = true;
-  window.postMessage({ type: 'MARKET_SCRAPE_OPEN_SEARCH_TABS', query: queryList[0], queries: queryList }, '*');
+  const searchPostKey = `${key}::${queryList.join('|')}`;
+  const now = Date.now();
+  if (
+    !opts.force &&
+    globalThis.__ulsaSearchPostAt &&
+    now - globalThis.__ulsaSearchPostAt < 2000 &&
+    globalThis.__ulsaSearchPostKey === searchPostKey
+  ) {
+    if (btn) btn.disabled = false;
+    return;
+  }
+  globalThis.__ulsaSearchPostAt = now;
+  globalThis.__ulsaSearchPostKey = searchPostKey;
+  window.postMessage(
+    {
+      type: 'MARKET_SCRAPE_OPEN_SEARCH_TABS',
+      query: queryList[0],
+      queries: queryList,
+      forItemKey: listingKey,
+      listing: item,
+    },
+    '*'
+  );
   if (btn) {
     setTimeout(() => {
       btn.disabled = false;
@@ -9505,18 +9693,18 @@ function followPurchaseReceiptPrint(root = $current) {
   reveal.style.maxHeight = '';
   reveal.style.minHeight = '0px';
 
-  reveal.addEventListener(
-    'animationend',
-    () => {
-      reveal.style.height = 'auto';
-      reveal.style.minHeight = `${printHeight}px`;
-      reveal.classList.remove('is-printing');
-      if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
-      revealPurchaseReportPdfButton(root);
-      if (item) refreshStageFiveSection(item);
-    },
-    { once: true }
-  );
+  const finishReceiptPrint = () => {
+    if (stage.dataset.receiptPrintDone === '1') return;
+    stage.dataset.receiptPrintDone = '1';
+    reveal.style.height = 'auto';
+    reveal.style.minHeight = `${printHeight}px`;
+    reveal.classList.remove('is-printing');
+    if (receiptKey) purchaseReceiptPrintedKeys.add(receiptKey);
+    revealPurchaseReportPdfButton(root);
+    if (item) refreshStageFiveSection(item);
+  };
+  reveal.addEventListener('animationend', finishReceiptPrint, { once: true });
+  window.setTimeout(finishReceiptPrint, RECEIPT_PRINT_SCROLL_MS + 1200);
   const startTop = window.scrollY;
   const isScrollLayout = !$appShell?.classList.contains('app-shell--slide');
   const bottomPadding = Math.min(140, Math.max(72, window.innerHeight * 0.14));
@@ -10189,7 +10377,11 @@ function bindDashboardRail() {
     if (action === 'import') openRailPanel('import');
     if (action === 'history') $btnHistory?.click();
     if (action === 'shortcuts') openShortcutPanel();
-    if (action === 'settings') document.getElementById('btnAiSettings')?.click();
+    if (action === 'settings') {
+      if (globalThis.UlsaAi?.isDevSettingsEnabled?.() || new URLSearchParams(location.search).get('devSettings') === '1') {
+        document.getElementById('btnAiSettings')?.click();
+      }
+    }
     if (action === 'reanalyze') $btnRefresh?.click();
     if (action === 'new') startNewAnalysis();
   });
@@ -10683,7 +10875,11 @@ async function ensureUsedPriceGuide(item, opts = {}) {
     await completeUsedPriceGuideProgress(item, () => {
       if (selectedKey === summaryKey(item)) refreshStageThreeSection(item);
     });
-    usedPriceGuides.set(key, { status: 'done', guide: data.guide || {} });
+    const guide = data.guide || {};
+    if (Array.isArray(guide.conditionPrices)) {
+      guide.conditionPrices = contiguousConditionPrices(guide.conditionPrices);
+    }
+    usedPriceGuides.set(key, { status: 'done', guide });
     persistAiCaches();
   } catch (e) {
     usedPriceGuides.set(key, {
@@ -10721,7 +10917,9 @@ async function ensurePurchaseReceipt(item, opts = {}) {
   }
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchPurchaseReceipt !== 'function') {
-    purchaseReceipts.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    const err = 'AI 설정이 필요합니다. 배포 환경에서는 서버 GEMINI_API_KEY를 확인하세요.';
+    purchaseReceipts.set(key, { status: 'error', error: err });
+    reportAiFailure(err, 'API 키 오류');
     refreshStageFourSection(item);
     return;
   }
@@ -10765,6 +10963,7 @@ async function ensurePurchaseReceipt(item, opts = {}) {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
     });
+    reportAiFailure(e);
     persistAiCaches();
   }
   if (selectedKey === summaryKey(item)) {
@@ -10871,6 +11070,18 @@ function refreshProductRiskYoutubeCard(item) {
   upsertStageTwoCard(item, '[data-stage-two-youtube]', renderStageTwoYoutubePanel(item));
 }
 
+function maybeStartStageThreeCollection(item) {
+  const key = summaryKey(item);
+  if (!key || !item || !isStepThreeUnlocked(item)) return;
+  if (stageThreeComparisonSkippedKeys.has(key)) return;
+  if (typeof extensionPresent !== 'undefined' && !extensionPresent) return;
+  if (comps?.status === 'collecting') return;
+  if (comparisonItems(comps).length) return;
+  if (hasRestorableComparisonListings(key)) return;
+  if (stageThreeLiveSearchAttemptedKeys.has(key)) return;
+  openRelatedSearchForItem(item, stageThreeSearchQueries(item), null, { force: true });
+}
+
 function refreshStageThreeSection(item) {
   const html = renderStageThreeSection(item, comps);
   const existing = $current.querySelector('[data-stage-three-panel]');
@@ -10918,6 +11129,7 @@ function refreshStageThreeSection(item) {
   if (isStepThreeUnlocked(item)) {
     scheduleComparisonFilter(item);
     void ensureUsedPriceGuide(item);
+    maybeStartStageThreeCollection(item);
     if (isStepThreeDone(item)) refreshStageFourSection(item);
   } else {
     syncStagePanels(item);
@@ -11501,8 +11713,12 @@ function handleAppShortcut(e) {
     return;
   }
   if (isShortcutCode(e, 'KeyS')) {
+    if (!(globalThis.UlsaAi?.isDevSettingsEnabled?.() || new URLSearchParams(location.search).get('devSettings') === '1')) {
+      return;
+    }
     e.preventDefault();
-    document.getElementById('btnAiSettings')?.click();
+    if (typeof globalThis.__ulsaOpenDevSettings === 'function') globalThis.__ulsaOpenDevSettings();
+    else document.getElementById('btnAiSettings')?.click();
     return;
   }
   if (isShortcutCode(e, 'KeyN')) {
@@ -11793,7 +12009,9 @@ async function ensureProductSummary(item, opts = {}) {
   }
   const apiKey = getAiApiKey();
   if (!apiKey || typeof globalThis.UlsaAi?.fetchProductSummary !== 'function') {
-    productSummaries.set(key, { status: 'error', error: 'AI 설정이 필요합니다.' });
+    const err = 'AI 설정이 필요합니다. 배포 환경에서는 서버 GEMINI_API_KEY를 확인하세요.';
+    productSummaries.set(key, { status: 'error', error: err });
+    reportAiFailure(err, 'API 키 오류');
     if (selectedKey === key) refreshProductSummaryBlock(item);
     return;
   }
@@ -11824,6 +12042,7 @@ async function ensureProductSummary(item, opts = {}) {
       status: 'error',
       error: e instanceof Error ? e.message : String(e),
     });
+    reportAiFailure(e);
     persistAiCaches();
     await maybeHydrateDemoFallback(e);
   } finally {
@@ -12186,36 +12405,113 @@ async function ensureListingImageAnalysis(item, opts = {}) {
 function renderChampionshipEmptyState() {
   return `
     <article class="mini-card mini-card--empty sample-landing" data-sample-landing>
-      <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="72" height="72" />
-      <h2>매물 대기</h2>
-      <p class="empty">왼쪽 URL로 중고나라·번개장터·당근 링크를 불러오거나, 아래 샘플 판매글로 바로 분석을 시작해 보세요.</p>
-      <p class="empty empty-sub">샘플은 <strong>판매글(제목·본문·사진·가격)</strong>만 미리 넣어 둔 입력값입니다. Step 1부터는 전부 실시간 AI로 분석합니다.</p>
+      <header class="sample-landing__hero">
+        <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="64" height="64" />
+        <div class="sample-landing__hero-copy">
+          <p class="sample-landing__eyebrow">BUY OR BYE</p>
+          <h2>중고 매물, 링크 하나로 판단까지</h2>
+          <p>샘플로 먼저 둘러보거나 확장을 설치해 실제 매물을 불러오세요.</p>
+        </div>
+      </header>
+      <div class="sample-copy-guide" data-sample-copy-guide>
+        <p><strong>중고 매물을 살지 말지, 이 화면에서 바로 판단하세요.</strong></p>
+        <p>아래 샘플을 누르면 Step 1~5 분석 흐름을 확장 없이 먼저 볼 수 있습니다.</p>
+        <p>실제 당근·번개장터·중고나라 매물을 불러오려면 Chrome 확장을 설치해야 합니다.</p>
+        <p>확장이 없으면 실제 매물 전송과 Step 3 유사매물 자동 수집이 제한됩니다.</p>
+      </div>
+      <section class="sample-guide-block" aria-labelledby="sampleGuideTitle">
+        <div class="sample-section-heading">
+          <div>
+            <p class="sample-section-label" id="sampleGuideTitle">처음이라면 이렇게 시작하세요</p>
+            <p class="sample-section-desc">복잡한 설정 없이 아래 순서대로 진행하면 됩니다.</p>
+          </div>
+        </div>
+        <div class="sample-guide-grid">
+          <div class="sample-guide-card">
+            <span class="sample-guide-card__number">1</span>
+            <div><strong>샘플로 체험</strong><p>아래 샘플을 눌러 Step 1~5 분석 흐름을 먼저 확인합니다.</p></div>
+          </div>
+          <div class="sample-guide-card">
+            <span class="sample-guide-card__number">2</span>
+            <div><strong>실제 매물 전송</strong><p>확장 설치 후 판매글 우측 하단 버튼으로 매물을 가져옵니다.</p></div>
+          </div>
+          <div class="sample-guide-card">
+            <span class="sample-guide-card__number">3</span>
+            <div><strong>단계별 확인</strong><p>제품·하자·시세·최종 판단·협상 문구까지 차례로 확인합니다.</p></div>
+          </div>
+        </div>
+      </section>
+      <aside class="sample-extension-notice" data-ext-notice>
+        <span class="material-symbols-rounded" aria-hidden="true">extension</span>
+        <div>
+          <strong data-ext-status>확장을 설치해야 실제 매물을 분석할 수 있어요</strong>
+          <p>확장 없이도 샘플 체험은 가능하지만, 실제 매물 불러오기와 Step 3 유사매물 자동 수집은 제한됩니다.</p>
+        </div>
+      </aside>
       <div class="sample-demo-block">
-        <p class="sample-section-label">샘플 매물</p>
+        <div class="sample-section-heading">
+          <div>
+            <p class="sample-section-label">샘플로 먼저 체험하기</p>
+            <p class="sample-section-desc">설치 전에 대표 분석 사례를 바로 실행해 볼 수 있습니다.</p>
+          </div>
+          <span class="sample-section-chip">확장 없이 가능</span>
+        </div>
         <div class="sample-demo-grid" data-demo-grid>
           <p class="mini-muted">샘플을 불러오는 중…</p>
         </div>
       </div>
       <div class="sample-ext-block" data-ext-block>
-        <p class="sample-section-label">Chrome 확장 프로그램</p>
-        <p class="empty empty-sub">실제 매물 URL 불러오기·유사 매물(번개/당근/중고나라) 검색은 확장이 필요합니다. 샘플 분석만 할 때는 없어도 됩니다.</p>
+        <div class="sample-section-heading">
+          <div>
+            <p class="sample-section-label">실제 매물 분석 준비</p>
+            <p class="sample-section-desc">Chrome 확장 설치 후 당근·번개장터·중고나라 판매글을 바로 전송하세요.</p>
+          </div>
+          <span class="sample-section-chip sample-section-chip--required">실사용 필수</span>
+        </div>
         <div class="sample-ext-actions">
-          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip">확장 ZIP 받기</a>
+          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip" download>확장 ZIP 받기</a>
           <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 자세히</button>
         </div>
         <div class="sample-ext-steps" data-ext-steps hidden>
           <ol>
-            <li><strong>ZIP 받기</strong>를 눌러 <code>buy-or-bye-extension.zip</code>을 다운로드합니다.</li>
-            <li>다운로드한 ZIP을 마우스 오른쪽 클릭 → <strong>압축 풀기</strong>로 폴더를 만듭니다. (예: <code>buy-or-bye-extension</code>)</li>
-            <li>Chrome(또는 Chromium 계열)을 연 뒤 주소창에 <code>chrome://extensions</code>를 입력하고 Enter를 누릅니다.</li>
-            <li>오른쪽 위 <strong>개발자 모드</strong> 스위치를 켭니다.</li>
-            <li><strong>압축해제된 확장 프로그램을 로드합니다</strong>(Load unpacked)를 클릭합니다.</li>
-            <li>방금 압축을 푼 <strong>그 폴더</strong>를 선택합니다. (ZIP 파일이 아니라 풀린 폴더여야 합니다.)</li>
-            <li>확장 목록에 「Buy or Bye」가 보이면 설치 완료입니다. 필요하면 핀(고정)해 두세요.</li>
-            <li>이 분석 페이지를 <strong>새로고침</strong>하면 URL 불러오기·유사 매물 검색이 활성화됩니다.</li>
-            <li>실제 당근·번개·중고나라 <strong>매물 상세 페이지</strong>에서 확장 아이콘을 누르면 이 화면으로 매물이 전송됩니다.</li>
+            <li>
+              <strong>ZIP 받기</strong>를 눌러 <code>buy-or-bye-extension.zip</code>을 다운로드한 뒤 압축을 풉니다.
+              <figure class="sample-ext-shot">
+                <img src="/install-guide/03-select-folder.jpg" alt="압축 푼 buy-or-bye-extension 폴더" width="720" height="auto" loading="lazy" />
+              </figure>
+            </li>
+            <li>
+              Chrome 주소창에 <code>chrome://extensions</code>를 입력한 뒤 <strong>개발자 모드</strong>를 켭니다.
+              <figure class="sample-ext-shot">
+                <img src="/install-guide/01-developer-mode.jpg" alt="개발자 모드 스위치" width="720" height="auto" loading="lazy" />
+              </figure>
+            </li>
+            <li>
+              <strong>압축해제된 확장 프로그램을 로드합니다</strong>에서 방금 푼 폴더를 선택합니다.
+              <figure class="sample-ext-shot">
+                <img src="/install-guide/02-load-unpacked.jpg" alt="압축해제된 확장 프로그램 로드 버튼" width="720" height="auto" loading="lazy" />
+              </figure>
+            </li>
+            <li>
+              「Buy or Bye」가 보이면 설치 완료입니다.
+              <figure class="sample-ext-shot">
+                <img src="/install-guide/04-installed.jpg" alt="설치된 Buy or Bye 확장" width="720" height="auto" loading="lazy" />
+              </figure>
+            </li>
+            <li>
+              Chrome 툴바의 <strong>퍼즐</strong> 버튼을 누른 뒤, 「Buy or Bye」 옆 <strong>핀</strong>을 눌러 아이콘을 고정합니다.
+              <figure class="sample-ext-shot">
+                <img src="/install-guide/05-pin-extension.jpg" alt="Chrome 확장 목록에서 Buy or Bye 핀 고정" width="720" height="auto" loading="lazy" />
+              </figure>
+            </li>
+            <li>
+              당근·번개장터·중고나라 <strong>매물 상세 페이지</strong>로 이동하면, 화면 <strong>우측 하단</strong>에 이 버튼이 나타납니다. 누르면 매물이 이 분석 화면으로 전송됩니다.
+              <figure class="sample-ext-shot sample-ext-shot--fab">
+                <img src="/install-guide/06-extension-icon.jpg" alt="매물 페이지 우측 하단 Buy or Bye 전송 버튼" width="320" height="auto" loading="lazy" />
+                <figcaption>매물 상세 페이지 우측 하단에 보이는 전송 버튼</figcaption>
+              </figure>
+            </li>
           </ol>
-          <p class="empty empty-sub">설치 후에도 비활성이면 이 탭을 새로고침하거나, 확장이 이 사이트 접근을 허용했는지 chrome://extensions에서 확인해 주세요.</p>
         </div>
       </div>
     </article>
@@ -12285,12 +12581,12 @@ async function loadChampionshipDemo(id) {
   const res = await fetch(`/api/demo/scenarios/${encodeURIComponent(id)}`);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    showToast?.(data.error || '샘플 매물을 불러오지 못했습니다.');
+    showAppToast?.(data.error || '샘플 매물을 불러오지 못했습니다.');
     return;
   }
   const listing = data.listing;
   if (!listing?.platform || !listing?.itemId) {
-    showToast?.('샘플 매물 형식이 올바르지 않습니다.');
+    showAppToast?.('샘플 매물 형식이 올바르지 않습니다.');
     return;
   }
   activeDemoScenarioId = id;
@@ -12400,9 +12696,14 @@ function supportedListingUrl(rawUrl) {
   try {
     const url = new URL(String(rawUrl || '').trim());
     if (url.protocol !== 'https:') return null;
-    if (/(^|\.)bunjang\.co\.kr$/i.test(url.hostname)) return url.href;
-    if (/(^|\.)daangn\.com$/i.test(url.hostname)) return url.href;
-    if (/(^|\.)joongna\.com$/i.test(url.hostname)) return url.href;
+    const host = url.hostname.toLowerCase();
+    if (/(^|\.)bunjang\.co\.kr$/i.test(host)) return url.href;
+    if (/(^|\.)daangn\.com$/i.test(host)) return url.href;
+    if (/(^|\.)joongna\.com$/i.test(host)) return url.href;
+    // 공유하기 → 링크 복사 단축 URL (탭에서 리다이렉트 후 수집)
+    if (/(^|\.)bgzt\.link$/i.test(host)) return url.href;
+    if (/(^|\.)karrot\.link$/i.test(host)) return url.href;
+    if (host === 'abr.ge' || /(^|\.)airbridge\.io$/i.test(host)) return url.href;
     return null;
   } catch {
     return null;
@@ -12451,6 +12752,21 @@ function initMain() {
     if (!d) return;
     if (d.type === 'MARKET_SCRAPE_BRIDGE') {
       applyPayload({ latest: d.latest, history: d.history, comps: d.comps });
+      return;
+    }
+    if (d.type === 'MARKET_SCRAPE_SEARCH_TABS_RESULT') {
+      const activeItem = currentRenderedItem();
+      const activeKey = activeItem ? itemKey(activeItem) : '';
+      if (!d.ok && activeItem && (!d.forItemKey || d.forItemKey === activeKey)) {
+        clearStageThreeCollectionTimeout(summaryKey(activeItem));
+        stageThreeSearchProgresses.delete(summaryKey(activeItem));
+        comps = {
+          ...emptyComparisonComps(activeItem),
+          collectionError: d.error || '확장 프로그램이 검색 탭을 열지 못했습니다.',
+        };
+        refreshStageThreeSection(activeItem);
+        showAppToast(d.error || '비교 매물 검색을 시작하지 못했습니다.');
+      }
       return;
     }
     if (d.type === 'MARKET_SCRAPE_URL_IMPORT_RESULT') {
@@ -12535,6 +12851,14 @@ function applyExtensionUiState() {
     if (!extensionPresent) el.setAttribute('title', tip);
     else el.removeAttribute('title');
   }
+  document.querySelectorAll('[data-ext-notice]').forEach((notice) => {
+    notice.dataset.state = extensionPresent ? 'ready' : 'missing';
+  });
+  document.querySelectorAll('[data-ext-status]').forEach((status) => {
+    status.textContent = extensionPresent
+      ? '확장이 연결되었습니다 — 실제 매물을 바로 가져올 수 있어요'
+      : '확장을 설치해야 실제 매물을 분석할 수 있어요';
+  });
   document.body.classList.toggle('ext-missing', !extensionPresent);
   document.body.classList.toggle('ext-ready', extensionPresent);
 }
@@ -12575,8 +12899,12 @@ function bootstrapApp() {
     if (latest) return;
     const needsMount =
       !root.querySelector('[data-sample-landing]') ||
+      !root.querySelector('[data-sample-copy-guide]') ||
       !root.querySelector('[data-demo-id]') ||
-      Boolean(root.querySelector('[data-demo-grid] .mini-muted'));
+      Boolean(root.querySelector('[data-demo-grid] .mini-muted')) ||
+      Boolean(root.querySelector('img[src*="07-pin-and-fab"], .sample-ext-fab-preview')) ||
+      !root.querySelector('img[src*="05-pin-extension.jpg"]') ||
+      !root.querySelector('img[src*="06-extension-icon.jpg"]');
     if (!needsMount) return;
     root.innerHTML = renderChampionshipEmptyState();
     void bindChampionshipEmptyState(root);

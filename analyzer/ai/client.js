@@ -18,7 +18,7 @@
     const raw = String(text || '').trim();
     if (!raw) return fallback;
     if (/(quota|rate limit|rate-limits|resource_exhausted|too many requests|429|exceeded your current quota)/i.test(raw)) {
-      return 'OpenAI API 사용량 한도를 초과했습니다. platform.openai.com 결제/쿼터를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
+      return 'Gemini API 사용량 한도를 초과했습니다. Google AI Studio 쿼터를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
     }
     if (/<!doctype|<html|<title>/i.test(raw)) {
       const title = raw.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
@@ -27,8 +27,28 @@
     return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220) || fallback;
   }
 
+  function notifyApiFatal(message) {
+    try {
+      const u = globalThis.UlsaAi;
+      if (typeof u?.showApiFatalError !== 'function') return;
+      const classified =
+        typeof u.classifyApiFatal === 'function' ? u.classifyApiFatal(message) : null;
+      u.showApiFatalError(classified || { title: 'AI 분석 오류', body: String(message || '') });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  UlsaAi.notifyApiFatal = notifyApiFatal;
+
+  function throwApiError(text, fallback) {
+    const msg = cleanApiError(text, fallback);
+    notifyApiFatal(msg);
+    throw new Error(msg);
+  }
+
   async function postJson(path, p, body, extraHeaders = {}) {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const headers = {
       'Content-Type': 'application/json',
       ...extraHeaders,
@@ -55,10 +75,14 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      const msg = cleanApiError(text, `HTTP ${res.status}`);
+      notifyApiFatal(msg);
+      throw new Error(msg);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, fallbackMessage || `HTTP ${res.status}`));
+      const msg = cleanApiError(data.error || data.message, fallbackMessage || `HTTP ${res.status}`);
+      notifyApiFatal(msg);
+      throw new Error(msg);
     }
     return data;
   }
@@ -68,7 +92,7 @@
    * @returns {Promise<{ query: string }>}
    */
   UlsaAi.fetchSearchQuery = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/search-query`), {
       method: 'POST',
       headers: {
@@ -87,33 +111,16 @@
     });
     const text = await res.text();
     if (res.status === 404) {
-      const fallback = await UlsaAi.fetchSearchQuery(p);
-      const query = String(fallback.query || '').trim();
-      if (!query) {
-        throw new Error('제품 정리 API를 찾지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도하세요.');
-      }
-      return {
-        summary: {
-          productName: query,
-          newPrice: '',
-          newPriceSourceUrl: '',
-          description: '제품 정리 API가 아직 반영되지 않아 AI 검색어 식별 결과만 먼저 표시합니다.',
-          makerOrSeller: '',
-          searchQuery: query,
-          searchQueries: [query],
-          productImageUrl: '',
-        },
-        fallback: 'search-query',
-      };
+      throw new Error('검색어 생성 API를 찾지 못했습니다. 분석 서버를 재시작한 뒤 다시 시도하세요.');
     }
     let data;
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
@@ -144,7 +151,7 @@
    * @returns {Promise<{ imageUrls: string[], source: string }>}
    */
   UlsaAi.fetchProductImage = async (p) => {
-        const res = await fetch(apiUrl(`/api/product-image`), {
+    const res = await fetch(apiUrl(`/api/product-image`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -162,10 +169,10 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
@@ -279,7 +286,7 @@
    * @returns {Promise<{ analysis: { matches: Array<{ key: string, reason?: string }>, rejected?: Array<object> } }>}
    */
   UlsaAi.filterComparisonListings = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/comparison-filter`), {
       method: 'POST',
       headers: {
@@ -302,10 +309,10 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
@@ -315,7 +322,7 @@
    * @returns {Promise<{ guide: object }>}
    */
   UlsaAi.fetchUsedPriceGuide = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/used-price-guide`), {
       method: 'POST',
       headers: {
@@ -336,10 +343,10 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
@@ -349,7 +356,7 @@
    * @returns {Promise<{ receipt: object }>}
    */
   UlsaAi.fetchPurchaseReceipt = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/purchase-receipt`), {
       method: 'POST',
       headers: {
@@ -375,10 +382,10 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
@@ -388,7 +395,7 @@
    * @returns {Promise<{ answer: string, model: string, pipeline: string }>}
    */
   UlsaAi.askDirect = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/ai-chat`), {
       method: 'POST',
       headers: {
@@ -407,16 +414,16 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
 
   UlsaAi.fetchSellerChatKeywords = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/seller-chat-keywords`), {
       method: 'POST',
       headers: {
@@ -450,10 +457,10 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
@@ -463,7 +470,7 @@
    * @returns {Promise<{ messages: object, model: string, pipeline: string }>}
    */
   UlsaAi.fetchSellerChatMessages = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/seller-chat-messages`), {
       method: 'POST',
       headers: {
@@ -500,10 +507,10 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };
@@ -513,7 +520,7 @@
    * @returns {Promise<{ analysis: string, replyAnalysis: object, model: string, pipeline: string }>}
    */
   UlsaAi.fetchSellerReplyAnalysis = async (p) => {
-        const model = p.model || UlsaAi.getStoredModel();
+    const model = p.model || UlsaAi.getStoredModel();
     const res = await fetch(apiUrl(`/api/seller-reply-analysis`), {
       method: 'POST',
       headers: {
@@ -542,10 +549,10 @@
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(cleanApiError(text, `HTTP ${res.status}`));
+      throwApiError(text, `HTTP ${res.status}`);
     }
     if (!res.ok) {
-      throw new Error(cleanApiError(data.error || data.message, `HTTP ${res.status}`));
+      throwApiError(data.error || data.message, `HTTP ${res.status}`);
     }
     return data;
   };

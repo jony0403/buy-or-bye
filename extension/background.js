@@ -1,6 +1,6 @@
 importScripts('analyzer-origins.js');
 
-/** 유사 매물 검색 탭(bunjang/daangn/joongna) 수집 완료 후 자동 닫기 */
+/** ???????????? ?? ?? ?? ?? ??? ???? */
 const SEARCH_PLATFORMS = ['bunjang', 'daangn', 'joongna'];
 const SCRIPT_FILES = [
   'lib/shared.js',
@@ -18,13 +18,24 @@ const LISTING_HOST_PATTERNS = [
   { id: 'daangn', hostRe: /(^|\.)daangn\.com$/i },
   { id: 'joongna', hostRe: /(^|\.)joongna\.com$/i },
 ];
-const SEARCH_TAB_TIMEOUT_MS = 10_000;
+const SEARCH_TAB_TIMEOUT_MS = 28_000;
 const SEARCH_CLOSE_ALARM_NAME = 'buy-or-bye-close-search-tabs';
 const searchCollectionTabIds = new Set();
 let searchCollectionGeneration = 0;
+let importListingInFlight = null;
+const recentImportKeys = new Map();
+const pendingImportByUrl = new Map();
+let searchTabsInFlight = null;
 
-function createSearchCollectionAutoCollect() {
-  return { bunjang: true, daangn: true, joongna: true, at: Date.now(), sessionActive: true };
+function createSearchCollectionAutoCollect(generation = searchCollectionGeneration) {
+  return {
+    bunjang: true,
+    daangn: true,
+    joongna: true,
+    at: Date.now(),
+    generation,
+    sessionActive: true,
+  };
 }
 
 function clearedSearchCollectionAutoCollect(flags = {}) {
@@ -111,7 +122,7 @@ async function closeSearchCollectionTabsIfAny() {
   await closeTabIds(closeIds);
   for (const id of closeIds) searchCollectionTabIds.delete(id);
 
-  // 번개장터처럼 리다이렉트/지연 로딩 중인 검색 탭이 남는 경우가 있어 짧게 재확인한다.
+  // ?????? ?????/?? ?? ?? ?? ?? ?? ??? ?? ?? ?????.
   const leftovers = new Set();
   if (metaQueries.length || metaUrls.length) {
     await waitMs(220);
@@ -148,7 +159,7 @@ async function closeTabIds(ids) {
         await chrome.tabs.remove(id);
         break;
       } catch {
-        /* 이미 닫혔거나 아직 닫을 수 없는 탭이면 짧게 재시도 */
+        /* ?? ???? ?? ?? ? ?? ??? ?? ??? */
       }
     }
   }
@@ -182,14 +193,22 @@ async function closeSearchCollectionTabsIfFinished() {
   if (await isSearchCollectionFinished()) await closeSearchCollectionTabsIfAny();
 }
 
-function scheduleCloseSearchCollectionTabs() {
+function scheduleCloseSearchCollectionTabs(generation) {
   chrome.alarms?.create?.(SEARCH_CLOSE_ALARM_NAME, { when: Date.now() + SEARCH_TAB_TIMEOUT_MS + 800 });
   setTimeout(() => {
     void (async () => {
+      // ?? ??? ???? ? ?? ??? ??? ???? ??? ??? ????.
+      if (generation !== searchCollectionGeneration) return;
       const { marketScrapeComps } = await chrome.storage.local.get('marketScrapeComps');
-      if (marketScrapeComps && marketScrapeComps.status !== 'collected') {
+      if (
+        marketScrapeComps &&
+        marketScrapeComps.generation === generation &&
+        marketScrapeComps.status !== 'collected'
+      ) {
         await chrome.storage.local.set({
-          marketScrapeAutoCollect: clearedSearchCollectionAutoCollect(),
+          marketScrapeAutoCollect: clearedSearchCollectionAutoCollect(
+            createSearchCollectionAutoCollect(generation)
+          ),
           marketScrapeComps: {
             ...(marketScrapeComps || {}),
             status: 'collected',
@@ -214,8 +233,12 @@ function isSearchCollectionTab(rawUrl, query) {
       const q = (url.searchParams.get('q') || url.searchParams.get('keyword') || '').replace(/\s+/g, ' ').trim();
       return q === normalizedQuery;
     }
-    if (host.endsWith('daangn.com') && /\/kr\/buy-sell\/?$/i.test(path)) {
-      return (url.searchParams.get('search') || '').trim() === normalizedQuery;
+    if (
+      host.endsWith('daangn.com') &&
+      (/buy-sell/i.test(path) || /\/search\//i.test(path))
+    ) {
+      const q = (url.searchParams.get('q') || url.searchParams.get('search') || url.searchParams.get('keyword') || '').trim();
+      return !normalizedQuery || q === normalizedQuery;
     }
     if (host.endsWith('joongna.com') && /^\/search(?:\/|$)/i.test(path)) {
       const encoded = path.replace(/^\/search\/?/i, '').split('/')[0] || '';
@@ -229,13 +252,13 @@ function isSearchCollectionTab(rawUrl, query) {
 
 function searchUrlForPlatform(platform, query) {
   if (platform === 'bunjang') return `https://m.bunjang.co.kr/search/products?q=${encodeURIComponent(query)}&order=score`;
-  if (platform === 'daangn') return `https://www.daangn.com/kr/buy-sell/?search=${encodeURIComponent(query)}`;
+  if (platform === 'daangn') return `https://www.daangn.com/kr/search/buy-sell/?q=${encodeURIComponent(query)}`;
   if (platform === 'joongna') return `https://web.joongna.com/search/${encodeURIComponent(query)}`;
   return '';
 }
 
 async function createSearchTabsForQuery(query) {
-  // 매물검색 시작 시 3개 플랫폼 탭은 무조건 연다. 하나가 실패해도 나머지는 계속 연다.
+  // ???? ?? ? 3? ??? ?? ??? ??. ??? ???? ???? ?? ??.
   const tabsByPlatform = { bunjang: undefined, daangn: undefined, joongna: undefined };
   const tabMetaByPlatform = {};
   for (const platform of SEARCH_PLATFORMS) {
@@ -246,19 +269,27 @@ async function createSearchTabsForQuery(query) {
       if (typeof tab?.id === 'number') searchCollectionTabIds.add(tab.id);
       tabMetaByPlatform[platform] = { id: tab?.id, url };
     } catch (e) {
-      console.warn(`[OPEN_SEARCH_TABS] ${platform} 탭 열기 실패:`, e instanceof Error ? e.message : e);
+      console.warn(`[OPEN_SEARCH_TABS] ${platform} tab create failed:`, e instanceof Error ? e.message : e);
     }
   }
   const closeIds = Object.values(tabsByPlatform).filter((id) => typeof id === 'number');
   return { tabsByPlatform, tabMetaByPlatform, closeIds, query };
 }
 
-async function persistSearchCollectionSession({ forItemKey, queries, closeIds, tabMetaByPlatform = {}, resetComps = false }) {
+async function persistSearchCollectionSession({
+  forItemKey,
+  queries,
+  closeIds,
+  tabMetaByPlatform = {},
+  resetComps = false,
+  generation,
+}) {
   const primaryQuery = queries[0] || '';
   const { marketScrapeComps } = await chrome.storage.local.get('marketScrapeComps');
   const nextComps = resetComps
     ? {
         forItemKey,
+        generation,
         status: 'collecting',
         startedAt: Date.now(),
         expectedQueries: queries,
@@ -267,12 +298,13 @@ async function persistSearchCollectionSession({ forItemKey, queries, closeIds, t
     : {
         ...(marketScrapeComps || {}),
         forItemKey: forItemKey || marketScrapeComps?.forItemKey || null,
+        generation,
         status: 'collecting',
         startedAt: marketScrapeComps?.startedAt || Date.now(),
         expectedQueries: queries,
       };
   await chrome.storage.local.set({
-    marketScrapeAutoCollect: createSearchCollectionAutoCollect(),
+    marketScrapeAutoCollect: createSearchCollectionAutoCollect(generation),
     marketScrapeComps: nextComps,
     marketScrapeCloseTabs: closeIds,
     marketScrapeCloseTabsMeta: {
@@ -281,10 +313,11 @@ async function persistSearchCollectionSession({ forItemKey, queries, closeIds, t
       tabsByPlatform: tabMetaByPlatform,
       urls: Object.values(tabMetaByPlatform).map((entry) => entry?.url).filter(Boolean),
       startedAt: Date.now(),
+      generation,
       timeoutAt: Date.now() + SEARCH_TAB_TIMEOUT_MS,
     },
   });
-  scheduleCloseSearchCollectionTabs();
+  scheduleCloseSearchCollectionTabs(generation);
 }
 
 async function finalizeSearchCollection() {
@@ -305,8 +338,8 @@ async function finalizeSearchCollection() {
   await closeSearchCollectionTabsIfAny();
 }
 
-// 자동 매물검색은 무조건 끝나야 한다. 수집이 실패하거나 탭이 멈춰도
-// finally + 하드 타임아웃으로 storage를 'collected'로 정리하고 탭을 닫는다.
+// ?? ????? ??? ??? ??. ??? ????? ?? ???
+// finally + ?? ?????? storage? 'collected'? ???? ?? ???.
 async function runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds, generation) {
   let finalized = false;
   const finalizeOnce = async () => {
@@ -342,24 +375,74 @@ async function runSearchCollectionInBackground(forItemKey, queries, tabsByPlatfo
   }
 }
 
+const SHORT_SHARE_HOST_PATTERNS = [
+  { hostRe: /(^|\.)bgzt\.link$/i },
+  { hostRe: /(^|\.)karrot\.link$/i },
+  { hostRe: /(^|\.)abr\.ge$/i },
+  { hostRe: /(^|\.)airbridge\.io$/i },
+];
+
 function classifyListingUrl(rawUrl) {
   let url;
   try {
     url = new URL(String(rawUrl || '').trim());
   } catch {
-    throw new Error('URL 형식이 올바르지 않습니다.');
+    throw new Error('URL ??? ???? ????.');
   }
-  if (url.protocol !== 'https:') throw new Error('https 링크만 지원합니다.');
+  if (url.protocol !== 'https:') throw new Error('https ??? ?????.');
   const found = LISTING_HOST_PATTERNS.find((x) => x.hostRe.test(url.hostname));
-  if (!found) throw new Error('중고나라·번개장터·당근 매물 링크만 지원합니다.');
-  return { url: url.href, platform: found.id };
+  if (found) return { url: url.href, platform: found.id, shortShare: false };
+  const shortShare = SHORT_SHARE_HOST_PATTERNS.some((x) => x.hostRe.test(url.hostname));
+  if (shortShare) return { url: url.href, platform: null, shortShare: true };
+  throw new Error('???????????? ?? ??? ?????.');
+}
+
+function platformFromResolvedUrl(href) {
+  try {
+    const url = new URL(href);
+    return LISTING_HOST_PATTERNS.find((x) => x.hostRe.test(url.hostname))?.id || '';
+  } catch {
+    return '';
+  }
+}
+
+function waitForListingRedirect(tabId, timeoutMs = 16_000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (ok, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      if (ok) resolve(value);
+      else reject(value instanceof Error ? value : new Error(String(value)));
+    };
+    const timer = setTimeout(
+      () => finish(false, new Error('?? ?? ?? ??? ???????.')),
+      timeoutMs
+    );
+    const check = (nextUrl) => {
+      const platform = platformFromResolvedUrl(nextUrl);
+      if (platform) finish(true, { url: nextUrl, platform });
+    };
+    function onUpdated(updatedTabId, info, tab) {
+      if (updatedTabId !== tabId) return;
+      const nextUrl = info.url || tab?.url;
+      if (nextUrl) check(nextUrl);
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) return;
+      if (tab?.url) check(tab.url);
+    });
+  });
 }
 
 function waitForTabComplete(tabId, timeoutMs = 18_000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(onUpdated);
-      reject(new Error('매물 페이지 로딩 시간이 초과되었습니다.'));
+      reject(new Error('?? ??? ?? ??? ???????.'));
     }, timeoutMs);
     function done() {
       clearTimeout(timer);
@@ -388,7 +471,7 @@ function sendMessageToTab(tabId, message, timeoutMs = 22_000) {
           return;
         }
         if (Date.now() - startedAt > timeoutMs) {
-          resolve({ ok: false, error: res?.error || err?.message || '매물 정보를 읽지 못했습니다.' });
+          resolve({ ok: false, error: res?.error || err?.message || '?? ??? ?? ?????.' });
           return;
         }
         setTimeout(attempt, 700);
@@ -412,7 +495,7 @@ async function collectListingFromTabFast(tabId, platform, timeoutMs = 12_000) {
     lastError = res?.error || lastError;
     await new Promise((r) => setTimeout(r, platform === 'joongna' ? 250 : 350));
   }
-  return { ok: false, error: lastError || '매물 정보를 읽지 못했습니다.' };
+  return { ok: false, error: lastError || '?? ??? ?? ?????.' };
 }
 
 async function injectSearchScripts(tabId) {
@@ -438,11 +521,27 @@ async function injectAnalyzerBridge(tabId) {
 }
 
 async function collectSearchTab(tabId, platform) {
-  // 전체 수집을 10초 안에 끝내기 위해 탭당 대기/수집 시간을 빠듯하게 잡는다.
-  await waitForTabComplete(tabId, platform === 'daangn' ? 4_000 : 3_500).catch(() => {});
-  await injectSearchScripts(tabId);
-  const res = await sendMessageToTab(tabId, { type: 'COLLECT_SEARCH' }, platform === 'daangn' ? 5_000 : 4_000);
-  return res?.ok ? res : { ok: false, platform, error: res?.error || '검색 탭 수집 실패' };
+  // ?? ???? load ?? ? React/Remix ??? ?? ???. 0? ??? ????
+  // ???? ?? ?? ??? ?? ???? ???? ?? ?? ? ??? ??.
+  await waitForTabComplete(tabId, platform === 'daangn' ? 8_000 : 6_000).catch(() => {});
+  const timeoutMs = platform === 'daangn' ? 15_000 : 12_000;
+  const startedAt = Date.now();
+  let lastResult = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    await injectSearchScripts(tabId);
+    const remaining = Math.max(1_000, timeoutMs - (Date.now() - startedAt));
+    const res = await sendMessageToTab(
+      tabId,
+      { type: 'COLLECT_SEARCH' },
+      Math.min(remaining, platform === 'daangn' ? 9_000 : 7_500)
+    );
+    lastResult = res;
+    if (res?.ok && Number(res.count) > 0) return res;
+    await waitMs(platform === 'daangn' ? 900 : 700);
+  }
+  return lastResult?.ok
+    ? lastResult
+    : { ok: false, platform, error: lastResult?.error || '?? ??? ???? ?????.' };
 }
 
 async function collectSearchTabsAndClose(tabsByPlatform) {
@@ -485,45 +584,88 @@ async function collectSearchTabsAndClose(tabsByPlatform) {
 }
 
 async function importListingUrl(rawUrl) {
-  const target = classifyListingUrl(rawUrl);
-  const tab = await chrome.tabs.create({ url: target.url, active: false });
-  if (tab.id == null) throw new Error('매물 탭을 열지 못했습니다.');
-  let listingTabClosed = false;
-  try {
-    let res = await collectListingFromTabFast(tab.id, target.platform, target.platform === 'joongna' ? 12_000 : 10_000);
-    if (!res?.ok) {
-      await waitForTabComplete(tab.id, 8_000).catch(() => {});
-      await injectSearchScripts(tab.id);
-      res = await sendMessageToTab(tab.id, { type: 'REFRESH_AND_SAVE' }, 5_000);
-    }
-    if (!res?.ok) throw new Error(res?.error || '매물 정보를 읽지 못했습니다.');
+  const key = String(rawUrl || '').trim();
+  if (!key) throw new Error('URL is empty');
+  if (pendingImportByUrl.has(key)) return pendingImportByUrl.get(key);
 
-    const result = {
-      ok: true,
-      platform: res.platform || target.platform,
-      listing: res.listing || null,
-    };
-
-    try {
-      await chrome.tabs.remove(tab.id);
-      listingTabClosed = true;
-    } catch {
-      /* already closed */
-    }
-
-    await openAnalyzerTab();
-    await pushAnalyzerTabs();
-
-    return result;
-  } finally {
-    if (!listingTabClosed) {
+  const run = (async () => {
+    let target = classifyListingUrl(rawUrl);
+    if (target.shortShare) {
+      // open one tab and wait for redirect (share short links)
+      const tab = await chrome.tabs.create({ url: target.url, active: false });
+      if (tab.id == null) throw new Error('?? ?? ?? ?????.');
+      let listingTabClosed = false;
       try {
-        await chrome.tabs.remove(tab.id);
-      } catch {
-        /* already closed */
+        const resolved = await waitForListingRedirect(tab.id, 16_000);
+        target = { url: resolved.url, platform: resolved.platform, shortShare: false };
+        await chrome.tabs.update(tab.id, { url: resolved.url }).catch(() => {});
+        await waitForTabComplete(tab.id, 10_000).catch(() => {});
+        let res = await collectListingFromTabFast(tab.id, target.platform, target.platform === 'joongna' ? 12_000 : 10_000);
+        if (!res?.ok) {
+          await injectSearchScripts(tab.id);
+          res = await sendMessageToTab(tab.id, { type: 'REFRESH_AND_SAVE' }, 5_000);
+        }
+        if (!res?.ok) throw new Error(res?.error || '?? ??? ?? ?????.');
+        try {
+          await chrome.tabs.remove(tab.id);
+          listingTabClosed = true;
+        } catch {
+          /* ignore */
+        }
+        await openAnalyzerTab();
+        await pushAnalyzerTabs();
+        return { ok: true, platform: res.platform || target.platform, listing: res.listing || null };
+      } finally {
+        if (!listingTabClosed) {
+          try {
+            await chrome.tabs.remove(tab.id);
+          } catch {
+            /* ignore */
+          }
+        }
       }
     }
-  }
+
+    const tab = await chrome.tabs.create({ url: target.url, active: false });
+    if (tab.id == null) throw new Error('?? ?? ?? ?????.');
+    let listingTabClosed = false;
+    try {
+      await waitForTabComplete(tab.id, 10_000).catch(() => {});
+      let res = await collectListingFromTabFast(tab.id, target.platform, target.platform === 'joongna' ? 12_000 : 10_000);
+      if (!res?.ok) {
+        await waitForTabComplete(tab.id, 8_000).catch(() => {});
+        await injectSearchScripts(tab.id);
+        res = await sendMessageToTab(tab.id, { type: 'REFRESH_AND_SAVE' }, 5_000);
+      }
+      if (!res?.ok) throw new Error(res?.error || '?? ??? ?? ?????.');
+      try {
+        await chrome.tabs.remove(tab.id);
+        listingTabClosed = true;
+      } catch {
+        /* ignore */
+      }
+      await openAnalyzerTab();
+      await pushAnalyzerTabs();
+      return { ok: true, platform: res.platform || target.platform, listing: res.listing || null };
+    } finally {
+      if (!listingTabClosed) {
+        try {
+          await chrome.tabs.remove(tab.id);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  })();
+
+  pendingImportByUrl.set(key, run);
+  importListingInFlight = run;
+  const clear = () => {
+    if (pendingImportByUrl.get(key) === run) pendingImportByUrl.delete(key);
+    if (importListingInFlight === run) importListingInFlight = null;
+  };
+  run.then(clear, clear);
+  return run;
 }
 
 async function pushAnalyzerTabs() {
@@ -618,30 +760,46 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         searchCollectionGeneration += 1;
         const generation = searchCollectionGeneration;
-        await closeSearchCollectionTabsIfAny();
-        await closeAllMatchingSearchTabs(queries, []);
-        if (generation !== searchCollectionGeneration) {
-          sendResponse({ ok: false, error: '검색이 취소되었습니다.' });
-          return;
+        const runSearch = (async () => {
+            await closeSearchCollectionTabsIfAny();
+            await closeAllMatchingSearchTabs(queries, []);
+            if (generation !== searchCollectionGeneration) {
+              return { ok: false, error: '검색이 취소되었습니다.' };
+            }
+            const { marketScrapeLatest } = await chrome.storage.local.get('marketScrapeLatest');
+            const forItemKey =
+              String(msg.forItemKey || '').trim() ||
+              (marketScrapeLatest ? `${marketScrapeLatest.platform}:${marketScrapeLatest.itemId}` : null);
+            const { tabsByPlatform, tabMetaByPlatform, closeIds } = await createSearchTabsForQuery(queries[0]);
+            if (generation !== searchCollectionGeneration) {
+              if (closeIds.length) {
+                await closeTabIds(closeIds);
+                for (const id of closeIds) searchCollectionTabIds.delete(id);
+              }
+              return { ok: false, error: '검색이 취소되었습니다.' };
+            }
+            if (!closeIds.length) {
+              return { ok: false, error: '검색 탭을 열지 못했습니다.' };
+            }
+            await persistSearchCollectionSession({
+              forItemKey,
+              queries,
+              closeIds,
+              tabMetaByPlatform,
+              resetComps: true,
+              generation,
+            });
+            void runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds, generation);
+            return { ok: true, query: queries[0], queries, tabIds: closeIds, forItemKey };
+        })();
+        searchTabsInFlight = runSearch;
+        try {
+          sendResponse(await runSearch);
+        } catch (e) {
+          sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+        } finally {
+          if (searchTabsInFlight === runSearch) searchTabsInFlight = null;
         }
-        const { marketScrapeLatest } = await chrome.storage.local.get('marketScrapeLatest');
-        const forItemKey = marketScrapeLatest ? `${marketScrapeLatest.platform}:${marketScrapeLatest.itemId}` : null;
-        const { tabsByPlatform, tabMetaByPlatform, closeIds } = await createSearchTabsForQuery(queries[0]);
-        if (generation !== searchCollectionGeneration) {
-          if (closeIds.length) {
-            await closeTabIds(closeIds);
-            for (const id of closeIds) searchCollectionTabIds.delete(id);
-          }
-          sendResponse({ ok: false, error: '검색이 취소되었습니다.' });
-          return;
-        }
-        if (!closeIds.length) {
-          sendResponse({ ok: false, error: '검색 탭을 열지 못했습니다.' });
-          return;
-        }
-        await persistSearchCollectionSession({ forItemKey, queries, closeIds, tabMetaByPlatform, resetComps: true });
-        sendResponse({ ok: true, query: queries[0], queries, tabIds: closeIds });
-        void runSearchCollectionInBackground(forItemKey, queries, tabsByPlatform, closeIds, generation);
         return;
       }
 

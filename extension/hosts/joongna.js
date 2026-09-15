@@ -350,7 +350,6 @@
   function harvestSearchListings() {
     const items = [];
     const seen = new Set();
-    const query = MS.getSearchQueryFromUrl?.(location.href) || '';
     for (const a of document.querySelectorAll('a[href*="/product/"]')) {
       if (MS.isInsideNoiseSection?.(a)) continue;
       let url;
@@ -370,7 +369,6 @@
         a.getAttribute('aria-label') ||
         lines.find((line) => !/^[\d,]+\s*원/.test(line) && !/^\d+\s*일\s*전/.test(line) && !/무료배송|판매완료/.test(line)) ||
         '';
-      if (!MS.listingTitleMatchesSearchQuery?.(title, query)) continue;
       const priceM = text.match(/([\d,]+)\s*원/);
       const isFree = /무료나눔|(^|\s)나눔(\s|$)/.test(text);
       const price = MS.parsePriceNumber(priceM?.[1]);

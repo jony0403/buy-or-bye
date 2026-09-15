@@ -275,7 +275,6 @@
   function harvestSearchListings() {
     const items = [];
     const seen = new Set();
-    const query = MS.getSearchQueryFromUrl?.(location.href) || '';
     const cardImageUrl = (card) => {
       const img = card?.querySelector?.('img');
       return String(img?.currentSrc || img?.src || img?.getAttribute?.('data-src') || '').trim();
@@ -305,7 +304,6 @@
       const m = String(href || '').match(/\/(?:products|posts)\/(\d+)/);
       if (!m || seen.has(m[1])) return;
       const title = String(titleHint || '').trim().slice(0, 120) || `매물 ${m[1]}`;
-      if (!MS.listingTitleMatchesSearchQuery?.(title, query)) return;
       seen.add(m[1]);
       const price = MS.parsePriceNumber(priceHint);
       const url = href.split('?')[0];

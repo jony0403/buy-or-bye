@@ -1,33 +1,23 @@
-/** OpenAI / AI 설정 키 (로컬스토리지) — 확장 chrome.storage와 동기화 */
+/** Gemini / AI 설정 키 (로컬스토리지) — 확장 chrome.storage와 동일 키 사용 */
 (() => {
   globalThis.UlsaAi = globalThis.UlsaAi || {};
-  UlsaAi.STORAGE_KEY_API = 'ulsa_openai_api_key';
-  UlsaAi.STORAGE_KEY_API_LEGACY = 'ulsa_gemini_api_key';
-  UlsaAi.STORAGE_KEY_MODEL = 'ulsa_openai_model';
-  UlsaAi.STORAGE_KEY_MODEL_LEGACY = 'ulsa_gemini_model';
-  UlsaAi.STORAGE_KEY_VERIFIED_AT = 'ulsa_openai_verified_at';
-  UlsaAi.STORAGE_KEY_VERIFIED_AT_LEGACY = 'ulsa_gemini_verified_at';
-  /** 기본: 빠르면서 성능 균형 — GPT-5.6 Terra */
-  UlsaAi.DEFAULT_MODEL = 'gpt-5.6-terra';
-  /** 「이게 아니에요」 재식별 시 정확도 우선 */
-  UlsaAi.RETRY_MODEL = 'gpt-5.6';
-  /** 선택 목록 (표시용 라벨 + 값) — GPT-5.6 이상 포함 */
+  UlsaAi.STORAGE_KEY_API = 'ulsa_gemini_api_key';
+  UlsaAi.STORAGE_KEY_API_LEGACY = 'ulsa_openai_api_key';
+  UlsaAi.STORAGE_KEY_MODEL = 'ulsa_gemini_model';
+  UlsaAi.STORAGE_KEY_MODEL_LEGACY = 'ulsa_openai_model';
+  UlsaAi.STORAGE_KEY_VERIFIED_AT = 'ulsa_gemini_verified_at';
+  UlsaAi.STORAGE_KEY_VERIFIED_AT_LEGACY = 'ulsa_openai_verified_at';
+  /** 기본 모델 — 2.5 Flash는 신규 키 차단, 3.6은 느려서 lite를 기본으로 */
+  UlsaAi.DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+  UlsaAi.RETRY_MODEL = 'gemini-3.5-flash';
   UlsaAi.MODEL_OPTIONS = [
-    { value: 'gpt-6-astra', label: 'GPT-6 Astra (최신·최고성능)' },
-    { value: 'gpt-5.6', label: 'GPT-5.6 Sol (플래그십)' },
-    { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol (별칭)' },
-    { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra (추천·균형)' },
-    { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna (빠름·저비용)' },
-    { value: 'gpt-5.6-pro', label: 'GPT-5.6 Pro' },
-    { value: 'gpt-5.2', label: 'GPT-5.2' },
-    { value: 'gpt-5.1', label: 'GPT-5.1' },
-    { value: 'gpt-5', label: 'GPT-5' },
-    { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
-    { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
-    { value: 'gpt-4.1', label: 'GPT-4.1' },
-    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (기본·빠름)' },
+    { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+    { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (고품질·느림)' },
+    { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (레거시·신규키 불가)' },
+    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
   ];
 
   UlsaAi.readStoredApiKey = () => {

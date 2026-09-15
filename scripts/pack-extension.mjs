@@ -45,24 +45,15 @@ const BUY_OR_BYE_ANALYZER_ORIGINS = [
 
 if (fs.existsSync(outZip)) fs.unlinkSync(outZip);
 
-const isWin = process.platform === 'win32';
-if (isWin) {
-  const ps = `
-    $src = Join-Path '${extensionDir.replace(/'/g, "''")}' '*'
-    $dest = '${outZip.replace(/'/g, "''")}'
-    Compress-Archive -Path $src -DestinationPath $dest -Force
-  `;
-  const r = spawnSync('powershell', ['-NoProfile', '-Command', ps], { encoding: 'utf8' });
-  if (r.status !== 0) {
-    console.error(r.stdout, r.stderr);
-    process.exit(1);
-  }
-} else {
-  const r = spawnSync('zip', ['-r', outZip, '.'], { cwd: extensionDir, encoding: 'utf8' });
-  if (r.status !== 0) {
-    console.error(r.stdout, r.stderr);
-    process.exit(1);
-  }
+// Prefer tar (Windows 10+ / macOS / Linux) — Compress-Archive often drops nested files.
+const tar = spawnSync(
+  'tar',
+  ['-a', '-cf', outZip, '-C', extensionDir, '.'],
+  { encoding: 'utf8' }
+);
+if (tar.status !== 0) {
+  console.error(tar.stdout, tar.stderr);
+  process.exit(tar.status ?? 1);
 }
 
 const st = fs.statSync(outZip);

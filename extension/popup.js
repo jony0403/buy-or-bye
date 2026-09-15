@@ -75,11 +75,11 @@ async function syncGeminiFromAnalyzerTabs() {
         const verifiedAt = d.v ? Number(d.v) : Date.now();
         await chrome.storage.local.set({
           ulsaOpenAiApiKey: String(d.api).trim(),
-          ulsaOpenAiModel: d.model || 'gpt-5.6-terra',
+          ulsaOpenAiModel: d.model || 'gemini-3.5-flash-lite',
           ulsaOpenAiVerifiedAt:
             Number.isFinite(verifiedAt) && verifiedAt > 0 ? verifiedAt : Date.now(),
           ulsaGeminiApiKey: String(d.api).trim(),
-          ulsaGeminiModel: d.model || 'gpt-5.6-terra',
+          ulsaGeminiModel: d.model || 'gemini-3.5-flash-lite',
           ulsaGeminiVerifiedAt:
             Number.isFinite(verifiedAt) && verifiedAt > 0 ? verifiedAt : Date.now(),
         });
@@ -123,7 +123,9 @@ function isSearchPageUrl(url) {
       return u.pathname.includes('/search') && u.searchParams.has('q');
     }
     if (u.hostname.includes('daangn.com')) {
-      return /\/kr\/buy-sell\/?$/.test(u.pathname) && u.searchParams.has('search');
+      const legacy = /\/kr\/buy-sell\/?$/.test(u.pathname) && u.searchParams.has('search');
+      const current = /\/kr\/search\/buy-sell\/?$/.test(u.pathname) && u.searchParams.has('q');
+      return legacy || current;
     }
     if (u.hostname.includes('joongna.com')) {
       return /^\/search(?:\/|$)/.test(u.pathname);
@@ -401,7 +403,7 @@ async function openSearchTabs(tab) {
     return;
   }
 
-  const model = st.ulsaOpenAiModel || st.ulsaGeminiModel || 'gpt-5.6-terra';
+  const model = st.ulsaOpenAiModel || st.ulsaGeminiModel || 'gemini-3.5-flash-lite';
 
   try {
     const ver = await fetch('http://127.0.0.1:3920/api/verify-gemini', {

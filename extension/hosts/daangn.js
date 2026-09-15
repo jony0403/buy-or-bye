@@ -753,7 +753,6 @@
     const MS = globalThis.MarketScrape;
     const items = [];
     const seen = new Set();
-    const query = MS.getSearchQueryFromUrl?.(location.href) || '';
     const imageFromSearchArticle = imageFromSearchArticleRoot;
     const usableImageUrl = usableSearchImageUrl;
     const firstSrcsetUrl = firstSearchSrcsetUrl;
@@ -926,8 +925,6 @@
       )
         .trim()
         .slice(0, 120);
-      if (!MS.listingTitleMatchesSearchQuery?.(title, query)) return;
-
       const imageUrl =
         imageFromSearchArticleRoot(scope) ||
         imageFromSearchArticleRoot(card) ||

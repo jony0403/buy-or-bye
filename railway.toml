@@ -1,12 +1,14 @@
 [build]
-builder = "NIXPACKS"
-buildCommand = "npm install && npm run pack:extension"
+builder = "RAILPACK"
+# ZIP is packed locally before `railway up`; keep install light on the builder.
+buildCommand = "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --omit=dev"
 
 [deploy]
 startCommand = "npm start"
 healthcheckPath = "/api/demo/status"
-healthcheckTimeout = 120
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
 
 [variables]
 HOST = "0.0.0.0"
