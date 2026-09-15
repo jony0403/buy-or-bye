@@ -7,7 +7,10 @@
     if (!u) return false;
     const key = localStorage.getItem(u.STORAGE_KEY_API);
     const verified = localStorage.getItem(u.STORAGE_KEY_VERIFIED_AT);
-    return typeof key === 'string' && key.trim().length > 0 && verified != null && verified !== '';
+    if (typeof key !== 'string' || !key.trim() || verified == null || verified === '') return false;
+    // server demo token must be re-validated via /api/demo/status
+    if (key.trim() === '__SERVER_DEMO__' || localStorage.getItem('ulsa_demo_mode') === '1') return false;
+    return true;
   }
 
   function fillForm() {
@@ -112,14 +115,11 @@
       return;
     }
 
-    const port = location.port || '3920';
-    const origin = `http://${location.hostname}:${port}`;
-
     if (err) err.textContent = 'API 키·모델 연결 테스트 중…';
     if (submitBtn) submitBtn.disabled = true;
 
     try {
-      const vr = await fetch(`${origin}/api/verify-gemini`, {
+      const vr = await fetch('/api/verify-gemini', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -168,7 +168,26 @@
     }
   }
 
-  function initGate() {
+  async function tryUnlockDemoMode() {
+    try {
+      const res = await fetch('/api/demo/status');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.serverKey) return false;
+      const u = K();
+      const token = String(data.serverKeyToken || '__SERVER_DEMO__');
+      const model = localStorage.getItem(u.STORAGE_KEY_MODEL) || u.DEFAULT_MODEL;
+      localStorage.setItem(u.STORAGE_KEY_API, token);
+      localStorage.setItem(u.STORAGE_KEY_VERIFIED_AT, String(Date.now()));
+      localStorage.setItem('ulsa_demo_mode', '1');
+      syncToExtension(token, model, Date.now());
+      applyUnlock();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function initGate() {
     buildModelOptions();
     fillForm();
     bumpLegacyGeminiModel();
@@ -186,6 +205,8 @@
       const verifiedAt = Number(localStorage.getItem(u.STORAGE_KEY_VERIFIED_AT)) || Date.now();
       syncToExtension(apiKey, model, verifiedAt);
       applyUnlock();
+    } else if (await tryUnlockDemoMode()) {
+      /* server-side demo key unlock */
     } else {
       applyLock();
     }

@@ -1,0 +1,26 @@
+{
+  "id": "macbook-price-compare",
+  "listing": {
+    "platform": "bunjang",
+    "platformLabel": "번개장터",
+    "itemId": "demo-macbook-price-compare",
+    "title": "맥북에어 M2 13인치 16GB 256GB 미드나이트",
+    "body": "맥북에어 M2 13\" 16/256 미드나이트입니다.\n배터리 사이클 48, 최대 용량 94%.\n박스·충전기 포함, 키보드 보호필름만 사용했습니다.\n잔기스 거의 없고 화면 이상 없습니다.\n네고 가능합니다.",
+    "priceLabel": "980,000원",
+    "price": 980000,
+    "shippingFeeLabel": "무료배송",
+    "pageUrl": "https://www.bunjang.co.kr/products/demo-macbook-price-compare",
+    "exportedAt": "2026-09-13T01:45:00.000Z",
+    "imageUrls": [
+      "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=900&q=80",
+      "https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=900&q=80",
+      "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=900&q=80"
+    ],
+    "seller": {
+      "nickname": "노트북정리중",
+      "reviewRating": 4.9,
+      "reviewCount": 57,
+      "salesCount": 23
+    }
+  }
+}

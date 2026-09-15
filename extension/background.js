@@ -1,3 +1,5 @@
+importScripts('analyzer-origins.js');
+
 /** 유사 매물 검색 탭(bunjang/daangn/joongna) 수집 완료 후 자동 닫기 */
 const SEARCH_PLATFORMS = ['bunjang', 'daangn', 'joongna'];
 const SCRIPT_FILES = [
@@ -525,7 +527,8 @@ async function importListingUrl(rawUrl) {
 }
 
 async function pushAnalyzerTabs() {
-  const tabs = await chrome.tabs.query({ url: ['http://127.0.0.1:3920/*', 'http://localhost:3920/*'] });
+  const patterns = BUY_OR_BYE_ANALYZER_ORIGINS.map((o) => `${o}/*`);
+  const tabs = await chrome.tabs.query({ url: patterns });
   for (const tab of tabs) {
     if (tab.id == null) continue;
     try {
@@ -538,8 +541,9 @@ async function pushAnalyzerTabs() {
 }
 
 async function openAnalyzerTab() {
-  const url = 'http://127.0.0.1:3920/';
-  const tabs = await chrome.tabs.query({ url: ['http://127.0.0.1:3920/*', 'http://localhost:3920/*'] });
+  const url = `${BUY_OR_BYE_ANALYZER_ORIGINS[0]}/`;
+  const patterns = BUY_OR_BYE_ANALYZER_ORIGINS.map((o) => `${o}/*`);
+  const tabs = await chrome.tabs.query({ url: patterns });
   const existing = tabs.find((t) => t.id != null);
   let tabId = null;
   if (existing?.id != null) {

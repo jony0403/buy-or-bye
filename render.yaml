@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: buy-or-bye
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run pack:extension
+    startCommand: npm start
+    healthCheckPath: /api/demo/status
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: DEMO_MODE
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PUBLIC_ANALYZER_ORIGIN
+        sync: false

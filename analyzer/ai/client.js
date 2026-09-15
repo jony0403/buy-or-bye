@@ -2,6 +2,13 @@
 (() => {
   globalThis.UlsaAi = globalThis.UlsaAi || {};
 
+  function apiUrl(path) {
+    const value = String(path || '');
+    return value.startsWith('/') ? value : '/' + value;
+  }
+
+  UlsaAi.apiUrl = apiUrl;
+
   UlsaAi.getStoredModel = () =>
     localStorage.getItem(UlsaAi.STORAGE_KEY_MODEL) || UlsaAi.DEFAULT_MODEL;
 
@@ -19,8 +26,7 @@
   }
 
   async function postJson(path, p, body, extraHeaders = {}) {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
+        const model = p.model || UlsaAi.getStoredModel();
     const headers = {
       'Content-Type': 'application/json',
       ...extraHeaders,
@@ -33,7 +39,7 @@
       body: JSON.stringify(body),
     };
     if (p.signal) fetchOpts.signal = p.signal;
-    return fetch(`http://${location.hostname}:${port}${path}`, fetchOpts);
+    return fetch(apiUrl(path), fetchOpts);
   }
 
   async function parseJsonResponse(res, text, fallbackMessage) {
@@ -54,9 +60,8 @@
    * @returns {Promise<{ query: string }>}
    */
   UlsaAi.fetchSearchQuery = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/search-query`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/search-query`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -129,8 +134,7 @@
    * @returns {Promise<{ imageUrls: string[], source: string }>}
    */
   UlsaAi.fetchProductImage = async (p) => {
-    const port = location.port || '3920';
-    const res = await fetch(`http://${location.hostname}:${port}/api/product-image`, {
+        const res = await fetch(apiUrl(`/api/product-image`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -265,9 +269,8 @@
    * @returns {Promise<{ analysis: { matches: Array<{ key: string, reason?: string }>, rejected?: Array<object> } }>}
    */
   UlsaAi.filterComparisonListings = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/comparison-filter`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/comparison-filter`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -300,9 +303,8 @@
    * @returns {Promise<{ guide: object }>}
    */
   UlsaAi.fetchUsedPriceGuide = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/used-price-guide`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/used-price-guide`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -333,9 +335,8 @@
    * @returns {Promise<{ receipt: object }>}
    */
   UlsaAi.fetchPurchaseReceipt = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/purchase-receipt`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/purchase-receipt`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -371,9 +372,8 @@
    * @returns {Promise<{ answer: string, model: string, pipeline: string }>}
    */
   UlsaAi.askDirect = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/ai-chat`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/ai-chat`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -398,9 +398,8 @@
   };
 
   UlsaAi.fetchSellerChatKeywords = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/seller-chat-keywords`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/seller-chat-keywords`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -444,9 +443,8 @@
    * @returns {Promise<{ messages: object, model: string, pipeline: string }>}
    */
   UlsaAi.fetchSellerChatMessages = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/seller-chat-messages`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/seller-chat-messages`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -493,9 +491,8 @@
    * @returns {Promise<{ analysis: string, replyAnalysis: object, model: string, pipeline: string }>}
    */
   UlsaAi.fetchSellerReplyAnalysis = async (p) => {
-    const port = location.port || '3920';
-    const model = p.model || UlsaAi.getStoredModel();
-    const res = await fetch(`http://${location.hostname}:${port}/api/seller-reply-analysis`, {
+        const model = p.model || UlsaAi.getStoredModel();
+    const res = await fetch(apiUrl(`/api/seller-reply-analysis`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

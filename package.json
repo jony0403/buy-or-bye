@@ -7,7 +7,13 @@
     "start": "node analyzer-server.mjs",
     "start:analyzer": "node analyzer-server.mjs",
     "start:images": "node server.mjs",
+    "pack:extension": "node scripts/pack-extension.mjs",
+    "prestart:demo": "node scripts/pack-extension.mjs",
+    "start:demo": "node analyzer-server.mjs",
     "install-browser": "npx playwright install chromium"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "playwright": "^1.50.0",

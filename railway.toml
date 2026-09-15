@@ -1,0 +1,12 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm install && npm run pack:extension"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/api/demo/status"
+restartPolicyType = "ON_FAILURE"
+
+[variables]
+HOST = "0.0.0.0"
+DEMO_MODE = "true"

@@ -1,0 +1,105 @@
+{
+  "id": "ipad-body-gaps",
+  "fallback": true,
+  "summary": {
+    "productName": "Apple iPad (모델 미확정)",
+    "description": "제목·본문만으로는 세대·용량·셀룰러 여부가 불명확한 아이패드 매물입니다. 추가 식별이 필요합니다.",
+    "makerOrSeller": "Apple",
+    "newPrice": "모델 확정 후 신품가 대조 필요",
+    "searchQueries": ["아이패드", "iPad"]
+  },
+  "riskAnalysis": {
+    "relatedIssues": [
+      {
+        "title": "모델·용량 미특정",
+        "detail": "세대와 용량이 불명확하면 시세·부품·호환 액세서리 판단이 어려워집니다.",
+        "level": "risk"
+      },
+      {
+        "title": "활성화 잠금·계정",
+        "detail": "아이패드는 iCloud 활성화 잠금이 남아 있으면 사용이 불가할 수 있습니다.",
+        "level": "risk"
+      }
+    ],
+    "chronicDefects": [
+      {
+        "title": "배터리 팽창·수명 저하",
+        "detail": "오래된 아이패드에서 배터리 성능 저하·팽창 제보가 있습니다.",
+        "level": "caution"
+      }
+    ],
+    "marketFactors": [
+      {
+        "title": "세대별 시세 격차",
+        "detail": "한 세대 차이만으로도 중고가가 크게 달라집니다.",
+        "level": "caution"
+      }
+    ],
+    "purchaseChecklist": [
+      {
+        "title": "모델명·용량·잠금 해제 확인",
+        "detail": "설정 화면 사진과 iCloud 로그아웃 여부를 요청하세요.",
+        "level": "risk"
+      }
+    ]
+  },
+  "listingTextAnalysis": {
+    "sellerVerdict": "매너온도만으로는 신뢰도를 판단하기 어렵고, 본문 설명 품질이 매우 낮아 판매자 정보와 글의 성실도가 불일치합니다.",
+    "bodyVerdict": "본문이 '잘 됩니다', '급처분' 수준이라 모델·용량·배터리·잠금·구성품·하자 설명이 모두 빠져 있습니다.",
+    "redFlags": [
+      "모델명·용량 미기재",
+      "계정/잠금 해제 언급 없음",
+      "구성품·외관 하자 설명 없음"
+    ],
+    "overall": "정보가 거의 없는 판매글이라 거래 전 확인 질문이 필수입니다.",
+    "parseOk": true
+  },
+  "listingImageAnalysis": {
+    "overall": "사진이 1장뿐이라 측면·후면·설정 화면 등 실물 근거가 부족합니다.",
+    "images": [
+      {
+        "index": 1,
+        "label": "사진 부족",
+        "comment": "전면만 대략 보이며 모델 식별·모서리·포트·설정 정보를 확인하기 어렵습니다.",
+        "level": "caution",
+        "defects": []
+      }
+    ],
+    "parseOk": true
+  },
+  "accessoryCheck": {
+    "summary": "본체만 추정될 뿐 충전기·케이블·박스·펜슬 포함 여부를 전혀 확인할 수 없습니다.",
+    "overallLevel": "risk",
+    "items": [
+      {
+        "name": "본체",
+        "importance": "required",
+        "status": "confirmed",
+        "evidence": "제목상 아이패드 본체가 거래 대상으로 보입니다.",
+        "question": ""
+      },
+      {
+        "name": "충전기",
+        "importance": "required",
+        "status": "unconfirmed",
+        "evidence": "본문과 사진에서 충전기 포함 여부를 확인할 수 없습니다.",
+        "question": "정품 충전기·케이블 포함인가요?"
+      },
+      {
+        "name": "박스",
+        "importance": "optional",
+        "status": "unconfirmed",
+        "evidence": "박스 언급이 없습니다.",
+        "question": "박스 포함 여부 알려주세요."
+      },
+      {
+        "name": "애플펜슬",
+        "importance": "optional",
+        "status": "unconfirmed",
+        "evidence": "펜슬 포함 여부를 확인할 수 없습니다.",
+        "question": "펜슬이나 케이스도 포함인가요?"
+      }
+    ],
+    "parseOk": true
+  }
+}

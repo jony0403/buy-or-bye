@@ -1,0 +1,23 @@
+{
+  "id": "ipad-body-gaps",
+  "listing": {
+    "platform": "daangn",
+    "platformLabel": "당근",
+    "itemId": "demo-ipad-body-gaps",
+    "title": "아이패드 팝니다",
+    "body": "아이패드 팔아요.\n잘 됩니다.\n급처분합니다.\n문의 주세요.",
+    "priceLabel": "310,000원",
+    "price": 310000,
+    "shippingFeeLabel": "택배 가능",
+    "pageUrl": "https://www.daangn.com/articles/demo-ipad-body-gaps",
+    "exportedAt": "2026-09-14T06:30:00.000Z",
+    "imageUrls": [
+      "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=900&q=80"
+    ],
+    "seller": {
+      "nickname": "급처분러",
+      "mannerScore": 36.1,
+      "location": "경기 성남시"
+    }
+  }
+}

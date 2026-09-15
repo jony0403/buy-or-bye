@@ -1,0 +1,118 @@
+{
+  "id": "airpods-pro2-chronic",
+  "fallback": true,
+  "summary": {
+    "productName": "Apple AirPods Pro 2 (USB-C)",
+    "description": "애플 에어팟 프로 2세대 USB-C 모델. 액티브 노이즈 캔슬링과 충전 케이스가 기본 구성입니다.",
+    "makerOrSeller": "Apple",
+    "newPrice": "현재 국내 최저가 약 30만 원대",
+    "searchQueries": ["에어팟 프로 2 USB-C", "AirPods Pro 2 USB-C"]
+  },
+  "riskAnalysis": {
+    "relatedIssues": [
+      {
+        "title": "한쪽 유닛 연결 끊김 제보",
+        "detail": "사용 중 한쪽만 소리가 끊기거나 재연결이 필요한 사례가 커뮤니티에 반복적으로 올라옵니다.",
+        "level": "caution"
+      }
+    ],
+    "chronicDefects": [
+      {
+        "title": "배터리 수명 저하",
+        "detail": "장기간 사용 시 케이스·유닛 배터리 지속 시간이 짧아지는 고질병 제보가 많습니다.",
+        "level": "caution"
+      },
+      {
+        "title": "이어팁·메시 오염",
+        "detail": "이어팁과 마이크 메시 오염으로 음질·통화 품질이 떨어지는 사례가 흔합니다.",
+        "level": "safe"
+      }
+    ],
+    "marketFactors": [
+      {
+        "title": "후속 세대·시세 하락",
+        "detail": "신형 출시·프로모션에 따라 중고가가 빠르게 변하는 편입니다.",
+        "level": "caution"
+      }
+    ],
+    "purchaseChecklist": [
+      {
+        "title": "양쪽 유닛 연결·노이즈캔슬 확인",
+        "detail": "직거래 또는 수령 직후 양쪽 연결 안정성과 ANC를 확인하세요.",
+        "level": "caution"
+      }
+    ]
+  },
+  "listingTextAnalysis": {
+    "sellerVerdict": "판매 이력이 있어 전문 판매 패턴에 가깝지만, 연결 끊김을 '가끔'으로만 적어 상태 설명이 애매합니다.",
+    "bodyVerdict": "본문에 '왼쪽만 가끔 연결이 끊기는 느낌'이라고 적어 고질병 관련 단서가 있으나, 발생 빈도·AS 이력·배터리 상태는 빠져 있습니다.",
+    "redFlags": [
+      "배터리 잔량·사이클 정보 없음",
+      "연결 끊김 빈도가 정량적으로 적혀 있지 않음"
+    ],
+    "overall": "연결 끊김을 판매자가 인정한 매물이라 작동·배터리 확인이 우선입니다.",
+    "parseOk": true
+  },
+  "listingImageAnalysis": {
+    "overall": "실물로 보이는 케이스·유닛 사진이 있으나 세부 흠집 확인은 추가 확대가 필요합니다.",
+    "images": [
+      {
+        "index": 1,
+        "label": "케이스 상태",
+        "comment": "충전 케이스 외관이 실물 촬영으로 보이며 큰 파손은 뚜렷하지 않습니다.",
+        "level": "safe",
+        "defects": []
+      },
+      {
+        "index": 2,
+        "label": "유닛 상태",
+        "comment": "유닛 외관은 양호해 보이지만 메시·이어팁 오염은 확대 확인이 필요합니다.",
+        "level": "caution",
+        "defects": []
+      },
+      {
+        "index": 3,
+        "label": "구성품 확인",
+        "comment": "이어팁·케이블이 함께 보이지만 정품 여부 확인용 확대 사진은 부족합니다.",
+        "level": "caution",
+        "defects": []
+      }
+    ],
+    "parseOk": true
+  },
+  "accessoryCheck": {
+    "summary": "충전 케이블·이어팁은 본문에 언급되어 있으나 정품 충전기 어댑터는 별도 확인이 필요합니다.",
+    "overallLevel": "caution",
+    "items": [
+      {
+        "name": "본체(유닛+케이스)",
+        "importance": "required",
+        "status": "confirmed",
+        "evidence": "본문과 사진에서 케이스·유닛이 확인됩니다.",
+        "question": ""
+      },
+      {
+        "name": "충전 케이블",
+        "importance": "required",
+        "status": "body_only",
+        "evidence": "본문에 충전 케이블이 있다고 명시되었으나 사진으로 명확히 확인되지 않습니다.",
+        "question": "정품 USB-C 충전 케이블 포함 사진 부탁드립니다."
+      },
+      {
+        "name": "이어팁 여분",
+        "importance": "optional",
+        "status": "confirmed",
+        "evidence": "본문에 이어팁 여분이 있다고 명시되어 있습니다.",
+        "question": ""
+      },
+      {
+        "name": "박스",
+        "importance": "optional",
+        "status": "unconfirmed",
+        "evidence": "본문과 사진에서 박스 포함 여부를 확인할 수 없습니다.",
+        "question": "정품 박스 포함 여부 알려주세요."
+      }
+    ],
+    "parseOk": true
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "title": "Buy or Bye 데모 매물",
+  "description": "확장 없이 바로 체험할 수 있는 선별 시나리오 5개. 기본은 라이브 Gemini 분석이며, 실패 시에만 캐시로 폴백합니다.",
+  "scenarios": [
+    {
+      "id": "airpods-pro2-chronic",
+      "label": "고질병 체크",
+      "blurb": "에어팟 프로 — 배터리·커넥팅 이슈가 알려진 매물",
+      "highlight": "chronic"
+    },
+    {
+      "id": "switch-oled-accessories",
+      "label": "구성품 체크",
+      "blurb": "스위치 OLED — 독·케이블 포함 여부가 애매한 세트",
+      "highlight": "accessory"
+    },
+    {
+      "id": "galaxy-promo-photos",
+      "label": "사진 판별",
+      "blurb": "갤럭시 — 쇼핑몰 캡처와 실물 사진이 섞인 매물",
+      "highlight": "image"
+    },
+    {
+      "id": "macbook-price-compare",
+      "label": "가격 비교",
+      "blurb": "맥북 에어 — 시세 대조가 핵심인 인기 품목",
+      "highlight": "price"
+    },
+    {
+      "id": "ipad-body-gaps",
+      "label": "본문 누락",
+      "blurb": "아이패드 — 상태·잠금·구성 설명이 빈약한 판매글",
+      "highlight": "listing-text"
+    }
+  ]
+}

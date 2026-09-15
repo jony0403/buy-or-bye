@@ -1,0 +1,106 @@
+{
+  "id": "galaxy-promo-photos",
+  "fallback": true,
+  "summary": {
+    "productName": "Samsung Galaxy S24 256GB (자급제)",
+    "description": "삼성 갤럭시 S24 256GB 자급제. 중고 거래에서는 실물 사진과 계정/잠금 해제가 핵심 확인 포인트입니다.",
+    "makerOrSeller": "Samsung",
+    "newPrice": "옵션·프로모션에 따라 국내 신품가 변동",
+    "searchQueries": ["갤럭시 S24 256GB 자급제", "Galaxy S24 256GB"]
+  },
+  "riskAnalysis": {
+    "relatedIssues": [
+      {
+        "title": "계정·잠금 잔존",
+        "detail": "중고 스마트폰은 이전 계정 잠금·찾아보기 기능이 남아 있으면 사용이 막힐 수 있습니다.",
+        "level": "risk"
+      }
+    ],
+    "chronicDefects": [
+      {
+        "title": "디스플레이 번인·잔상",
+        "detail": "AMOLED 특성상 장시간 사용 기기는 번인 제보가 있습니다.",
+        "level": "caution"
+      }
+    ],
+    "marketFactors": [
+      {
+        "title": "자급제·통신사 모델 시세차",
+        "detail": "자급제와 통신사 모델, 용량 옵션에 따라 중고가가 갈립니다.",
+        "level": "caution"
+      }
+    ],
+    "purchaseChecklist": [
+      {
+        "title": "실물 사진·계정 해제 확인",
+        "detail": "홍보컷이 아닌 실물 사진과 계정 완전 로그아웃 여부를 확인하세요.",
+        "level": "risk"
+      }
+    ]
+  },
+  "listingTextAnalysis": {
+    "sellerVerdict": "판매·후기 건수가 많은 판매자라 전문 판매 패턴으로 보이며, 본문 상태 설명은 짧은 편입니다.",
+    "bodyVerdict": "본문에 '미개봉급', '사진처럼 상태 좋음'만 있고 배터리 효율·세부 기스·구성품 목록이 빠져 있습니다.",
+    "redFlags": [
+      "배터리·잔상 점검 정보 없음",
+      "구성품 목록이 구체적이지 않음"
+    ],
+    "overall": "전문 판매글 톤이라 실물·계정 해제 증빙을 따로 받는 것이 안전합니다.",
+    "parseOk": true
+  },
+  "listingImageAnalysis": {
+    "overall": "일부 사진은 제품만 분리된 홍보·카탈로그 느낌이 있어 실물 근거가 부족할 수 있습니다.",
+    "images": [
+      {
+        "index": 1,
+        "label": "홍보 이미지",
+        "comment": "쇼핑몰/홍보용 캡처처럼 보여 이 사진만으로는 실제 박스·본체·구성품 상태를 확인할 수 없습니다.",
+        "level": "caution",
+        "defects": []
+      },
+      {
+        "index": 2,
+        "label": "실물 확인 불가",
+        "comment": "공식 렌더에 가까운 제품컷으로 보여 실제 보유 기기 상태 근거로 보기 어렵습니다.",
+        "level": "caution",
+        "defects": []
+      },
+      {
+        "index": 3,
+        "label": "주의 사진",
+        "comment": "실내 배경이 일부 보이지만 모서리·포트·구성품을 확인하기엔 정보가 부족합니다.",
+        "level": "caution",
+        "defects": []
+      }
+    ],
+    "parseOk": true
+  },
+  "accessoryCheck": {
+    "summary": "본체는 거래 대상으로 보이지만 박스·충전기·케이블은 본문·사진에서 확정되지 않았습니다.",
+    "overallLevel": "caution",
+    "items": [
+      {
+        "name": "본체",
+        "importance": "required",
+        "status": "confirmed",
+        "evidence": "제목·본문상 갤럭시 본체가 거래 대상입니다.",
+        "question": ""
+      },
+      {
+        "name": "박스",
+        "importance": "optional",
+        "status": "unconfirmed",
+        "evidence": "본문에 구성품이 있다고만 되어 박스 포함이 명확하지 않습니다.",
+        "question": "정품 박스 포함인가요?"
+      },
+      {
+        "name": "충전기",
+        "importance": "optional",
+        "status": "unconfirmed",
+        "evidence": "충전기 포함 여부를 본문·사진에서 확인할 수 없습니다.",
+        "question": "충전기·케이블 포함 여부 알려주세요."
+      }
+    ],
+    "parseOk": true
+  }
+}

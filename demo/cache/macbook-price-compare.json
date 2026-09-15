@@ -1,0 +1,105 @@
+{
+  "id": "macbook-price-compare",
+  "fallback": true,
+  "summary": {
+    "productName": "Apple MacBook Air 13 M2 16GB 256GB (Midnight)",
+    "description": "맥북 에어 13인치 M2, 16GB 메모리·256GB 저장장치 미드나이트. 배터리 사이클과 구성품이 시세에 큰 영향을 줍니다.",
+    "makerOrSeller": "Apple",
+    "newPrice": "동일 스펙 국내 신품·리퍼가 변동폭이 큼",
+    "searchQueries": ["맥북에어 M2 16GB 256GB", "MacBook Air M2 16 256"]
+  },
+  "riskAnalysis": {
+    "relatedIssues": [
+      {
+        "title": "배터리 사이클·용량",
+        "detail": "중고 맥북은 사이클 수와 최대 용량이 잔존 가치를 좌우합니다.",
+        "level": "caution"
+      }
+    ],
+    "chronicDefects": [
+      {
+        "title": "힌지·디스플레이 먼지 유입",
+        "detail": "일부 에어 시리즈에서 디스플레이 하단 먼지·빛샘 관련 제보가 있습니다.",
+        "level": "caution"
+      }
+    ],
+    "marketFactors": [
+      {
+        "title": "동일 스펙 중고 시세 경쟁",
+        "detail": "16GB 모델은 매물이 많아 가격 비교가 중요합니다.",
+        "level": "caution"
+      }
+    ],
+    "purchaseChecklist": [
+      {
+        "title": "사이클·충전기·박스 확인",
+        "detail": "배터리 정보 스크린샷과 정품 충전기 포함을 확인하세요.",
+        "level": "caution"
+      }
+    ]
+  },
+  "listingTextAnalysis": {
+    "sellerVerdict": "",
+    "bodyVerdict": "본문에 사이클 48·용량 94%·박스·충전기 포함을 구체적으로 적어 상태 설명이 비교적 충실합니다.",
+    "redFlags": [
+      "키보드·트랙패드 세부 마모 사진 설명은 부족"
+    ],
+    "overall": "스펙·배터리 수치가 명시되어 시세 비교에 유리한 매물입니다.",
+    "parseOk": true
+  },
+  "listingImageAnalysis": {
+    "overall": "본체·키보드 실물 사진이 있어 상태 근거는 있으나 힌지·측면 포트 확대는 더 있으면 좋습니다.",
+    "images": [
+      {
+        "index": 1,
+        "label": "전면 상태",
+        "comment": "열린 상태의 실물 사진으로 큰 파손은 보이지 않습니다.",
+        "level": "safe",
+        "defects": []
+      },
+      {
+        "index": 2,
+        "label": "측면 상태",
+        "comment": "측면·포트 각도가 일부 보이며 심한 찍힘은 확인되지 않습니다.",
+        "level": "safe",
+        "defects": []
+      },
+      {
+        "index": 3,
+        "label": "구성품 확인",
+        "comment": "박스·충전기가 함께 찍힌 구성품 사진으로 보입니다.",
+        "level": "safe",
+        "defects": []
+      }
+    ],
+    "parseOk": true
+  },
+  "accessoryCheck": {
+    "summary": "본체·박스·충전기가 본문 기준으로 포함된 매물로 보이며, 시세 대비 구성은 양호한 편입니다.",
+    "overallLevel": "safe",
+    "items": [
+      {
+        "name": "본체",
+        "importance": "required",
+        "status": "confirmed",
+        "evidence": "제목·본문·사진에서 본체가 확인됩니다.",
+        "question": ""
+      },
+      {
+        "name": "정품 충전기",
+        "importance": "required",
+        "status": "confirmed",
+        "evidence": "본문에 충전기 포함이라고 명시되어 있습니다.",
+        "question": ""
+      },
+      {
+        "name": "박스",
+        "importance": "optional",
+        "status": "confirmed",
+        "evidence": "본문에 박스 포함이라고 명시되어 있습니다.",
+        "question": ""
+      }
+    ],
+    "parseOk": true
+  }
+}

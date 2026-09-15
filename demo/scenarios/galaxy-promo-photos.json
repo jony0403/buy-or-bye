@@ -1,0 +1,29 @@
+{
+  "id": "galaxy-promo-photos",
+  "listing": {
+    "platform": "joongna",
+    "platformLabel": "중고나라",
+    "itemId": "demo-galaxy-promo-photos",
+    "title": "갤럭시 S24 256GB 자급제 미개봉급",
+    "body": "갤럭시 S24 자급제 256GB입니다.\n사진처럼 상태 좋고 구성품 있습니다.\n액정 보호필름 부착 상태.\n잠금/계정 이슈 없습니다.",
+    "priceLabel": "620,000원",
+    "price": 620000,
+    "shippingFeeLabel": "안전결제 가능",
+    "pageUrl": "https://web.joongna.com/product/demo-galaxy-promo-photos",
+    "exportedAt": "2026-09-12T11:10:00.000Z",
+    "imageUrls": [
+      "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=900&q=80",
+      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=900&q=80",
+      "https://images.unsplash.com/photo-1592890288564-76628a30a657?w=900&q=80"
+    ],
+    "seller": {
+      "nickname": "모바일스토어24",
+      "trustScore": 9800,
+      "trustMax": 10000,
+      "reviewCount": 412,
+      "salesCount": 860,
+      "isSafePayment": true,
+      "safePaymentCount": 320
+    }
+  }
+}

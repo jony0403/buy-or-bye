@@ -1,0 +1,120 @@
+{
+  "id": "switch-oled-accessories",
+  "fallback": true,
+  "summary": {
+    "productName": "Nintendo Switch OLED (화이트)",
+    "description": "닌텐도 스위치 OLED 화이트 모델. 본체·조이콘·독·AC 어댑터·HDMI 케이블이 기본 구성으로 판매되는 경우가 많습니다.",
+    "makerOrSeller": "Nintendo",
+    "newPrice": "국내 신품가 약 45만 원대",
+    "searchQueries": ["닌텐도 스위치 OLED 화이트", "Switch OLED white"]
+  },
+  "riskAnalysis": {
+    "relatedIssues": [
+      {
+        "title": "조이콘 드리프트",
+        "detail": "조이콘 스틱 드리프트는 스위치 계열에서 가장 자주 거론되는 이슈입니다.",
+        "level": "risk"
+      }
+    ],
+    "chronicDefects": [
+      {
+        "title": "조이콘 스틱 드리프트",
+        "detail": "조작하지 않아도 입력이 들어가는 드리프트 증상이 장기간 제보됩니다.",
+        "level": "risk"
+      }
+    ],
+    "marketFactors": [
+      {
+        "title": "독·충전기 단품 시세",
+        "detail": "독과 정품 어댑터를 따로 사면 추가 비용이 커 구성품 포함 여부가 가격에 민감합니다.",
+        "level": "caution"
+      }
+    ],
+    "purchaseChecklist": [
+      {
+        "title": "독·HDMI·어댑터 포함 여부",
+        "detail": "TV 모드 사용을 위해 독과 전원·HDMI 구성을 확인하세요.",
+        "level": "caution"
+      }
+    ]
+  },
+  "listingTextAnalysis": {
+    "sellerVerdict": "",
+    "bodyVerdict": "본문에 '독은 사진 참고', '박스/충전기 여부는 문의'라고 적어 필수 구성품이 확정되지 않았고, 조이콘 드리프트 관련 상태 언급도 없습니다.",
+    "redFlags": [
+      "독·충전기 포함이 확정되지 않음",
+      "조이콘 드리프트 점검 언급 없음"
+    ],
+    "overall": "풀구성처럼 보이지만 독·충전기가 미확정이라 구성품 확인이 핵심입니다.",
+    "parseOk": true
+  },
+  "listingImageAnalysis": {
+    "overall": "본체·조이콘 실물 사진은 있으나 독·어댑터·HDMI가 한눈에 보이지 않습니다.",
+    "images": [
+      {
+        "index": 1,
+        "label": "본체 상태",
+        "comment": "OLED 본체와 조이콘이 실물로 보이며 큰 파손은 확인되지 않습니다.",
+        "level": "safe",
+        "defects": []
+      },
+      {
+        "index": 2,
+        "label": "구성품 확인",
+        "comment": "독·충전기·HDMI가 사진에서 명확히 보이지 않아 구성품 확인이 필요합니다.",
+        "level": "caution",
+        "defects": []
+      }
+    ],
+    "parseOk": true
+  },
+  "accessoryCheck": {
+    "summary": "본체·조이콘은 확인되지만 독·정품 충전기·HDMI는 본문·사진 모두에서 확정되지 않았습니다.",
+    "overallLevel": "risk",
+    "items": [
+      {
+        "name": "본체",
+        "importance": "required",
+        "status": "confirmed",
+        "evidence": "본문과 사진에서 본체가 확인됩니다.",
+        "question": ""
+      },
+      {
+        "name": "조이콘",
+        "importance": "required",
+        "status": "confirmed",
+        "evidence": "본문에 조이콘 포함이라고 명시되어 있습니다.",
+        "question": ""
+      },
+      {
+        "name": "독",
+        "importance": "required",
+        "status": "unconfirmed",
+        "evidence": "본문에 사진 참고라고만 되어 있고 포함 여부가 확정되지 않습니다.",
+        "question": "독 포함 여부와 독 사진을 보내주세요."
+      },
+      {
+        "name": "정품 충전기",
+        "importance": "required",
+        "status": "unconfirmed",
+        "evidence": "본문에 충전기는 문의하라고 되어 포함 여부를 확인할 수 없습니다.",
+        "question": "정품 AC 어댑터 포함인가요?"
+      },
+      {
+        "name": "HDMI 케이블",
+        "importance": "optional",
+        "status": "unconfirmed",
+        "evidence": "본문과 사진에서 HDMI 케이블 언급이 없습니다.",
+        "question": "HDMI 케이블도 포함인가요?"
+      },
+      {
+        "name": "박스",
+        "importance": "optional",
+        "status": "unconfirmed",
+        "evidence": "박스 여부는 문의하라고만 되어 있습니다.",
+        "question": "정품 박스 포함 여부 확인 부탁드립니다."
+      }
+    ],
+    "parseOk": true
+  }
+}

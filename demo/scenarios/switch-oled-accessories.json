@@ -1,0 +1,24 @@
+{
+  "id": "switch-oled-accessories",
+  "listing": {
+    "platform": "daangn",
+    "platformLabel": "당근",
+    "itemId": "demo-switch-oled-accessories",
+    "title": "닌텐도 스위치 OLED 화이트 풀구성급",
+    "body": "스위치 OLED 화이트 판매합니다.\n본체·조이콘은 포함이고 독은 사진 참고해주세요.\n게임칩 2개 같이 드립니다.\n박스/충전기 여부는 문의 주세요.\n동작 잘 됩니다.",
+    "priceLabel": "280,000원",
+    "price": 280000,
+    "shippingFeeLabel": "직거래 선호",
+    "pageUrl": "https://www.daangn.com/articles/demo-switch-oled-accessories",
+    "exportedAt": "2026-09-11T03:20:00.000Z",
+    "imageUrls": [
+      "https://images.unsplash.com/photo-1578303512597-81e6cc155b3e?w=900&q=80",
+      "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=900&q=80"
+    ],
+    "seller": {
+      "nickname": "게임하는이웃",
+      "mannerScore": 42.3,
+      "location": "서울 마포구"
+    }
+  }
+}
