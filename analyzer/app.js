@@ -1807,8 +1807,21 @@ function danawaPriceUrl(summary) {
   return `https://search.danawa.com/dsearch.php?query=${encodeURIComponent(query)}`;
 }
 
+function isSampleListing(item) {
+  if (activeDemoScenarioId) return true;
+  const id = String(item?.itemId || '');
+  if (/^demo-/i.test(id)) return true;
+  const url = String(item?.pageUrl || '');
+  return /\/products\/demo-/i.test(url) || /\/demo\//i.test(url);
+}
+
 function productSummaryImages(summary, item) {
-  return uniqueImageList([summary?.productImageUrl]).slice(0, 1);
+  const listingFirst = Array.isArray(item?.imageUrls) ? item.imageUrls[0] : '';
+  return uniqueImageList([
+    summary?.productImageUrl,
+    ...(Array.isArray(summary?.productImageUrls) ? summary.productImageUrls : []),
+    listingFirst,
+  ]).slice(0, 1);
 }
 
 function stepTwoProductName(item) {
@@ -3397,6 +3410,7 @@ const DIRECT_AI_ACTIONS = [
     aliases: ['판매글', '원본 글', '원본 매물', '매물 페이지'],
     preconditions(item) {
       if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      if (isSampleListing(item)) return { ok: false, message: '샘플 매물이라 원본 판매글이 없습니다.' };
       if (!listingPageUrl(item)) return { ok: false, message: '이 매물의 원본 판매글 URL을 찾지 못했습니다.' };
       return { ok: true };
     },
@@ -5154,7 +5168,13 @@ function renderSellerChatMeta(item) {
           <p>${escapeHtml([platform, sellerText].filter(Boolean).join(' · '))}</p>
         </div>
       </div>
-      ${item?.pageUrl ? `<a class="seller-chat__listing-link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>` : ''}
+      ${
+        isSampleListing(item)
+          ? '<span class="seller-chat__listing-link seller-chat__listing-link--disabled">판매글 없음</span>'
+          : item?.pageUrl
+            ? `<a class="seller-chat__listing-link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>`
+            : ''
+      }
     </div>
   `;
 }
@@ -8690,7 +8710,13 @@ function renderItem(item, comps) {
         <article class="mini-card mini-card--hero">
           <div class="listing-head">
             <span class="badge ${plat}">${escapeHtml(item.platformLabel || item.platform)}</span>
-            ${item.pageUrl ? `<a class="link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>` : ''}
+            ${
+            isSampleListing(item)
+              ? '<span class="link link--disabled" title="샘플 매물이라 원본 판매글이 없습니다.">판매글 없음</span>'
+              : item.pageUrl
+                ? `<a class="link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>`
+                : ''
+          }
           </div>
           <div>
             <h3 class="item-title hover-full" title="${escapeAttr(item.title || '(제목 없음)')}">${escapeHtml(item.title || '(제목 없음)')}</h3>
@@ -12221,7 +12247,7 @@ function showDemoFallbackBanner(message) {
   let bar = document.querySelector('[data-demo-fallback-banner]');
   if (!bar) {
     bar = document.createElement('div');
-    bar.className = 'championship-fallback-banner';
+    bar.className = 'sample-fallback-banner';
     bar.setAttribute('data-demo-fallback-banner', '');
     document.body.appendChild(bar);
   }
@@ -12242,7 +12268,15 @@ async function hydrateDemoCache(id) {
   const key = summaryKey(item);
   if (!key) return;
   if (cache.summary) {
-    productSummaries.set(key, { status: 'done', summary: cache.summary, source: 'demo-cache' });
+    const summary = { ...cache.summary };
+    if (!summary.productImageUrl && Array.isArray(item?.imageUrls) && item.imageUrls[0]) {
+      summary.productImageUrl = item.imageUrls[0];
+      summary.productImageUrls = uniqueImageList([
+        ...(Array.isArray(summary.productImageUrls) ? summary.productImageUrls : []),
+        ...item.imageUrls,
+      ]);
+    }
+    productSummaries.set(key, { status: 'done', summary, source: 'demo-cache' });
   }
   if (cache.riskAnalysis) {
     productRiskAnalyses.set(key, { status: 'done', analysis: cache.riskAnalysis, source: 'demo-cache' });

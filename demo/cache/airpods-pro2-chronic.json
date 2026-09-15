@@ -6,7 +6,16 @@
     "description": "애플 에어팟 프로 2세대 USB-C 모델. 액티브 노이즈 캔슬링과 충전 케이스가 기본 구성입니다.",
     "makerOrSeller": "Apple",
     "newPrice": "현재 국내 최저가 약 30만 원대",
-    "searchQueries": ["에어팟 프로 2 USB-C", "AirPods Pro 2 USB-C"]
+    "searchQueries": [
+      "에어팟 프로 2 USB-C",
+      "AirPods Pro 2 USB-C"
+    ],
+    "productImageUrl": "https://images.unsplash.com/photo-1606220588913-b3aacb4d2f46?w=900&q=80",
+    "productImageUrls": [
+      "https://images.unsplash.com/photo-1606220588913-b3aacb4d2f46?w=900&q=80",
+      "https://images.unsplash.com/photo-1572569511254-d8f925fe2cbb?w=900&q=80",
+      "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=900&q=80"
+    ]
   },
   "riskAnalysis": {
     "relatedIssues": [

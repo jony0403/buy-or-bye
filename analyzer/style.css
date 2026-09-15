@@ -15470,28 +15470,40 @@ body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-load
 
 
 /* Sample landing (empty state) — matches mini-card / chip-btn language */
+.app-shell.is-empty-state .analysis-board {
+  align-content: start !important;
+  justify-content: start;
+  min-height: auto;
+  height: auto;
+  overflow: visible;
+  padding-top: 0.75rem;
+  padding-bottom: 6rem;
+}
+.app-shell.is-empty-state .listing-cluster {
+  display: block !important;
+  grid-template-columns: none !important;
+  grid-auto-rows: auto !important;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0.5rem 0 2rem;
+  overflow: visible !important;
+}
+.mini-card.mini-card--empty,
+.mini-card.sample-landing {
+  overflow: visible !important;
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+}
 .sample-landing {
   max-width: 720px;
   margin: 0 auto;
   text-align: left;
   justify-content: flex-start;
   gap: 0.85rem;
-  min-height: auto;
   align-self: stretch;
-  grid-column: 1 / -1;
-  grid-row: auto;
-  overflow: visible;
-}
-.app-shell.is-empty-state .analysis-board,
-.app-shell.is-empty-state .listing-cluster {
-  overflow: visible;
-  align-content: start;
-}
-.app-shell.is-empty-state .listing-cluster {
-  display: block;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 0.5rem 0 2rem;
 }
 .sample-section-label {
   margin: 0 0 0.45rem;
@@ -15564,8 +15576,9 @@ body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-load
 .sample-fallback-banner {
   position: fixed;
   left: 50%;
-  bottom: 1rem;
-  z-index: 120;
+  /* sit above fixed stage-slide-controls (bottom: 1rem) */
+  bottom: calc(1rem + 3.6rem + env(safe-area-inset-bottom, 0px));
+  z-index: 80;
   transform: translateX(-50%);
   max-width: min(560px, 92vw);
   padding: 0.7rem 1rem;
@@ -15574,6 +15587,7 @@ body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-load
   color: #fff;
   font-size: 0.82rem;
   box-shadow: 0 10px 30px rgba(249, 115, 22, 0.28);
+  pointer-events: none;
 }
 .championship-fallback-banner[hidden],
 .sample-fallback-banner[hidden] {
@@ -15597,3 +15611,12 @@ body.theme-dark .sample-ext-steps code {
 }
 
 
+
+.link--disabled,
+.seller-chat__listing-link--disabled {
+  color: #9aa3b2 !important;
+  cursor: default;
+  text-decoration: none !important;
+  pointer-events: none;
+  opacity: 0.72;
+}

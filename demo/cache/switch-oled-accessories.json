@@ -6,7 +6,15 @@
     "description": "닌텐도 스위치 OLED 화이트 모델. 본체·조이콘·독·AC 어댑터·HDMI 케이블이 기본 구성으로 판매되는 경우가 많습니다.",
     "makerOrSeller": "Nintendo",
     "newPrice": "국내 신품가 약 45만 원대",
-    "searchQueries": ["닌텐도 스위치 OLED 화이트", "Switch OLED white"]
+    "searchQueries": [
+      "닌텐도 스위치 OLED 화이트",
+      "Switch OLED white"
+    ],
+    "productImageUrl": "https://images.unsplash.com/photo-1578303512597-81e6cc155b3e?w=900&q=80",
+    "productImageUrls": [
+      "https://images.unsplash.com/photo-1578303512597-81e6cc155b3e?w=900&q=80",
+      "https://images.unsplash.com/photo-1606144042614-b2417e99c4e3?w=900&q=80"
+    ]
   },
   "riskAnalysis": {
     "relatedIssues": [

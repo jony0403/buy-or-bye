@@ -6,7 +6,16 @@
     "description": "맥북 에어 13인치 M2, 16GB 메모리·256GB 저장장치 미드나이트. 배터리 사이클과 구성품이 시세에 큰 영향을 줍니다.",
     "makerOrSeller": "Apple",
     "newPrice": "동일 스펙 국내 신품·리퍼가 변동폭이 큼",
-    "searchQueries": ["맥북에어 M2 16GB 256GB", "MacBook Air M2 16 256"]
+    "searchQueries": [
+      "맥북에어 M2 16GB 256GB",
+      "MacBook Air M2 16 256"
+    ],
+    "productImageUrl": "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=900&q=80",
+    "productImageUrls": [
+      "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=900&q=80",
+      "https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=900&q=80",
+      "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=900&q=80"
+    ]
   },
   "riskAnalysis": {
     "relatedIssues": [

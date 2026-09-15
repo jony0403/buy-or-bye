@@ -6,7 +6,16 @@
     "description": "삼성 갤럭시 S24 256GB 자급제. 중고 거래에서는 실물 사진과 계정/잠금 해제가 핵심 확인 포인트입니다.",
     "makerOrSeller": "Samsung",
     "newPrice": "옵션·프로모션에 따라 국내 신품가 변동",
-    "searchQueries": ["갤럭시 S24 256GB 자급제", "Galaxy S24 256GB"]
+    "searchQueries": [
+      "갤럭시 S24 256GB 자급제",
+      "Galaxy S24 256GB"
+    ],
+    "productImageUrl": "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=900&q=80",
+    "productImageUrls": [
+      "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=900&q=80",
+      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=900&q=80",
+      "https://images.unsplash.com/photo-1592890288564-76628a30a657?w=900&q=80"
+    ]
   },
   "riskAnalysis": {
     "relatedIssues": [
