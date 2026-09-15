@@ -39,7 +39,7 @@ function setStatus(msg, kind = '') {
 }
 
 /**
- * 분석 웹(localStorage)에만 있는 Gemini 설정을 chrome.storage로 복사합니다.
+ * 분석 웹(localStorage)에만 있는 OpenAI 설정을 chrome.storage로 복사합니다.
  * postMessage/CustomEvent가 확장에 안 닿는 경우에도 유사 매물 검색이 동작하게 합니다.
  */
 async function syncGeminiFromAnalyzerTabs() {
@@ -59,17 +59,27 @@ async function syncGeminiFromAnalyzerTabs() {
       const injected = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => ({
-          api: localStorage.getItem('ulsa_gemini_api_key'),
-          model: localStorage.getItem('ulsa_gemini_model'),
-          v: localStorage.getItem('ulsa_gemini_verified_at'),
+          api:
+            localStorage.getItem('ulsa_openai_api_key') ||
+            localStorage.getItem('ulsa_gemini_api_key'),
+          model:
+            localStorage.getItem('ulsa_openai_model') ||
+            localStorage.getItem('ulsa_gemini_model'),
+          v:
+            localStorage.getItem('ulsa_openai_verified_at') ||
+            localStorage.getItem('ulsa_gemini_verified_at'),
         }),
       });
       const d = injected[0]?.result;
       if (d?.api && String(d.api).trim()) {
         const verifiedAt = d.v ? Number(d.v) : Date.now();
         await chrome.storage.local.set({
+          ulsaOpenAiApiKey: String(d.api).trim(),
+          ulsaOpenAiModel: d.model || 'gpt-5.6-terra',
+          ulsaOpenAiVerifiedAt:
+            Number.isFinite(verifiedAt) && verifiedAt > 0 ? verifiedAt : Date.now(),
           ulsaGeminiApiKey: String(d.api).trim(),
-          ulsaGeminiModel: d.model || 'gemini-2.5-flash',
+          ulsaGeminiModel: d.model || 'gpt-5.6-terra',
           ulsaGeminiVerifiedAt:
             Number.isFinite(verifiedAt) && verifiedAt > 0 ? verifiedAt : Date.now(),
         });
@@ -355,13 +365,33 @@ async function openSearchTabs(tab) {
     return;
   }
 
-  let st = await chrome.storage.local.get(['ulsaGeminiApiKey', 'ulsaGeminiModel', 'ulsaGeminiVerifiedAt']);
-  let apiKey = typeof st.ulsaGeminiApiKey === 'string' ? st.ulsaGeminiApiKey.trim() : '';
+  let st = await chrome.storage.local.get([
+    'ulsaOpenAiApiKey',
+    'ulsaOpenAiModel',
+    'ulsaOpenAiVerifiedAt',
+    'ulsaGeminiApiKey',
+    'ulsaGeminiModel',
+    'ulsaGeminiVerifiedAt',
+  ]);
+  let apiKey =
+    (typeof st.ulsaOpenAiApiKey === 'string' && st.ulsaOpenAiApiKey.trim()) ||
+    (typeof st.ulsaGeminiApiKey === 'string' && st.ulsaGeminiApiKey.trim()) ||
+    '';
   if (!apiKey) {
     setStatus('분석 웹에서 API 설정 가져오는 중…', '');
     await syncGeminiFromAnalyzerTabs();
-    st = await chrome.storage.local.get(['ulsaGeminiApiKey', 'ulsaGeminiModel', 'ulsaGeminiVerifiedAt']);
-    apiKey = typeof st.ulsaGeminiApiKey === 'string' ? st.ulsaGeminiApiKey.trim() : '';
+    st = await chrome.storage.local.get([
+    'ulsaOpenAiApiKey',
+    'ulsaOpenAiModel',
+    'ulsaOpenAiVerifiedAt',
+    'ulsaGeminiApiKey',
+    'ulsaGeminiModel',
+    'ulsaGeminiVerifiedAt',
+  ]);
+    apiKey =
+      (typeof st.ulsaOpenAiApiKey === 'string' && st.ulsaOpenAiApiKey.trim()) ||
+      (typeof st.ulsaGeminiApiKey === 'string' && st.ulsaGeminiApiKey.trim()) ||
+      '';
   }
   if (!apiKey) {
     setStatus(
@@ -371,13 +401,15 @@ async function openSearchTabs(tab) {
     return;
   }
 
-  const model = st.ulsaGeminiModel || 'gemini-2.5-flash';
+  const model = st.ulsaOpenAiModel || st.ulsaGeminiModel || 'gpt-5.6-terra';
 
   try {
     const ver = await fetch('http://127.0.0.1:3920/api/verify-gemini', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': apiKey,
         'X-Gemini-Model': model,
       },
@@ -387,7 +419,10 @@ async function openSearchTabs(tab) {
     if (!ver.ok) {
       throw new Error(verData.error || verData.message || `연결 테스트 실패 HTTP ${ver.status}`);
     }
-    await chrome.storage.local.set({ ulsaGeminiVerifiedAt: Date.now() });
+    await chrome.storage.local.set({
+      ulsaOpenAiVerifiedAt: Date.now(),
+      ulsaGeminiVerifiedAt: Date.now(),
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     setStatus(`API 연결 실패 — 분석 서버 실행 후 분석 웹에서 키·모델을 다시 저장하세요 (${msg})`, 'err');
@@ -400,6 +435,8 @@ async function openSearchTabs(tab) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': apiKey,
         'X-Gemini-Model': model,
       },

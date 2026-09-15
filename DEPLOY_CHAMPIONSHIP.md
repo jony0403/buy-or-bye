@@ -5,7 +5,7 @@
 
 ## 핵심 동작
 
-- 공개 URL 접속 → **데모 매물 5개** 선택 → **라이브 Gemini** 분석
+- 공개 URL 접속 → **데모 매물 5개** 선택 → **라이브 OpenAI GPT** 분석
 - 쿼터/타임아웃/429 시 → `demo/cache/*.json` **폴백**
 - 확장 ZIP은 `/downloads/buy-or-bye-extension.zip`에서 다운로드
 
@@ -13,7 +13,7 @@
 
 | 변수 | 설명 |
 |------|------|
-| `GEMINI_API_KEY` | 서버 사이드 데모 키 (필수, 심사자 키 입력 불필요) |
+| `OPENAI_API_KEY` | 서버 사이드 데모 키 (필수, 심사자 키 입력 불필요). `GEMINI_API_KEY`도 동일 용도 alias |
 | `PORT` | 포트 (플랫폼이 주입, 기본 3920) |
 | `HOST` | 기본 `0.0.0.0` |
 | `PUBLIC_ANALYZER_ORIGIN` | 예: `https://your-app.up.railway.app` (확장 패키징에 사용) |
@@ -23,7 +23,7 @@
 ## 로컬 데모 실행
 
 ```bash
-set GEMINI_API_KEY=your_key
+set OPENAI_API_KEY=your_key
 set PUBLIC_ANALYZER_ORIGIN=http://127.0.0.1:3920
 npm run pack:extension
 npm start
@@ -34,7 +34,7 @@ npm start
 ## Railway 배포 (권장)
 
 1. GitHub `championship-demo` 브랜치를 Railway에 연결
-2. Variables에 `GEMINI_API_KEY`, `PUBLIC_ANALYZER_ORIGIN`(배포 URL) 설정
+2. Variables에 `OPENAI_API_KEY`, `PUBLIC_ANALYZER_ORIGIN`(배포 URL) 설정
 3. Build: `npm install` / Start: `npm run pack:extension && npm start`
 4. 배포 URL로 접속해 데모 2번(구성품) 60초 플로우 확인
 
@@ -50,7 +50,7 @@ npm run pack:extension && npm start
 
 ## 60초 검증 체크리스트
 
-1. 게이트 없이 랜딩이 열리는지 (`GEMINI_API_KEY` 있을 때)
+1. 게이트 없이 랜딩이 열리는지 (`OPENAI_API_KEY` 있을 때)
 2. 데모 카드 5개가 보이는지
 3. 「구성품 체크」 시나리오 클릭 → Step 1~2 카드 생성
 4. ZIP 다운로드 링크 200

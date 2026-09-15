@@ -385,17 +385,27 @@
   }
 
   async function getPanelSearchQueries(listing) {
-    const st = await chrome.storage.local.get(['ulsaGeminiApiKey', 'ulsaGeminiModel']);
-    const apiKey = typeof st.ulsaGeminiApiKey === 'string' ? st.ulsaGeminiApiKey.trim() : '';
+    const st = await chrome.storage.local.get([
+      'ulsaOpenAiApiKey',
+      'ulsaOpenAiModel',
+      'ulsaGeminiApiKey',
+      'ulsaGeminiModel',
+    ]);
+    const apiKey =
+      (typeof st.ulsaOpenAiApiKey === 'string' && st.ulsaOpenAiApiKey.trim()) ||
+      (typeof st.ulsaGeminiApiKey === 'string' && st.ulsaGeminiApiKey.trim()) ||
+      '';
     if (!apiKey) {
-      throw new Error('분석 웹에서 Gemini API 키를 먼저 저장하세요.');
+      throw new Error('분석 웹에서 OpenAI API 키를 먼저 저장하세요.');
     }
 
-    const model = st.ulsaGeminiModel || 'gemini-2.5-flash';
+    const model = st.ulsaOpenAiModel || st.ulsaGeminiModel || 'gpt-5.6-terra';
     const res = await fetch('http://127.0.0.1:3920/api/search-query', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': apiKey,
         'X-Gemini-Model': model,
       },

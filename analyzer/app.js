@@ -1565,6 +1565,9 @@ function formatWon(n) {
 }
 
 function getAiApiKey() {
+  if (typeof globalThis.UlsaAi?.readStoredApiKey === 'function') {
+    return globalThis.UlsaAi.readStoredApiKey();
+  }
   const keyName = globalThis.UlsaAi?.STORAGE_KEY_API;
   return keyName ? localStorage.getItem(keyName)?.trim() || '' : '';
 }
@@ -9586,7 +9589,7 @@ function bindDirectAiChat() {
       if (!apiKey || typeof globalThis.UlsaAi?.askDirect !== 'function') {
         directAiChat.messages.push({
           role: 'ai',
-          text: 'AI 설정이 필요합니다. AI 설정에서 Gemini API 키를 저장한 뒤 다시 시도하세요.',
+          text: 'AI 설정이 필요합니다. AI 설정에서 OpenAI API 키를 저장한 뒤 다시 시도하세요.',
         });
         directAiChat.status = 'error';
         saveDirectAiChatState(requestKey);
@@ -12166,7 +12169,7 @@ function renderChampionshipEmptyState() {
           <li>매물 상세 페이지에서 확장 아이콘을 누르면 이 분석 웹으로 전송됩니다.</li>
         </ol>
       </div>
-      <p class="empty empty-sub championship-stack">스택: Chrome MV3 확장 · Node 분석 서버 · Gemini(검색·멀티모달·JSON 파이프라인)</p>
+      <p class="empty empty-sub championship-stack">스택: Chrome MV3 확장 · Node 분석 서버 · OpenAI GPT(검색·멀티모달·JSON 파이프라인)</p>
     </article>
   `;
 }
@@ -12268,7 +12271,7 @@ async function maybeHydrateDemoFallback(errorLike) {
   if (!activeDemoScenarioId || demoFallbackUsed) return false;
   const msg = String(errorLike?.message || errorLike || '');
   const should =
-    /429|quota|rate limit|한도|timeout|Failed to fetch|네트워크|GEMINI|사용량/i.test(msg) ||
+    /429|quota|rate limit|한도|timeout|Failed to fetch|네트워크|GEMINI|OPENAI|사용량/i.test(msg) ||
     Boolean(errorLike?.demoFallbackSuggested);
   if (!should && msg) {
     // still fallback for demo scenario hard failures

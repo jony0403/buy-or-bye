@@ -15,8 +15,11 @@
     if (!d || !d.apiKey) return;
     try {
       chrome.storage.local.set({
+        ulsaOpenAiApiKey: d.apiKey,
+        ulsaOpenAiModel: d.model || 'gpt-5.6-terra',
+        ulsaOpenAiVerifiedAt: d.verifiedAt || Date.now(),
         ulsaGeminiApiKey: d.apiKey,
-        ulsaGeminiModel: d.model || 'gemini-2.5-flash',
+        ulsaGeminiModel: d.model || 'gpt-5.6-terra',
         ulsaGeminiVerifiedAt: d.verifiedAt || Date.now(),
       });
     } catch {
@@ -28,8 +31,11 @@
     if (ev.source !== window || !ev.data || ev.data.type !== 'ULSA_AI_SETTINGS' || !ev.data.apiKey) return;
     try {
       chrome.storage.local.set({
+        ulsaOpenAiApiKey: ev.data.apiKey,
+        ulsaOpenAiModel: ev.data.model || 'gpt-5.6-terra',
+        ulsaOpenAiVerifiedAt: ev.data.verifiedAt || Date.now(),
         ulsaGeminiApiKey: ev.data.apiKey,
-        ulsaGeminiModel: ev.data.model || 'gemini-2.5-flash',
+        ulsaGeminiModel: ev.data.model || 'gpt-5.6-terra',
         ulsaGeminiVerifiedAt: ev.data.verifiedAt || Date.now(),
       });
     } catch {

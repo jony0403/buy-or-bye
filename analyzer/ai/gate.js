@@ -2,14 +2,34 @@
 (() => {
   const K = () => globalThis.UlsaAi;
 
+  function readApiKey() {
+    const u = K();
+    if (!u) return '';
+    if (typeof u.readStoredApiKey === 'function') return u.readStoredApiKey();
+    return localStorage.getItem(u.STORAGE_KEY_API)?.trim() || '';
+  }
+
+  function readModel() {
+    const u = K();
+    if (!u) return 'gpt-5.6-terra';
+    if (typeof u.readStoredModel === 'function') return u.readStoredModel();
+    return localStorage.getItem(u.STORAGE_KEY_MODEL) || u.DEFAULT_MODEL;
+  }
+
+  function readVerifiedAt() {
+    const u = K();
+    if (!u) return '';
+    if (typeof u.readStoredVerifiedAt === 'function') return u.readStoredVerifiedAt();
+    return localStorage.getItem(u.STORAGE_KEY_VERIFIED_AT) || '';
+  }
+
   function isConfigured() {
     const u = K();
     if (!u) return false;
-    const key = localStorage.getItem(u.STORAGE_KEY_API);
-    const verified = localStorage.getItem(u.STORAGE_KEY_VERIFIED_AT);
-    if (typeof key !== 'string' || !key.trim() || verified == null || verified === '') return false;
-    // server demo token must be re-validated via /api/demo/status
-    if (key.trim() === '__SERVER_DEMO__' || localStorage.getItem('ulsa_demo_mode') === '1') return false;
+    const key = readApiKey();
+    const verified = readVerifiedAt();
+    if (!key || verified == null || verified === '') return false;
+    if (key === '__SERVER_DEMO__' || localStorage.getItem('ulsa_demo_mode') === '1') return false;
     return true;
   }
 
@@ -18,9 +38,9 @@
     if (!u) return;
     const api = document.getElementById('aiApiKey');
     const model = document.getElementById('aiModel');
-    if (api) api.value = localStorage.getItem(u.STORAGE_KEY_API) || '';
+    if (api) api.value = readApiKey();
     if (model) {
-      const saved = localStorage.getItem(u.STORAGE_KEY_MODEL) || u.DEFAULT_MODEL;
+      const saved = readModel();
       model.value = [...model.options].some((o) => o.value === saved) ? saved : u.DEFAULT_MODEL;
     }
   }
@@ -54,7 +74,7 @@
         composed: true,
         detail: {
           apiKey,
-          model: model || u?.DEFAULT_MODEL || 'gemini-2.5-flash',
+          model: model || u?.DEFAULT_MODEL || 'gpt-5.6-terra',
           verifiedAt: verifiedAt || Date.now(),
         },
       })
@@ -63,7 +83,7 @@
       {
         type: 'ULSA_AI_SETTINGS',
         apiKey,
-        model: model || u?.DEFAULT_MODEL || 'gemini-2.5-flash',
+        model: model || u?.DEFAULT_MODEL || 'gpt-5.6-terra',
         verifiedAt: verifiedAt || Date.now(),
       },
       '*'
@@ -105,13 +125,13 @@
     e.preventDefault();
     const u = K();
     const apiKey = document.getElementById('aiApiKey')?.value?.trim() || '';
-    const model = document.getElementById('aiModel')?.value || u?.DEFAULT_MODEL || 'gemini-2.5-flash';
+    const model = document.getElementById('aiModel')?.value || u?.DEFAULT_MODEL || 'gpt-5.6-terra';
     const err = document.getElementById('aiGateError');
     const form = document.getElementById('aiGateForm');
     const submitBtn = form?.querySelector('button[type="submit"]');
 
     if (!apiKey) {
-      if (err) err.textContent = 'Google AI Studio에서 발급한 Gemini API 키를 입력하세요.';
+      if (err) err.textContent = 'platform.openai.com에서 발급한 OpenAI API 키를 입력하세요.';
       return;
     }
 
@@ -119,10 +139,12 @@
     if (submitBtn) submitBtn.disabled = true;
 
     try {
-      const vr = await fetch('/api/verify-gemini', {
+      const vr = await fetch('/api/verify-openai', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-OpenAI-Key': apiKey,
+          'X-OpenAI-Model': model,
           'X-Gemini-Key': apiKey,
           'X-Gemini-Model': model,
         },
@@ -136,6 +158,9 @@
       localStorage.setItem(u.STORAGE_KEY_API, apiKey);
       localStorage.setItem(u.STORAGE_KEY_MODEL, model);
       localStorage.setItem(u.STORAGE_KEY_VERIFIED_AT, String(verifiedAt));
+      if (u.STORAGE_KEY_API_LEGACY) localStorage.setItem(u.STORAGE_KEY_API_LEGACY, apiKey);
+      if (u.STORAGE_KEY_MODEL_LEGACY) localStorage.setItem(u.STORAGE_KEY_MODEL_LEGACY, model);
+      if (u.STORAGE_KEY_VERIFIED_AT_LEGACY) localStorage.setItem(u.STORAGE_KEY_VERIFIED_AT_LEGACY, String(verifiedAt));
       syncToExtension(apiKey, model, verifiedAt);
       applyUnlock();
     } catch (ex) {
@@ -160,9 +185,10 @@
   function bumpLegacyGeminiModel() {
     const u = K();
     if (!u) return;
-    const raw = localStorage.getItem(u.STORAGE_KEY_MODEL);
-    if (raw === 'gemini-2.0-flash') {
+    const raw = readModel();
+    if (/^gemini-/i.test(raw)) {
       localStorage.setItem(u.STORAGE_KEY_MODEL, u.DEFAULT_MODEL);
+      if (u.STORAGE_KEY_MODEL_LEGACY) localStorage.setItem(u.STORAGE_KEY_MODEL_LEGACY, u.DEFAULT_MODEL);
       const sel = document.getElementById('aiModel');
       if (sel) sel.value = u.DEFAULT_MODEL;
     }
@@ -200,9 +226,9 @@
 
     const u = K();
     if (isConfigured()) {
-      const apiKey = localStorage.getItem(u.STORAGE_KEY_API);
-      const model = localStorage.getItem(u.STORAGE_KEY_MODEL) || u.DEFAULT_MODEL;
-      const verifiedAt = Number(localStorage.getItem(u.STORAGE_KEY_VERIFIED_AT)) || Date.now();
+      const apiKey = readApiKey();
+      const model = readModel() || u.DEFAULT_MODEL;
+      const verifiedAt = Number(readVerifiedAt()) || Date.now();
       syncToExtension(apiKey, model, verifiedAt);
       applyUnlock();
     } else if (await tryUnlockDemoMode()) {

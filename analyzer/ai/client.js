@@ -10,13 +10,15 @@
   UlsaAi.apiUrl = apiUrl;
 
   UlsaAi.getStoredModel = () =>
-    localStorage.getItem(UlsaAi.STORAGE_KEY_MODEL) || UlsaAi.DEFAULT_MODEL;
+    (typeof UlsaAi.readStoredModel === 'function' ? UlsaAi.readStoredModel() : null) ||
+    localStorage.getItem(UlsaAi.STORAGE_KEY_MODEL) ||
+    UlsaAi.DEFAULT_MODEL;
 
   function cleanApiError(text, fallback = 'AI 분석 요청에 실패했습니다.') {
     const raw = String(text || '').trim();
     if (!raw) return fallback;
     if (/(quota|rate limit|rate-limits|resource_exhausted|too many requests|429|exceeded your current quota)/i.test(raw)) {
-      return 'Gemini API 사용량 한도를 초과했습니다. Google AI Studio의 결제/쿼터 상태를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
+      return 'OpenAI API 사용량 한도를 초과했습니다. platform.openai.com 결제/쿼터를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
     }
     if (/<!doctype|<html|<title>/i.test(raw)) {
       const title = raw.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
@@ -31,8 +33,14 @@
       'Content-Type': 'application/json',
       ...extraHeaders,
     };
-    if (p.apiKey) headers['X-Gemini-Key'] = p.apiKey;
-    if (model) headers['X-Gemini-Model'] = model;
+    if (p.apiKey) {
+      headers['X-OpenAI-Key'] = p.apiKey;
+      headers['X-Gemini-Key'] = p.apiKey;
+    }
+    if (model) {
+      headers['X-OpenAI-Model'] = model;
+      headers['X-Gemini-Model'] = model;
+    }
     const fetchOpts = {
       method: 'POST',
       headers,
@@ -65,6 +73,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },
@@ -274,6 +284,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },
@@ -308,6 +320,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },
@@ -340,6 +354,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },
@@ -377,6 +393,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },
@@ -403,6 +421,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },
@@ -448,6 +468,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },
@@ -496,6 +518,8 @@
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-OpenAI-Key': p.apiKey,
+        'X-OpenAI-Model': model,
         'X-Gemini-Key': p.apiKey,
         'X-Gemini-Model': model,
       },

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** 분석 페이지 + Gemini API 프록시 (클라이언트 헤더 또는 GEMINI_API_KEY) */
+/** 분석 페이지 + OpenAI API 프록시 (클라이언트 헤더 또는 OPENAI_API_KEY) */
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,7 +9,8 @@ import sharp from 'sharp';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || process.env.ANALYZER_PORT) || 3920;
 const HOST = String(process.env.HOST || process.env.ANALYZER_HOST || '0.0.0.0').trim() || '0.0.0.0';
-const SERVER_GEMINI_KEY = String(process.env.GEMINI_API_KEY || '').trim();
+const SERVER_OPENAI_KEY = String(process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || '').trim();
+const SERVER_GEMINI_KEY = SERVER_OPENAI_KEY; // legacy alias
 const DEMO_MODE = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true' || Boolean(SERVER_GEMINI_KEY);
 const DEMO_DAILY_LIMIT = Math.max(5, Number(process.env.DEMO_DAILY_LIMIT) || 40);
 const PUBLIC_ANALYZER_ORIGIN = String(process.env.PUBLIC_ANALYZER_ORIGIN || '').trim().replace(/\/$/, '');
@@ -71,18 +72,25 @@ function corsHeaders(res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, X-Gemini-Key, X-Gemini-Model, Authorization'
+    'Content-Type, X-Gemini-Key, X-Gemini-Model, X-OpenAI-Key, X-OpenAI-Model, X-AI-Key, X-AI-Model, Authorization'
   );
 }
 
 function resolveRequestApiKey(req) {
   const header =
-    String(req.headers['x-gemini-key'] || '').trim() ||
+    String(req.headers['x-openai-key'] || req.headers['x-ai-key'] || req.headers['x-gemini-key'] || '').trim() ||
     String(req.headers.authorization || '')
       .replace(/^Bearer\s+/i, '')
       .trim();
   if (header && header !== DEMO_SERVER_KEY_TOKEN) return header;
-  return SERVER_GEMINI_KEY;
+  return SERVER_OPENAI_KEY;
+}
+
+function resolveRequestModel(req) {
+  return (
+    String(req.headers['x-openai-model'] || req.headers['x-ai-model'] || req.headers['x-gemini-model'] || '').trim() ||
+    DEFAULT_OPENAI_MODEL
+  );
 }
 
 function clientIp(req) {
@@ -315,7 +323,8 @@ function parseQueryCandidates(text, _title, maxQueries = 3) {
   return out;
 }
 
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_OPENAI_MODEL = 'gpt-5.6-terra';
+const DEFAULT_GEMINI_MODEL = DEFAULT_OPENAI_MODEL; // legacy alias
 
 const MAX_INLINE_IMAGES = 3;
 const LISTING_IMAGE_ANALYSIS_BATCH_SIZE = 10;
@@ -326,6 +335,9 @@ const PRODUCT_IMAGE_VALIDATE_TIMEOUT_MS = 5_000;
 const GEMINI_FAST_TIMEOUT_MS = 30_000;
 const GEMINI_GROUNDED_TIMEOUT_MS = 75_000;
 const GEMINI_PRODUCT_TIMEOUT_MS = 90_000;
+const OPENAI_FAST_TIMEOUT_MS = GEMINI_FAST_TIMEOUT_MS;
+const OPENAI_GROUNDED_TIMEOUT_MS = GEMINI_GROUNDED_TIMEOUT_MS;
+const OPENAI_PRODUCT_TIMEOUT_MS = GEMINI_PRODUCT_TIMEOUT_MS;
 
 function isAllowedListingImageUrl(u) {
   try {
@@ -784,19 +796,175 @@ async function fetchListingImageSources(urls, maxImages = Infinity) {
 }
 
 function extractGeminiText(data) {
+  // OpenAI Responses / Chat Completions 겸용
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text.trim();
+  if (Array.isArray(data?.output)) {
+    const chunks = [];
+    for (const item of data.output) {
+      const content = item?.content;
+      if (!Array.isArray(content)) continue;
+      for (const part of content) {
+        if (typeof part?.text === 'string') chunks.push(part.text);
+        else if (typeof part?.output_text === 'string') chunks.push(part.output_text);
+      }
+    }
+    if (chunks.length) return chunks.join('').trim();
+  }
+  const choice = data?.choices?.[0];
+  const msg = choice?.message?.content;
+  if (typeof msg === 'string') return msg.trim();
+  if (Array.isArray(msg)) {
+    return msg
+      .map((p) => (typeof p?.text === 'string' ? p.text : ''))
+      .filter(Boolean)
+      .join('')
+      .trim();
+  }
   const cand = data?.candidates?.[0];
-  if (!cand) return '';
-  const parts = cand.content?.parts;
-  const text =
-    parts?.map((p) => p.text).filter(Boolean).join('') ||
-    parts?.[0]?.text ||
-    '';
-  if (text) return text;
-  const reason = cand.finishReason || cand.finish_reason;
-  if (reason && reason !== 'STOP') {
-    throw new Error(`Gemini 응답 없음 (${reason})`);
+  if (cand) {
+    const parts = cand.content?.parts;
+    return (
+      parts?.map((p) => p.text).filter(Boolean).join('') ||
+      parts?.[0]?.text ||
+      ''
+    );
   }
   return '';
+}
+
+function geminiPartsToOpenAIContent(parts) {
+  const content = [];
+  for (const part of Array.isArray(parts) ? parts : []) {
+    if (!part || typeof part !== 'object') continue;
+    if (typeof part.text === 'string' && part.text) {
+      content.push({ type: 'text', text: part.text });
+      continue;
+    }
+    const inline = part.inline_data || part.inlineData;
+    if (inline?.data) {
+      const mime = String(inline.mime_type || inline.mimeType || 'image/jpeg').trim() || 'image/jpeg';
+      content.push({
+        type: 'image_url',
+        image_url: { url: `data:${mime};base64,${inline.data}` },
+      });
+    }
+  }
+  return content.length ? content : [{ type: 'text', text: '(empty)' }];
+}
+
+function geminiPartsToResponsesInput(parts) {
+  const content = [];
+  for (const part of Array.isArray(parts) ? parts : []) {
+    if (!part || typeof part !== 'object') continue;
+    if (typeof part.text === 'string' && part.text) {
+      content.push({ type: 'input_text', text: part.text });
+      continue;
+    }
+    const inline = part.inline_data || part.inlineData;
+    if (inline?.data) {
+      const mime = String(inline.mime_type || inline.mimeType || 'image/jpeg').trim() || 'image/jpeg';
+      content.push({
+        type: 'input_image',
+        image_url: `data:${mime};base64,${inline.data}`,
+      });
+    }
+  }
+  return content.length ? content : [{ type: 'input_text', text: '(empty)' }];
+}
+
+/** @param {object[]} parts Gemini-style parts: { text } or { inline_data } */
+async function geminiGenerateFromParts(apiKey, model, parts, opts = {}) {
+  return openaiGenerateFromParts(apiKey, model, parts, opts);
+}
+
+async function openaiGenerateFromParts(apiKey, model, parts, opts = {}) {
+  const m = String(model || DEFAULT_OPENAI_MODEL).replace(/^\s+|\s+$/g, '');
+  const temperature = opts.temperature ?? 0.2;
+  const timeoutMs = opts.timeoutMs || OPENAI_FAST_TIMEOUT_MS;
+  const wantJson = opts.responseMimeType === 'application/json';
+  const useSearch = Boolean(opts.useGoogleSearch);
+
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey}`,
+  };
+
+  // 1) Responses API (web_search 지원)
+  if (useSearch) {
+    const payload = {
+      model: m,
+      input: [
+        {
+          role: 'user',
+          content: geminiPartsToResponsesInput(parts),
+        },
+      ],
+      tools: [{ type: 'web_search' }],
+      temperature,
+    };
+    if (opts.maxOutputTokens != null) payload.max_output_tokens = opts.maxOutputTokens;
+    if (wantJson) {
+      payload.text = { format: { type: 'json_object' } };
+    }
+    try {
+      const res = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const raw = await res.text();
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(cleanUpstreamErrorText(raw, `OpenAI HTTP ${res.status}`));
+      }
+      if (!res.ok) {
+        const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
+        throw new Error(cleanUpstreamErrorText(msg, `OpenAI HTTP ${res.status}`));
+      }
+      const text = extractGeminiText(data);
+      if (text) return text;
+    } catch (e) {
+      console.warn('[openai] Responses+web_search 실패, Chat Completions로 재시도:', e instanceof Error ? e.message : e);
+    }
+  }
+
+  // 2) Chat Completions (멀티모달·JSON)
+  const chatPayload = {
+    model: m,
+    messages: [
+      {
+        role: 'user',
+        content: geminiPartsToOpenAIContent(parts),
+      },
+    ],
+    temperature,
+  };
+  if (opts.maxOutputTokens != null) chatPayload.max_tokens = opts.maxOutputTokens;
+  if (wantJson) chatPayload.response_format = { type: 'json_object' };
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(chatPayload),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const raw = await res.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error(cleanUpstreamErrorText(raw, `OpenAI HTTP ${res.status}`));
+  }
+  if (!res.ok) {
+    const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
+    throw new Error(cleanUpstreamErrorText(msg, `OpenAI HTTP ${res.status}`));
+  }
+  const text = extractGeminiText(data);
+  if (!text) throw new Error('OpenAI 응답에 텍스트가 없습니다.');
+  return text;
 }
 
 function normalizeProductImageUrl(raw) {
@@ -1392,7 +1560,7 @@ function cleanUpstreamErrorText(text, fallback = '외부 AI 서버 오류') {
   const raw = String(text || '').trim();
   if (!raw) return fallback;
   if (/(quota|rate limit|rate-limits|resource_exhausted|too many requests|429|exceeded your current quota)/i.test(raw)) {
-    return 'Gemini API 사용량 한도를 초과했습니다. Google AI Studio의 결제/쿼터 상태를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
+    return 'OpenAI API 사용량 한도를 초과했습니다. platform.openai.com 결제/쿼터를 확인하거나, 잠시 후 다시 시도하거나, 다른 API 키를 저장한 뒤 재시도하세요.';
   }
   if (/<!doctype|<html|<title>/i.test(raw)) {
     const title = raw.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
@@ -1647,51 +1815,6 @@ function parseListingImageAnalysis(text, imageUrls = [], sourceMeta = []) {
     parseOk: Boolean(images.length || parsed.overall),
   };
 }
-
-/** @param {object[]} parts Gemini user message parts: { text } 또는 { inline_data } */
-async function geminiGenerateFromParts(apiKey, model, parts, opts = {}) {
-  const m = String(model || DEFAULT_GEMINI_MODEL).replace(/^\s+|\s+$/g, '');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    m
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const temperature = opts.temperature ?? 0.2;
-  const payload = {
-    contents: [{ role: 'user', parts }],
-    generationConfig: {
-      temperature,
-    },
-  };
-  if (opts.maxOutputTokens != null) {
-    payload.generationConfig.maxOutputTokens = opts.maxOutputTokens;
-  }
-  if (opts.responseMimeType) {
-    payload.generationConfig.responseMimeType = opts.responseMimeType;
-  }
-  if (opts.useGoogleSearch) {
-    payload.tools = [{ google_search: {} }];
-  }
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(opts.timeoutMs || GEMINI_FAST_TIMEOUT_MS),
-  });
-  const raw = await res.text();
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    throw new Error(cleanUpstreamErrorText(raw, `Gemini HTTP ${res.status}`));
-  }
-  if (!res.ok) {
-    const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
-    throw new Error(cleanUpstreamErrorText(msg, `Gemini HTTP ${res.status}`));
-  }
-  const text = extractGeminiText(data);
-  if (!text) throw new Error('Gemini 응답에 텍스트가 없습니다.');
-  return text;
-}
-
 async function runWebGroundedSearchQuery(apiKey, model, title, body, inlineParts) {
   const prompt = buildWebGroundedSearchQueryPrompt(title, body, inlineParts.length);
   const parts =
@@ -2280,10 +2403,17 @@ function parseSellerReplyAnalysis(text) {
 
 /** API 키 유효성 + 선택 모델 사용 가능 여부 (REST models 목록) */
 async function verifyGeminiApiKey(apiKey, modelId) {
+  return verifyOpenAIApiKey(apiKey, modelId);
+}
+
+async function verifyOpenAIApiKey(apiKey, modelId) {
   const key = String(apiKey || '').trim();
   if (!key) throw new Error('API 키가 비었습니다.');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url);
+  const mid = String(modelId || DEFAULT_OPENAI_MODEL).trim();
+  const res = await fetch('https://api.openai.com/v1/models', {
+    headers: { Authorization: `Bearer ${key}` },
+    signal: AbortSignal.timeout(20_000),
+  });
   const raw = await res.text();
   let data;
   try {
@@ -2293,24 +2423,22 @@ async function verifyGeminiApiKey(apiKey, modelId) {
   }
   if (!res.ok) {
     const msg = data?.error?.message || data?.message || JSON.stringify(data).slice(0, 200);
-    throw new Error(msg);
+    throw new Error(cleanUpstreamErrorText(msg, `OpenAI HTTP ${res.status}`));
   }
-  const models = data?.models || [];
+  const models = Array.isArray(data?.data) ? data.data : [];
   if (!models.length) throw new Error('모델 목록을 가져오지 못했습니다. API 키를 확인하세요.');
-  const mid = String(modelId || DEFAULT_GEMINI_MODEL).trim();
   const okModel = models.some((m) => {
-    const name = m?.name || '';
-    return name === `models/${mid}` || name.endsWith(`/${mid}`);
+    const id = String(m?.id || '');
+    return id === mid || id.startsWith(`${mid}-`) || mid.startsWith(id);
   });
+  // 일부 최신 모델은 /v1/models 목록에 늦게 뜨므로, 키가 유효하면 통과시키고 실제 호출에서 검증
   if (!okModel) {
     const sample = models
       .slice(0, 8)
-      .map((m) => m.name?.replace(/^models\//, ''))
+      .map((m) => m.id)
       .filter(Boolean)
       .join(', ');
-    throw new Error(
-      `선택한 모델「${mid}」을(를) 이 API 키로 사용할 수 없습니다. 목록에 있는지 확인하세요. (예: ${sample || '—'})`
-    );
+    console.warn(`[openai] 목록에 없는 모델 선택: ${mid} (예: ${sample || '—'})`);
   }
   return { ok: true, model: mid };
 }
@@ -2330,6 +2458,7 @@ const server = http.createServer(async (req, res) => {
     req.method === 'POST' &&
     url.pathname.startsWith('/api/') &&
     url.pathname !== '/api/verify-gemini' &&
+    url.pathname !== '/api/verify-openai' &&
     !url.pathname.startsWith('/api/demo')
   ) {
     const rateKey = resolveRequestApiKey(req);
@@ -2416,12 +2545,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/verify-gemini') {
+  if (req.method === 'POST' && (url.pathname === '/api/verify-gemini' || url.pathname === '/api/verify-openai')) {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { ok: false, error: 'X-Gemini-Key 헤더가 필요합니다.' });
+        json(res, 400, { ok: false, error: 'X-OpenAI-Key 또는 X-Gemini-Key 헤더가 필요합니다.' });
         return;
       }
       const result = await verifyGeminiApiKey(apiKey, model);
@@ -2435,7 +2564,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/search-query') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2498,7 +2627,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/product-summary') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2565,7 +2694,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/product-risk') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2600,7 +2729,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/product-risk-youtube') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2637,7 +2766,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/listing-text-analysis') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2676,7 +2805,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/accessory-check') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2715,7 +2844,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/listing-image-analysis') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2837,7 +2966,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/comparison-filter') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2866,7 +2995,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/used-price-guide') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2895,7 +3024,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/purchase-receipt') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2924,7 +3053,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/ai-chat') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2957,7 +3086,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/seller-chat-assistant') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -2998,7 +3127,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/seller-chat-keywords') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -3036,7 +3165,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/seller-chat-messages') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
@@ -3076,7 +3205,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/seller-reply-analysis') {
     try {
       const apiKey = resolveRequestApiKey(req);
-      const model = req.headers['x-gemini-model'] || DEFAULT_GEMINI_MODEL;
+      const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
         json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
