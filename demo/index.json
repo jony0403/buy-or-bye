@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "샘플 매물",
-  "description": "확장프로그램 없이도 바로 분석 흐름을 볼 수 있는 선별 매물입니다. Step 1부터 실시간 AI로 분석합니다.",
+  "description": "샘플로 바로 분석 흐름을 볼 수 있는 선별 매물입니다. Step 1부터 실시간 AI로 분석합니다.",
   "scenarios": [
     {
       "id": "airpods-pro2-chronic",

@@ -833,6 +833,8 @@ function isStageThreeCollectionFinalizing(key) {
   return false;
 }
 
+const STAGE_THREE_SEARCH_PROGRESS_KIND = 'stageThreeSearch';
+
 function stageThreeSearchProgressPercent(progress = {}) {
   if (Number.isFinite(Number(progress.forcePercent))) {
     const forcePercent = Math.max(0, Math.min(100, Number(progress.forcePercent)));
@@ -857,39 +859,68 @@ function ensureStageThreeSearchProgress(item, seed = {}) {
   if (!key) return null;
   const existing = stageThreeSearchProgresses.get(key);
   if (existing) return existing;
+  const resume = Number.isFinite(Number(seed.startPercent)) ? Number(seed.startPercent) : 0;
   const progress = {
     phase: 'collecting',
     startedAt: seed.startedAt || Date.now(),
-    durationMs: 22000,
-    startPercent: 0,
-    endPercent: 62,
+    durationMs: seed.durationMs || 22000,
+    startPercent: Math.max(0, Math.min(90, resume)),
+    endPercent: Number.isFinite(Number(seed.endPercent)) ? Number(seed.endPercent) : 62,
+    highWater: resume,
   };
   stageThreeSearchProgresses.set(key, progress);
   return progress;
 }
 
+function noteStageThreeSearchHighWater(progress) {
+  if (!progress) return 0;
+  const current = stageThreeSearchProgressPercent(progress);
+  progress.highWater = Math.max(Number(progress.highWater) || 0, current);
+  return progress.highWater;
+}
+
+function transitionStageThreeSearchToIdentifying(item) {
+  const key = summaryKey(item);
+  const progress = ensureStageThreeSearchProgress(item);
+  if (!key || !progress) return null;
+  if (progress.phase === 'identifying' || progress.phase === 'complete') {
+    noteStageThreeSearchHighWater(progress);
+    return progress;
+  }
+  const currentPercent = Math.max(noteStageThreeSearchHighWater(progress), 55);
+  Object.assign(progress, {
+    phase: 'identifying',
+    startedAt: Date.now(),
+    durationMs: 16000,
+    startPercent: Math.min(Math.max(currentPercent, 58), 88),
+    endPercent: 96,
+    forcePercent: undefined,
+    finishStartedAt: undefined,
+    finishFromPercent: undefined,
+  });
+  noteStageThreeSearchHighWater(progress);
+  return progress;
+}
+
 function stageThreeSearchProgressState(item, phase, seed = {}) {
   const key = summaryKey(item);
-  const progress = ensureStageThreeSearchProgress(item, seed);
+  let progress = ensureStageThreeSearchProgress(item, seed);
   if (!key || !progress) return seed?.fallback || null;
-  if (phase === 'identifying' && progress.phase !== 'identifying' && progress.phase !== 'complete') {
-    const currentPercent = Math.max(stageThreeSearchProgressPercent(progress), 62);
-    Object.assign(progress, {
-      phase: 'identifying',
-      startedAt: Date.now(),
-      durationMs: 18000,
-      startPercent: Math.min(currentPercent, 78),
-      endPercent: 94,
-    });
+  if (phase === 'identifying') {
+    progress = transitionStageThreeSearchToIdentifying(item) || progress;
+  } else if (phase === 'collecting' && progress.phase === 'collecting') {
+    noteStageThreeSearchHighWater(progress);
   }
   if (phase === 'complete' && progress.phase !== 'complete') {
+    const from = Math.max(noteStageThreeSearchHighWater(progress), Number(progress.startPercent) || 0);
     Object.assign(progress, {
       phase: 'complete',
       forcePercent: 100,
       finishStartedAt: Date.now(),
-      finishFromPercent: Math.min(99, Math.max(0, stageThreeSearchProgressPercent(progress))),
+      finishFromPercent: Math.min(99, Math.max(from, 70)),
     });
   }
+  noteStageThreeSearchHighWater(progress);
   return {
     status: 'loading',
     startedAt: progress.startedAt,
@@ -904,10 +935,14 @@ function stageThreeSearchProgressState(item, phase, seed = {}) {
 
 async function completeStageThreeSearchProgress(item, refresh) {
   const state = stageThreeSearchProgressState(item, 'complete');
+  updateAiLoadingProgressNodes(STAGE_THREE_SEARCH_PROGRESS_KIND, state);
   updateAiLoadingProgressNodes('searchQuery', state);
   updateAiLoadingProgressNodes('comparisonFilter', state);
   if (typeof refresh === 'function') refresh();
   await waitMs(AI_LOADING_FINISH_MS);
+}
+
+function clearStageThreeSearchProgress(item) {
   const key = summaryKey(item);
   if (key) stageThreeSearchProgresses.delete(key);
 }
@@ -1274,6 +1309,7 @@ function forceFinalizeStageThreeCollection(item) {
   } else {
     comps = { ...emptyComparisonComps(item), timedOut: true };
   }
+  transitionStageThreeSearchToIdentifying(item);
   lastStageThreeCompsRenderKey = stageThreeCompsRenderKey(item, comps);
   if (stageThreeIsolatedRefreshKeys.has(key)) refreshStageThreeCompsBlock(item, { schedule: true });
   else refreshStageThreeSection(item);
@@ -1291,16 +1327,24 @@ function isStepThreeDone(item) {
   const listingKey = summaryKey(item);
   if (!listingKey) return false;
   const settledComps = effectiveStageThreeComps(item);
-  const preferKey =
+  const preferComparisonKey =
     settledComps && isCompsCollected(settledComps) ? comparisonFilterKey(item, settledComps) : '';
-  const comparisonKey = findListingStageCacheKey(comparisonFilters, listingKey, preferKey);
-  const guideKey = findListingStageCacheKey(usedPriceGuides, listingKey, preferKey);
-  return Boolean(
-    comparisonKey &&
-      guideKey &&
-      isStageThreeCacheSettled(comparisonFilters.get(comparisonKey)?.status) &&
-      isStageThreeCacheSettled(usedPriceGuides.get(guideKey)?.status)
-  );
+  const preferGuideKey = usedPriceGuideKey(item);
+  const comparisonKey = findListingStageCacheKey(comparisonFilters, listingKey, preferComparisonKey);
+  const guideKey = findListingStageCacheKey(usedPriceGuides, listingKey, preferGuideKey);
+  const comparisonSettled =
+    Boolean(comparisonKey && isStageThreeCacheSettled(comparisonFilters.get(comparisonKey)?.status)) ||
+    stageThreeComparisonSkippedKeys.has(listingKey);
+  const guideSettled = Boolean(guideKey && isStageThreeCacheSettled(usedPriceGuides.get(guideKey)?.status));
+  return comparisonSettled && guideSettled;
+}
+
+/** 비교 필터·시세 가이드 중 한쪽이 늦게 끝나도 Step4/다음 단계 버튼이 풀리게 한다. */
+function maybeAdvanceAfterStageThreePart(item) {
+  if (!item || selectedKey !== summaryKey(item)) return;
+  updateStageSlide();
+  if (isStepThreeDone(item)) refreshStageFourSection(item);
+  else syncStagePanels(item);
 }
 
 function isStepFourDone(item) {
@@ -8233,7 +8277,7 @@ function renderCompsBlock(item, comps) {
     return renderCompsLoading(
       '자동 매물검색 결과를 정리하고 있습니다...',
       stageThreeSearchProgressState(item, 'complete'),
-      'searchQuery'
+      STAGE_THREE_SEARCH_PROGRESS_KIND
     );
   }
   if (!comps || !isCompsCollected(comps)) {
@@ -8242,7 +8286,7 @@ function renderCompsBlock(item, comps) {
       return renderCompsLoading(
         '번개·당근·중고나라 검색 결과를 수집 중입니다...',
         stageThreeSearchProgressState(item, 'collecting', { startedAt: comps?.startedAt || Date.now() }),
-        'searchQuery'
+        STAGE_THREE_SEARCH_PROGRESS_KIND
       );
     }
     if (key && hasRestorableComparisonListings(key)) return renderStageThreeRestoredSearchState(item);
@@ -8264,7 +8308,11 @@ function renderCompsBlock(item, comps) {
     }
     if (key && hasRestorableComparisonListings(key)) return renderStageThreeRestoredSearchState(item);
     if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
-      return renderCompsLoading('AI가 검색어를 다시 조정 중입니다...', searchQueryRegenerations.get(key), 'searchQuery');
+      return renderCompsLoading(
+        'AI가 검색어를 다시 조정 중입니다...',
+        stageThreeSearchProgressState(item, 'collecting'),
+        STAGE_THREE_SEARCH_PROGRESS_KIND
+      );
     }
     return renderStageThreeEmptySearch(key);
   }
@@ -8283,10 +8331,18 @@ function renderCompsBlock(item, comps) {
     currentFilterState?.status === 'loading' &&
     currentFilterKey !== filterKey
   ) {
-    return renderCompsLoading('수집한 매물을 AI가 같은 제품인지 판별 중입니다...', stageThreeSearchProgressState(item, 'identifying'), 'comparisonFilter');
+    return renderCompsLoading(
+      '수집한 매물을 AI가 같은 제품인지 판별 중입니다...',
+      stageThreeSearchProgressState(item, 'identifying'),
+      STAGE_THREE_SEARCH_PROGRESS_KIND
+    );
   }
   if (!filterState || filterState.status === 'loading') {
-    return renderCompsLoading('수집한 매물을 AI가 같은 제품인지 판별 중입니다...', stageThreeSearchProgressState(item, 'identifying'), 'comparisonFilter');
+    return renderCompsLoading(
+      '수집한 매물을 AI가 같은 제품인지 판별 중입니다...',
+      stageThreeSearchProgressState(item, 'identifying'),
+      STAGE_THREE_SEARCH_PROGRESS_KIND
+    );
   }
   if (filterState.status === 'error') {
     return `<p class="meta empty">동일 제품 판별에 실패했습니다.</p>`;
@@ -8294,7 +8350,11 @@ function renderCompsBlock(item, comps) {
   if (!allMatched.length) {
     const emptyKey = summaryKey(item);
     if ((stageThreeAutoQueryRetryCounts.get(emptyKey) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
-      return renderCompsLoading('AI가 더 맞는 검색어를 다시 생각하고 있습니다...', searchQueryRegenerations.get(emptyKey), 'searchQuery');
+      return renderCompsLoading(
+        'AI가 더 맞는 검색어를 다시 생각하고 있습니다...',
+        stageThreeSearchProgressState(item, 'identifying'),
+        STAGE_THREE_SEARCH_PROGRESS_KIND
+      );
     }
     return renderStageThreeEmptySearch(emptyKey);
   }
@@ -8466,7 +8526,7 @@ function renderUsedPriceGuideBlock(item, comps) {
         <p class="stage-two-card-label">중고 시세 참고표</p>
         <button type="button" class="chip-btn used-price-guide-btn" data-used-price-guide="${escapeAttr(key)}">가격 다시 만들기</button>
       </div>
-      <h4>${escapeHtml(guide.headline || '상태별 중고 가격 참고표')}</h4>
+      <h4>상태별 중고 가격 참고</h4>
       <div class="comparison-price-table-wrap">
         <table class="comparison-price-table">
           <thead><tr><th>상태</th><th>가격 참고</th><th>코멘트</th></tr></thead>
@@ -8474,7 +8534,6 @@ function renderUsedPriceGuideBlock(item, comps) {
         </table>
       </div>
       ${guide.recommendedAction ? `<p class="comparison-caution">${escapeHtml(guide.recommendedAction)}</p>` : ''}
-      ${guide.confidence ? `<p class="hist-meta">신뢰도: ${escapeHtml(guide.confidence)}${guide.sourceNote ? ` · ${escapeHtml(guide.sourceNote)}` : ''}</p>` : ''}
     </article>
   `;
 }
@@ -9414,6 +9473,18 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
   }
   stageThreeLiveSearchAttemptedKeys.add(key);
   const isolated = opts.isolated === true;
+  const priorProgress = stageThreeSearchProgresses.get(key);
+  const resumePercent = opts.preserveAutoRetryCount
+    ? Math.max(
+        8,
+        Math.min(
+          72,
+          Number(priorProgress?.highWater) || stageThreeSearchProgressPercent(priorProgress || {}) || 8
+        )
+      )
+    : Number.isFinite(Number(opts.resumeProgress))
+      ? Math.max(0, Math.min(90, Number(opts.resumeProgress)))
+      : 0;
   resetStageThreeComparisonWork(item, { clearGuide: !isolated, clearReceipt: !isolated, clearSearchQuery: true });
   stageThreeComparisonSkippedKeys.delete(key);
   if (!opts.preserveAutoRetryCount) stageThreeAutoQueryRetryCounts.delete(key);
@@ -9424,8 +9495,9 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
     phase: 'collecting',
     startedAt: Date.now(),
     durationMs: STAGE_THREE_COLLECTION_TIMEOUT_MS,
-    startPercent: 0,
-    endPercent: 62,
+    startPercent: resumePercent,
+    endPercent: Math.max(62, resumePercent + 8),
+    highWater: resumePercent,
   });
   comps = collectingComparisonComps(item);
   armStageThreeHardDeadline(item);
@@ -9478,7 +9550,7 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
         return;
       }
       comps = restoredStageThreeComps(item, data.comps) || data.comps;
-      if (key) stageThreeSearchProgresses.delete(key);
+      transitionStageThreeSearchToIdentifying(item);
       lastStageThreeCompsRenderKey = '';
       if (isolated) refreshStageThreeCompsBlock(item);
       else refreshStageThreeSection(item);
@@ -10837,7 +10909,7 @@ function startNewAnalysis() {
   if ($urlImportInput) $urlImportInput.value = '';
   if ($railUrlInput) $railUrlInput.value = '';
   if ($urlImportStatus) $urlImportStatus.textContent = '';
-  if ($railStatus) $railStatus.textContent = '새 매물 링크를 붙여넣거나 확장프로그램에서 전송해 주세요.';
+  if ($railStatus) $railStatus.textContent = '새 매물 링크를 상단에 붙여넣어 주세요.';
   setHistoryOpen(false);
   renderDirectAiPanel();
   renderItem(null);
@@ -10866,7 +10938,10 @@ function advanceStageThreeAfterComparisonFilter(item, filterKey, matches, isolat
     if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
     else refreshStageThreeSection(item);
   }
-  if (!isolated) void ensureUsedPriceGuide(item);
+  if (!isolated) {
+    void ensureUsedPriceGuide(item);
+    maybeAdvanceAfterStageThreePart(item);
+  }
 }
 
 async function ensureComparisonFilter(item) {
@@ -10883,9 +10958,11 @@ async function ensureComparisonFilter(item) {
     if (selectedKey === currentKey) {
       if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
       else refreshStageThreeSection(item);
-      if (isStepThreeDone(item)) refreshStageFourSection(item);
     }
-    void ensureUsedPriceGuide(item);
+    if (!isolated) {
+      void ensureUsedPriceGuide(item);
+      maybeAdvanceAfterStageThreePart(item);
+    }
     return;
   }
   const candidates = comparisonFilterCandidates(item, comps);
@@ -10898,6 +10975,7 @@ async function ensureComparisonFilter(item) {
       }
     });
     advanceStageThreeAfterComparisonFilter(item, filterKey, [], isolated);
+    clearStageThreeSearchProgress(item);
     return;
   }
   const apiKey = getAiApiKey();
@@ -10911,7 +10989,10 @@ async function ensureComparisonFilter(item) {
     persistAiCaches();
     if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
     else refreshStageThreeSection(item);
-    if (!isolated) void ensureUsedPriceGuide(item);
+    if (!isolated) {
+      void ensureUsedPriceGuide(item);
+      maybeAdvanceAfterStageThreePart(item);
+    }
     return;
   }
 
@@ -10947,18 +11028,25 @@ async function ensureComparisonFilter(item) {
     });
     // AI가 매칭을 비워 주면 휴리스틱으로 걸러서 표시한다.
     const fallbackMatches = matches.length ? [] : allComparisonMatches(item, comps);
+    const finalMatches = matches.length ? matches : fallbackMatches;
     comparisonFilters.set(filterKey, {
       status: 'done',
-      matches: matches.length ? matches : fallbackMatches,
+      matches: finalMatches,
       fallback: !matches.length && fallbackMatches.length > 0,
       heuristic: !matches.length && fallbackMatches.length > 0,
     });
     persistAiCaches();
+    const canRetryEmpty =
+      !finalMatches.length && (stageThreeAutoQueryRetryCounts.get(currentKey) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES;
+    if (!canRetryEmpty) clearStageThreeSearchProgress(item);
     if (selectedKey === currentKey) {
       if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
       else refreshStageThreeSection(item);
     }
-    if (!isolated) void ensureUsedPriceGuide(item);
+    if (!isolated) {
+      void ensureUsedPriceGuide(item);
+      maybeAdvanceAfterStageThreePart(item);
+    }
     return;
   } catch (e) {
     if (currentKey && runId !== (stageThreeComparisonRunIds.get(currentKey) || 0)) return;
@@ -10970,10 +11058,15 @@ async function ensureComparisonFilter(item) {
       error: e instanceof Error ? e.message : String(e),
     });
     persistAiCaches();
+    clearStageThreeSearchProgress(item);
   }
   if (selectedKey === currentKey) {
     if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
     else refreshStageThreeSection(item);
+  }
+  if (!isolated) {
+    void ensureUsedPriceGuide(item);
+    maybeAdvanceAfterStageThreePart(item);
   }
 }
 
@@ -10991,13 +11084,13 @@ async function ensureUsedPriceGuide(item, opts = {}) {
     usedPriceGuideProgresses.delete(listingKey);
     purchaseReceiptsForListingClear(listingKey);
     persistAiCaches();
-  } else if (isStageThreeCacheSettled(existing?.status)) return;
+  } else if (isStageThreeCacheSettled(existing?.status)) {
+    maybeAdvanceAfterStageThreePart(item);
+    return;
+  }
   if (!opts.regenerate && ensureListingStageCacheAlias(usedPriceGuides, listingKey, key)) {
-    if (selectedKey === listingKey) {
-      refreshStageThreeSection(item);
-      if (isStepThreeDone(item)) refreshStageFourSection(item);
-      else updateStageSlide();
-    }
+    if (selectedKey === listingKey) refreshStageThreeSection(item);
+    maybeAdvanceAfterStageThreePart(item);
     return;
   }
   const apiKey = getAiApiKey();
@@ -11037,9 +11130,7 @@ async function ensureUsedPriceGuide(item, opts = {}) {
     persistAiCaches();
   }
   if (selectedKey === summaryKey(item)) {
-    refreshStageThreeSection(item);
-    if (isStepThreeDone(item)) refreshStageFourSection(item);
-    else syncStagePanels(item);
+    maybeAdvanceAfterStageThreePart(item);
   }
 }
 
@@ -12564,8 +12655,7 @@ function renderChampionshipEmptyState() {
       </header>
       <div class="sample-copy-guide" data-sample-copy-guide>
         <p><strong>중고 매물을 살지 말지, 이 화면에서 바로 판단하세요.</strong></p>
-        <p>아래 샘플로 Step 1~5 흐름을 먼저 볼 수 있고, 실제 매물은 상단(또는 왼쪽 레일) URL 입력으로 불러옵니다.</p>
-        <p>비교 매물 수집도 서버에서 자동으로 진행됩니다. 별도 확장프로그램 설치는 필요 없습니다.</p>
+        <p>아래 샘플로 흐름을 먼저 보거나, 상단 URL에 당근·번개·중고나라 매물 링크를 붙여넣으세요.</p>
       </div>
       <section class="sample-guide-block" aria-labelledby="sampleGuideTitle">
         <div class="sample-section-heading">

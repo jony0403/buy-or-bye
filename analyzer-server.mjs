@@ -63,6 +63,7 @@ const PROMPTS = {
   productRisk: await loadPrompt('product-risk.txt'),
   productRiskJson: await loadPrompt('product-risk-json.txt'),
   productRiskYoutubeComment: await loadPrompt('product-risk-youtube-comment.txt'),
+  productInfoResearch: await loadPrompt('product-info-research.txt'),
   productInfoLookup: await loadPrompt('product-info-lookup.txt'),
   listingTextAnalysis: await loadPrompt('listing-text-analysis.txt'),
   accessoryCheckResearch: await loadPrompt('accessory-check-research.txt'),
@@ -235,12 +236,12 @@ function buildProductIdentifyPrompt(title, body, imageCount) {
   const n = Number(imageCount) || 0;
   const media =
     n > 0
-      ? `?? ?? ${n}?? ? ???? ???? ????.\n`
-      : '??? ????. ??????? ?????.\n';
+      ? `아래에 매물 사진 ${n}장이 첨부되어 있습니다. 사진·제목·본문을 함께 보세요.\n`
+      : '첨부 이미지가 없습니다. 제목·본문만으로 식별하세요.\n';
   return renderPrompt(PROMPTS.productIdentify, {
     media,
-    title: t,
-    body: b || '(??)',
+    title: t || '(제목 없음)',
+    body: b || '(본문 없음)',
   });
 }
 
@@ -2002,14 +2003,29 @@ async function runProductIdentify(apiKey, model, title, body, inlineParts) {
   });
 }
 
-async function runProductInfoLookup(apiKey, model, productName) {
+async function runProductInfoLookup(apiKey, model, productName, listing = {}) {
   const name = String(productName || '').trim();
   if (!name) return '';
-  const prompt = renderPrompt(PROMPTS.productInfoLookup, {
+  const title = String(listing.title || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  const body = String(listing.body || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
+  const researchPrompt = renderPrompt(PROMPTS.productInfoResearch, {
     productName: name,
+    title: title || '(제목 없음)',
+    body: body || '(본문 없음)',
   });
-  return geminiGenerateFromParts(apiKey, model, [{ text: prompt }], {
-    temperature: 0.15,
+  const researchText = await geminiGenerateFromParts(apiKey, model, [{ text: researchPrompt }], {
+    useGoogleSearch: true,
+    temperature: 0.25,
+    maxOutputTokens: 2200,
+    timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
+  });
+  const jsonPrompt = renderPrompt(PROMPTS.productInfoLookup, {
+    productName: name,
+    title: title || '(제목 없음)',
+    researchText: String(researchText || '').trim() || '(조사 결과 없음)',
+  });
+  return geminiGenerateFromParts(apiKey, model, [{ text: jsonPrompt }], {
+    temperature: 0.05,
     maxOutputTokens: 1200,
     responseMimeType: 'application/json',
     timeoutMs: GEMINI_FAST_TIMEOUT_MS,
@@ -2873,7 +2889,10 @@ const server = http.createServer(async (req, res) => {
         productImageUrl: '',
       };
       try {
-        const detailOut = await runProductInfoLookup(apiKey, model, summary.productName);
+        const detailOut = await runProductInfoLookup(apiKey, model, summary.productName, {
+          title: body.title || '',
+          body: body.body || '',
+        });
         const detail = parseProductSummary(detailOut, summary.productName);
         summary = {
           productName: cleanProductName(detail.productName, summary.productName),
@@ -2892,7 +2911,7 @@ const server = http.createServer(async (req, res) => {
         summary,
         model,
         usedImages: inlineParts.length,
-        pipeline: 'identify_then_fast_lookup',
+        pipeline: 'identify_then_grounded_lookup',
       });
     } catch (e) {
       json(res, errorHttpStatus(e), { error: e instanceof Error ? e.message : String(e) });
