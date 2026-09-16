@@ -391,7 +391,8 @@ const MAX_LISTING_IMAGES_ANALYZED = Math.max(
   3,
   Number(process.env.MAX_LISTING_IMAGES_ANALYZED) || (DEMO_MODE ? 6 : 10)
 );
-const MAX_IMAGE_BYTES = 1.2 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_NORMALIZED_IMAGE_BYTES = 900 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 6_000;
 const IMAGE_SEARCH_TIMEOUT_MS = 8_000;
 const PRODUCT_IMAGE_VALIDATE_TIMEOUT_MS = 5_000;
@@ -725,7 +726,18 @@ function buildImageGridOverlaySvg(width, height, cols = 25, rows = 25) {
 
 
 async function normalizeListingImageBuffer(buf) {
-  const normalized = await sharp(buf, { animated: false }).rotate().jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+  let pipeline = sharp(buf, { animated: false }).rotate().resize({
+    width: 1280,
+    height: 1280,
+    fit: 'inside',
+    withoutEnlargement: true,
+  });
+  let normalized = await pipeline.jpeg({ quality: 84, mozjpeg: true }).toBuffer();
+  if (normalized.length > MAX_NORMALIZED_IMAGE_BYTES) {
+    normalized = await sharp(normalized)
+      .jpeg({ quality: 72, mozjpeg: true })
+      .toBuffer();
+  }
   const meta = await sharp(normalized).metadata();
   return {
     buf: normalized,
@@ -842,7 +854,8 @@ async function fetchImageUrlToInlineSource(url) {
   }
   if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
   const normalized = await normalizeListingImageBuffer(buf);
-  const grid = await createImageGridPart(buf, normalized);
+  if (!normalized?.buf?.length) throw new Error('이미지 정규화 실패');
+  const grid = await createImageGridPart(normalized.buf, normalized);
   return {
     part: {
       inline_data: {
@@ -856,7 +869,7 @@ async function fetchImageUrlToInlineSource(url) {
     normalizedBuf: normalized.buf,
     width: normalized.width || grid?.width || 0,
     height: normalized.height || grid?.height || 0,
-  }
+  };
 }
 
 function listingImageAnalysisBatches(sources) {
@@ -2797,7 +2810,16 @@ const server = http.createServer(async (req, res) => {
       }
       const buf = await fs.readFile(abs);
       const ext = path.extname(abs).toLowerCase();
-      const type = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+      const type =
+        buf[0] === 0xff && buf[1] === 0xd8
+          ? 'image/jpeg'
+          : buf[0] === 0x89 && buf[1] === 0x50
+            ? 'image/png'
+            : ext === '.png'
+              ? 'image/png'
+              : ext === '.webp'
+                ? 'image/webp'
+                : 'image/jpeg';
       res.writeHead(200, {
         'Content-Type': type,
         'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',

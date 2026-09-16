@@ -164,8 +164,8 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v21';
-const LISTING_IMAGE_OVERLAY_VERSION = 29;
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v22';
+const LISTING_IMAGE_OVERLAY_VERSION = 30;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 4;
 const IMAGE_DEFECT_MARKER_MAX_PERCENT = 72;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
@@ -188,6 +188,7 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v18',
   'ulsa_ai_analysis_cache_v19',
   'ulsa_ai_analysis_cache_v20',
+  'ulsa_ai_analysis_cache_v21',
 ];
 
 function mapToPersistableObject(map) {
@@ -13192,7 +13193,7 @@ async function loadChampionshipDemo(id) {
       }
     }
     if (pathOnly.startsWith('/demo-images/') && !/[?&]v=/.test(pathOnly)) {
-      pathOnly += (pathOnly.includes('?') ? '&' : '?') + 'v=20260916-sampleimg2';
+      pathOnly += (pathOnly.includes('?') ? '&' : '?') + 'v=20260916-imgfix3';
     }
     return pathOnly;
   }).filter(Boolean);
