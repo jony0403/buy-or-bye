@@ -12657,6 +12657,20 @@ function renderChampionshipEmptyState() {
         <p><strong>중고 매물을 살지 말지, 이 화면에서 바로 판단하세요.</strong></p>
         <p>아래 샘플로 흐름을 먼저 보거나, 상단 URL에 당근·번개·중고나라 매물 링크를 붙여넣으세요.</p>
       </div>
+      <nav class="market-shortcuts" data-market-shortcuts aria-label="중고마켓 바로가기">
+        <a class="market-shortcut market-shortcut--daangn" href="https://www.daangn.com/" target="_blank" rel="noopener noreferrer">
+          <strong>당근</strong>
+          <small>바로가기</small>
+        </a>
+        <a class="market-shortcut market-shortcut--bunjang" href="https://m.bunjang.co.kr/" target="_blank" rel="noopener noreferrer">
+          <strong>번개장터</strong>
+          <small>바로가기</small>
+        </a>
+        <a class="market-shortcut market-shortcut--joongna" href="https://web.joongna.com/" target="_blank" rel="noopener noreferrer">
+          <strong>중고나라</strong>
+          <small>바로가기</small>
+        </a>
+      </nav>
       <section class="sample-guide-block" aria-labelledby="sampleGuideTitle">
         <div class="sample-section-heading">
           <div>

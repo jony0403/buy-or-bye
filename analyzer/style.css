@@ -7179,35 +7179,25 @@ body::after {
   width: 3.34rem !important;
   min-width: 3.34rem !important;
   max-width: 3.34rem !important;
-  min-height: 3.34rem !important;
-  gap: 0.16rem !important;
+  min-height: 2.7rem !important;
+  gap: 0 !important;
   border-radius: 18px !important;
   background: transparent !important;
   color: #2f1607 !important;
   box-shadow: none !important;
-}
-.dashboard-rail__market-link img {
-  display: block !important;
-  width: 2.04rem !important;
-  height: 2.04rem !important;
-  object-fit: contain !important;
-  border-radius: 0.65rem !important;
-}
-.dashboard-rail__market-link--daangn img {
-  width: 1.82rem !important;
-  height: 1.82rem !important;
-  border-radius: 0 !important;
+  justify-content: center !important;
 }
 .dashboard-rail__market-link small {
   width: 3.18rem !important;
   max-width: 3.18rem !important;
   overflow: visible !important;
   color: #31190a !important;
-  font-size: 0.57rem !important;
-  line-height: 1 !important;
-  letter-spacing: -0.07em !important;
+  font-size: 0.62rem !important;
+  line-height: 1.15 !important;
+  letter-spacing: -0.06em !important;
   text-align: center !important;
   white-space: nowrap !important;
+  font-weight: 800 !important;
 }
 .dashboard-rail__market-link:hover,
 .dashboard-rail__market-link:focus-visible {
@@ -15546,6 +15536,51 @@ body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-load
   color: #223039;
   font-size: 0.96rem;
 }
+.market-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  width: 100%;
+}
+.market-shortcut {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-height: 4.6rem;
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  border: 1px solid #e6e9f1;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  box-shadow: 0 8px 20px rgba(32, 36, 44, 0.04);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.market-shortcut:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(32, 36, 44, 0.08);
+  border-color: #d5dbe8;
+}
+.market-shortcut strong {
+  font-size: 1.12rem;
+  letter-spacing: -0.03em;
+  color: #20242c;
+}
+.market-shortcut small {
+  color: #697282;
+  font-size: 0.78rem;
+}
+.market-shortcut--daangn {
+  border-color: rgba(255, 111, 15, 0.28);
+}
+.market-shortcut--bunjang {
+  border-color: rgba(17, 24, 39, 0.18);
+}
+.market-shortcut--joongna {
+  border-color: rgba(37, 99, 235, 0.22);
+}
 .sample-landing__hero-copy > p:last-child {
   margin: 0.3rem 0 0;
   color: var(--ui-text-muted, #727984);
@@ -15697,8 +15732,12 @@ body.theme-dark .app-shell .stage-five-panel .seller-chat__reply-insight.is-load
 }
 @media (max-width: 560px) {
   .sample-demo-grid,
-  .sample-guide-grid {
+  .sample-guide-grid,
+  .market-shortcuts {
     grid-template-columns: 1fr;
+  }
+  .market-shortcut {
+    min-height: 4.4rem;
   }
   .sample-landing {
     padding: 1rem !important;
@@ -15785,6 +15824,17 @@ body.theme-dark .sample-copy-guide p {
 }
 body.theme-dark .sample-copy-guide p:first-child {
   color: #f3f4f6;
+}
+body.theme-dark .market-shortcut {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+body.theme-dark .market-shortcut strong {
+  color: #f3f4f6;
+}
+body.theme-dark .market-shortcut small {
+  color: #b4bcc8;
 }
 body.theme-dark .sample-landing {
   background: #161a22 !important;
