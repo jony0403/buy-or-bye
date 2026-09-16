@@ -201,17 +201,17 @@ function buildWebGroundedSearchQueryPrompt(title, body, imageCount) {
   const n = Number(imageCount) || 0;
   const media =
     n > 0
-      ? `?? ?? ${n}?? ? ???? ???? ????.\n`
-      : '??? ????. ?????? ? ???? ?????.\n';
+      ? `상품 사진 ${n}장이 이 메시지에 첨부되어 있습니다.\n`
+      : '사진이 없습니다. 제목·본문으로 판단하세요.\n';
   return renderPrompt(PROMPTS.searchQuerySingle, {
     media,
     title: t,
-    body: b || '(??)',
+    body: b || '(없음)',
     MAX_SEARCH_QUERY_CHARS,
   });
 }
 
-/** Google Search ?? + ???? ? ?? ??/?? ??? ?? ?? ?? 3? */
+/** Google Search grounded candidate queries (max 3) */
 function buildWebGroundedSearchCandidatesPrompt(title, body, imageCount, maxQueries = 3) {
   const t = String(title || '').slice(0, 500);
   const b = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1200);
@@ -219,13 +219,13 @@ function buildWebGroundedSearchCandidatesPrompt(title, body, imageCount, maxQuer
   const max = Math.min(Math.max(Number(maxQueries) || 3, 1), 3);
   const media =
     n > 0
-      ? `?? ?? ${n}?? ? ???? ???? ????.\n`
-      : '??? ????. ?????? ? ???? ?????.\n';
+      ? `상품 사진 ${n}장이 이 메시지에 첨부되어 있습니다.\n`
+      : '사진이 없습니다. 제목·본문으로 판단하세요.\n';
   return renderPrompt(PROMPTS.searchQueryCandidates, {
     media,
     max,
     title: t,
-    body: b || '(??)',
+    body: b || '(없음)',
     MAX_SEARCH_QUERY_CHARS,
   });
 }
@@ -250,20 +250,20 @@ function buildProductRiskPrompt({ productName, summary, title, body }) {
     .replace(/\s+/g, ' ')
     .trim();
   return renderPrompt(PROMPTS.productRisk, {
-    productName: name || '(??)',
-    description: String(summary?.description || '').replace(/\s+/g, ' ').trim() || '(??)',
-    makerOrSeller: String(summary?.makerOrSeller || '').replace(/\s+/g, ' ').trim() || '(??)',
-    newPrice: String(summary?.newPrice || '').replace(/\s+/g, ' ').trim() || '(??)',
-    title: String(title || '').replace(/\s+/g, ' ').trim().slice(0, 500) || '(??)',
-    body: String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1800) || '(??)',
+    productName: name || '(불명)',
+    description: String(summary?.description || '').replace(/\s+/g, ' ').trim() || '(없음)',
+    makerOrSeller: String(summary?.makerOrSeller || '').replace(/\s+/g, ' ').trim() || '(없음)',
+    newPrice: String(summary?.newPrice || '').replace(/\s+/g, ' ').trim() || '(없음)',
+    title: String(title || '').replace(/\s+/g, ' ').trim().slice(0, 500) || '(없음)',
+    body: String(body || '').replace(/\s+/g, ' ').trim().slice(0, 1800) || '(없음)',
   });
 }
 
 function buildProductRiskJsonPrompt({ productName, researchText }) {
   const name = String(productName || '').replace(/\s+/g, ' ').trim();
   return renderPrompt(PROMPTS.productRiskJson, {
-    productName: name || '(??)',
-    researchText: String(researchText || '').trim() || '(?? ?? ??)',
+    productName: name || '(불명)',
+    researchText: String(researchText || '').trim() || '(조사 메모 없음)',
   });
 }
 
@@ -277,9 +277,9 @@ function buildProductRiskYoutubeCommentPrompt(payload, videos) {
     .slice(0, 6);
   return renderPrompt(PROMPTS.productRiskYoutubeComment, {
     productName:
-      String(payload.productName || payload.summary?.productName || '').replace(/\s+/g, ' ').trim() || '(??)',
-    description: String(payload.summary?.description || '').replace(/\s+/g, ' ').trim() || '(??)',
-    issues: issues.length ? issues.join('\n') : '(??)',
+      String(payload.productName || payload.summary?.productName || '').replace(/\s+/g, ' ').trim() || '(불명)',
+    description: String(payload.summary?.description || '').replace(/\s+/g, ' ').trim() || '(없음)',
+    issues: issues.length ? issues.join('\n') : '(없음)',
     videosJson: JSON.stringify(
       videos.map((video) => ({
         videoId: video.videoId,
@@ -305,7 +305,7 @@ function normalizeQueryCandidate(raw) {
   return s;
 }
 
-/** JSON {"query":"..."} ?? ??? ? ? ? ?? ??? (?? ?? ??) */
+/** Parse JSON {"query":"..."} search query helper */
 function parseSearchQuerySingle(text, fallbackTitle = '') {
   const raw = String(text || '').trim();
   if (!raw) return '';
@@ -468,7 +468,7 @@ async function fetchImageUrlToInlinePart(url) {
     if (buf.length > MAX_IMAGE_BYTES) {
       buf = await sharp(buf).resize({ width: 1200, withoutEnlargement: true }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
     }
-    if (buf.length > MAX_IMAGE_BYTES) throw new Error('??? ?? ??');
+    if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
     const mime = buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : 'image/png';
     return {
       inline_data: {
@@ -488,9 +488,9 @@ async function fetchImageUrlToInlinePart(url) {
     },
     signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`??? HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`이미지 HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_IMAGE_BYTES) throw new Error('??? ?? ??');
+  if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
   let mime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
   if (!mime.startsWith('image/')) {
     const p = String(imageUrl).toLowerCase();
@@ -780,7 +780,7 @@ async function createImageGridPart(buf, preNormalized = null) {
       },
     };
   } catch (e) {
-    console.warn('[listing-image] ??? ??? ?? ??:', e instanceof Error ? e.message : e);
+    console.warn('[listing-image] 그리드 이미지 생성 실패:', e instanceof Error ? e.message : e);
     return null;
   }
 }
@@ -797,9 +797,9 @@ async function fetchImageUrlToInlineSource(url) {
     },
     signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`??? HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`이미지 HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_IMAGE_BYTES) throw new Error('??? ?? ??');
+  if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
   let mime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
   if (!mime.startsWith('image/')) {
     const p = String(imageUrl).toLowerCase();
@@ -853,7 +853,7 @@ async function fetchListingImageInlineParts(urls) {
       continue;
     }
     const u = targets[i] || '';
-    console.warn('[search-query] ??? ?? ??:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
+    console.warn('[search-query] 이미지 로드 생략:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
   }
   return parts;
 }
@@ -880,7 +880,7 @@ async function fetchListingImageSources(urls, maxImages = Infinity) {
       continue;
     }
     const u = target.url || '';
-    console.warn('[listing-image] ??? ?? ??:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
+    console.warn('[listing-image] 이미지 로드 생략:', u.slice(0, 80), r.reason instanceof Error ? r.reason.message : r.reason);
   }
   return sources;
 }
@@ -1057,7 +1057,7 @@ async function geminiGenerateFromParts(apiKey, model, parts, opts = {}) {
     data = await once();
     text = extractGeminiText(data);
   }
-  if (!text) throw new Error('Gemini ??? ???? ????.');
+  if (!text) throw new Error('Gemini 응답에 텍스트가 없습니다.');
   return text;
 }
 
@@ -1327,7 +1327,7 @@ function normalizeRiskItems(items) {
 
 function parseProductRisk(text, productName = '') {
   const raw = String(text || '').trim();
-  const name = String(productName || '??').replace(/\s+/g, ' ').trim();
+  const name = String(productName || '제품').replace(/\s+/g, ' ').trim();
   let jsonText = raw
     .replace(/^\s*```(?:json)?\s*/i, '')
     .replace(/\s*```\s*$/i, '')
@@ -1392,7 +1392,7 @@ function normalizeProductRiskYoutubeVideos(items) {
       seen.add(id);
       return {
         url: `https://www.youtube.com/watch?v=${id}`,
-        title: String(video?.title || '?? YouTube ??').replace(/\s+/g, ' ').trim().slice(0, 90),
+        title: String(video?.title || '관련 YouTube 영상').replace(/\s+/g, ' ').trim().slice(0, 90),
         thumbnailUrl: String(video?.thumbnailUrl || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`).trim(),
         summary: String(video?.summary || video?.buyerNote || video?.usedBuyerNote || '')
           .replace(/\s+/g, ' ')
@@ -1416,10 +1416,10 @@ function youtubeSearchTerms(payload) {
     .filter(Boolean);
   const suffixes = [
     ...issueTerms.slice(0, 2),
-    '???',
-    '??',
-    '??',
-    '???',
+    '고치병',
+    '결함',
+    '리뷰',
+    '언박싱',
   ];
   const queries = [];
   for (const suffix of suffixes) {
@@ -1472,7 +1472,7 @@ async function fetchYoutubeOEmbedVideo(videoId) {
     return {
       videoId: id,
       url,
-      title: title || '?? YouTube ??',
+      title: title || '관련 YouTube 영상',
       thumbnailUrl: String(data?.thumbnail_url || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`).trim(),
       summary: '',
     };
@@ -1493,7 +1493,7 @@ async function fetchYoutubeSearchVideos(query, seenIds) {
       'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.6',
     },
   });
-  if (!res.ok) throw new Error(`YouTube ?? HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`YouTube 검색 HTTP ${res.status}`);
   const html = await res.text();
   const ids = parseYoutubeInitialVideoIds(html);
   const videos = [];
@@ -1519,7 +1519,7 @@ async function searchYoutubeVideosFromPage(payload) {
       const found = await fetchYoutubeSearchVideos(query, seenIds);
       videos.push(...found);
     } catch (e) {
-      console.warn('[product-risk-youtube] YouTube ?? ??:', query, e instanceof Error ? e.message : e);
+      console.warn('[product-risk-youtube] YouTube 검색 실패:', query, e instanceof Error ? e.message : e);
     }
     if (videos.length >= 3) break;
   }
@@ -1528,7 +1528,7 @@ async function searchYoutubeVideosFromPage(payload) {
     search: {
       query: attempted[0] || '',
       queries: attempted,
-      note: videos.length ? 'YouTube ?? ????? ?? ID? ???? oEmbed? ?? ?? ??? ??????.' : '',
+      note: videos.length ? 'YouTube 검색 페이지에서 영상 ID를 확보하고 oEmbed로 재생 가능 여부를 확인했습니다.' : '',
     },
   };
 }
@@ -1609,7 +1609,7 @@ async function addYoutubeBuyerComments(apiKey, model, payload, videos) {
       summary: comments.get(video.videoId) || video.summary || '',
     }));
   } catch (e) {
-    console.warn('[product-risk-youtube] ??? ?? ??:', e instanceof Error ? e.message : e);
+    console.warn('[product-risk-youtube] 코멘트 생성 실패:', e instanceof Error ? e.message : e);
     return videos;
   }
 }
@@ -1691,10 +1691,10 @@ function cleanUpstreamErrorText(text, fallback = 'remote AI error') {
 function normalizeImageLabel(raw, level = 'neutral') {
   const value = String(raw || '').replace(/\s+/g, ' ').trim();
   if (value) return value.slice(0, 14);
-  if (level === 'risk') return '?? ??';
-  if (level === 'caution') return '?? ??';
-  if (level === 'safe') return '?? ??';
-  return '?? ??';
+  if (level === 'risk') return '주의 사진';
+  if (level === 'caution') return '확인 필요';
+  if (level === 'safe') return '상태 확인';
+  return '사진 확인';
 }
 
 function normalizeGridSizeCells(raw) {
@@ -1838,7 +1838,7 @@ function normalizeImageDefects(items) {
       )
         .replace(/\s+/g, '')
         .trim();
-      const description = String(defect.description || defect.detail || defect.label || '?? ??')
+      const description = String(defect.description || defect.detail || defect.label || '사진 확인')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 80);
@@ -1948,7 +1948,7 @@ async function runWebGroundedSearchQuery(apiKey, model, title, body, inlineParts
     });
     if (parseSearchQuerySingle(fastText, title)) return { text: fastText, pipeline: 'multimodal_fast_json' };
   } catch (e) {
-    console.warn('[search-query] ?? ???? ??, Google Search ???:', e instanceof Error ? e.message : e);
+    console.warn('[search-query] 빠른 멀티모달 실패, Google Search 재시도:', e instanceof Error ? e.message : e);
   }
 
   const text = await geminiGenerateFromParts(apiKey, model, parts, {
@@ -1977,7 +1977,7 @@ async function runWebGroundedSearchCandidates(apiKey, model, title, body, inline
     }
   } catch (e) {
     console.warn(
-      '[search-query] ?? ?? ???? ??, Google Search ???:',
+      '[search-query] 빠른 후보 멀티모달 실패, Google Search 재시도:',
       e instanceof Error ? e.message : e
     );
   }
@@ -2099,7 +2099,7 @@ function buildAccessoryCheckResearchPrompt(payload) {
 function buildAccessoryCheckJsonPrompt(payload, researchText) {
   return renderPrompt(PROMPTS.accessoryCheckJson, {
     productName: payload.productName || '',
-    researchText: String(researchText || '').trim() || '(?? ?? ??)',
+    researchText: String(researchText || '').trim() || '(조사 메모 없음)',
     title: payload.title || '',
     body: String(payload.body || '').slice(0, 4000),
     summaryJson: JSON.stringify(payload.summary || null),
@@ -2337,7 +2337,7 @@ function parsePurchaseReceipt(text) {
   const verdict = String(parsed.verdict || 'hold').toLowerCase();
   return {
     verdict: ['buy', 'check_buy', 'negotiate', 'hold', 'pass'].includes(verdict) ? verdict : 'hold',
-    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '?? ?? ??')
+    headline: String(parsed.headline || recoverJsonStringField(text, 'headline') || '가격 참고 제한')
       .replace(/\s+/g, ' ')
       .trim(),
     summary: String(parsed.summary || recoverJsonStringField(text, 'summary') || '')
@@ -2375,19 +2375,19 @@ function applyComparisonReliabilityToReceipt(receipt, comparison = {}, usedPrice
   const reliable = comparison?.isPriceReliable !== false && pricedSampleCount >= minCount;
   if (reliable) return receipt;
 
-  const reason = '?? ???? ??? ?? ??? ?? ??? ??? ??? ???? ?????? ? ? ????.';
+  const reason = '같은 제품으로 판별된 비교 매물의 가격 표본이 부족해 가격은 제한적인 참고자료로만 볼 수 있습니다.';
   return {
     ...receipt,
     verdict: receipt.verdict === 'pass' ? 'pass' : 'hold',
-    fairPriceLabel: '?? ?? ??',
-    negotiationPriceLabel: '?? ??',
-    maxBuyPriceLabel: '?? ??',
+    fairPriceLabel: '가격 참고 제한',
+    negotiationPriceLabel: '표본 부족',
+    maxBuyPriceLabel: '표본 부족',
     priceReason: receipt.priceReason ? `${reason} ${receipt.priceReason}` : reason,
-    summary: receipt.summary ? `${receipt.summary} ?? ${reason}` : reason,
+    summary: receipt.summary ? `${receipt.summary} · ${reason}` : reason,
     cautions: normalizeReceiptList([reason, ...(receipt.cautions || [])], 4),
     disclaimer:
       receipt.disclaimer ||
-      '?? ??? ??? ??? ???? ???? ?????? ? ? ????. ? ???? AI ?? ???? ?? ?? ??? ?? ???? ???.',
+      '비교 표본이 부족해 가격과 네고가는 제한적인 참고자료로만 볼 수 있습니다. 이 영수증은 AI 참고 의견이며 실제 거래 조건은 직접 확인해야 합니다.',
   };
 }
 
@@ -2440,9 +2440,9 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
       const w = Number(s?.width) || 0;
       const h = Number(s?.height) || 0;
       const index = Number(s?.index) || i + 1;
-      const gridNote = s?.gridPart ? '?? ??? 25?25 ??? ?? ???? ???' : '??? ??? ?? ??, ??? ???';
-      if (w > 0 && h > 0) return `${index}? ??: ${w}?${h}px (${gridNote})`;
-      return `${index}? ??: ??? ??? (${gridNote})`;
+      const gridNote = s?.gridPart ? '원본 다음에 25×25 그리드 보드 이미지가 이어짐' : '그리드 이미지 생성 실패, 원본만 제공됨';
+      if (w > 0 && h > 0) return `${index}번 사진: ${w}×${h}px (${gridNote})`;
+      return `${index}번 사진: 해상도 미확인 (${gridNote})`;
     })
     .join('\n');
   const prompt = renderPrompt(PROMPTS.listingImageAnalysis, {
@@ -2474,10 +2474,10 @@ function buildSellerChatPromptVars(payload) {
     mode: String(payload.mode || 'first'),
     tone: String(payload.tone || 'polite'),
     toneLabel: String(payload.toneLabel || ''),
-    toneNote: String(payload.toneNote || '').trim() || '(??)',
+    toneNote: String(payload.toneNote || '').trim() || '(없음)',
     requestKind: String(payload.requestKind || 'freeform'),
-    userText: String(payload.message || payload.userText || payload.keywordText || '').trim() || '(??)',
-    keywordText: String(payload.keywordText || payload.message || payload.userText || '').trim() || '(??)',
+    userText: String(payload.message || payload.userText || payload.keywordText || '').trim() || '(없음)',
+    keywordText: String(payload.keywordText || payload.message || payload.userText || '').trim() || '(없음)',
     chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
     conversationStateJson: JSON.stringify(payload.conversationState || null),
     replyAnalysisJson: JSON.stringify(payload.replyAnalysis || null),
@@ -2539,7 +2539,7 @@ function parseSellerChatMessages(text) {
 
 function buildSellerReplyAnalysisPrompt(payload) {
   return renderPrompt(PROMPTS.sellerReplyAnalysis, {
-    sellerReply: String(payload.sellerReply || payload.message || '').trim() || '(??)',
+    sellerReply: String(payload.sellerReply || payload.message || '').trim() || '(없음)',
     chatHistoryJson: JSON.stringify(Array.isArray(payload.chatHistory) ? payload.chatHistory : []),
     listingJson: JSON.stringify(payload.listing || null),
     summaryJson: JSON.stringify(payload.summary || null),
@@ -2564,7 +2564,7 @@ function parseSellerReplyAnalysis(text) {
 /** API ? ??? + ?? ?? ?? ?? ?? (REST models ??) */
 async function verifyGeminiApiKey(apiKey, modelId) {
   const key = String(apiKey || '').trim();
-  if (!key) throw new Error('API ?? ?? ????.');
+  if (!key) throw new Error('API 키가 비어 있습니다.');
   const url = 'https://generativelanguage.googleapis.com/v1beta/models';
   const res = await fetch(url, { headers: { 'x-goog-api-key': key } });
   const raw = await res.text();
@@ -2579,7 +2579,7 @@ async function verifyGeminiApiKey(apiKey, modelId) {
     throw new Error(msg);
   }
   const models = data?.models || [];
-  if (!models.length) throw new Error('?? ??? ?? ??? ?? ????. API ?? ?????.');
+  if (!models.length) throw new Error('모델 목록을 가져오지 못했습니다. API 키를 확인하세요.');
   const mid = String(modelId || DEFAULT_GEMINI_MODEL).trim();
   const okModel = models.some((m) => {
     const name = m?.name || '';
@@ -2592,7 +2592,7 @@ async function verifyGeminiApiKey(apiKey, modelId) {
       .filter(Boolean)
       .join(', ');
     throw new Error(
-      `??? ??(${mid})?(?) ? API ?? ? ? ????. ?? ??? ?????. (?: ${sample || '??'})`
+      `??? ??(${mid})?(?) ? API ?? ? ? ????. ?? ??? ?????. (?: ${sample || '낮음'})`
     );
   }
   return { ok: true, model: mid };
@@ -2717,13 +2717,13 @@ const server = http.createServer(async (req, res) => {
     try {
       const id = decodeURIComponent(url.pathname.slice('/api/demo/scenarios/'.length));
       if (!isSafeDemoId(id)) {
-        json(res, 400, { error: '??? ?? id???.' });
+        json(res, 400, { error: '잘못된 데모 id입니다.' });
         return;
       }
       const scenario = await readDemoJson(path.join('scenarios', `${id}.json`));
       json(res, 200, scenario);
     } catch {
-      json(res, 404, { error: '?? ????? ?? ?????.' });
+      json(res, 404, { error: '데모 시나리오를 찾지 못했습니다.' });
     }
     return;
   }
@@ -2732,13 +2732,13 @@ const server = http.createServer(async (req, res) => {
     try {
       const id = decodeURIComponent(url.pathname.slice('/api/demo/cache/'.length));
       if (!isSafeDemoId(id)) {
-        json(res, 400, { error: '??? ?? id???.' });
+        json(res, 400, { error: '잘못된 데모 id입니다.' });
         return;
       }
       const cache = await readDemoJson(path.join('cache', `${id}.json`));
       json(res, 200, cache);
     } catch {
-      json(res, 404, { error: '?? ??? ?? ?????.' });
+      json(res, 404, { error: '데모 캐시를 찾지 못했습니다.' });
     }
     return;
   }
@@ -2775,7 +2775,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { ok: false, error: 'X-OpenAI-Key ?? X-Gemini-Key ??? ?????.' });
+        json(res, 400, { ok: false, error: 'X-OpenAI-Key 또는 X-Gemini-Key 헤더가 필요합니다.' });
         return;
       }
       const result = await verifyGeminiApiKey(apiKey, model);
@@ -2791,7 +2791,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2799,7 +2799,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const imageUrls = body.imageUrls;
@@ -2854,7 +2854,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2862,7 +2862,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const inlineParts = await fetchListingImageInlineParts(body.imageUrls);
@@ -2924,7 +2924,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2932,7 +2932,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -2959,7 +2959,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -2967,7 +2967,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -2996,7 +2996,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3004,7 +3004,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -3035,7 +3035,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3043,7 +3043,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const productName = cleanProductName(body.productName || body.summary?.productName, body.title);
@@ -3074,7 +3074,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3082,7 +3082,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls : [];
@@ -3092,7 +3092,7 @@ const server = http.createServer(async (req, res) => {
         json(res, 200, {
           analysis: {
             images: [],
-            overall: '??? ? ?? ?? ??? ???? ?????.',
+            overall: '분석할 수 있는 매물 사진을 불러오지 못했습니다.',
             parseOk: true,
           },
           model,
@@ -3145,8 +3145,8 @@ const server = http.createServer(async (req, res) => {
           imageHeight: Number(s.height) || 0,
           debugGridImageUrl: debugGridByIndex.get(idx) || '',
           debugGridMeta: debugGridMetaByIndex.get(idx) || null,
-          label: '?? ??',
-          comment: 'AI? ? ??? ?? ?? ???? ???? ?????. ?? ?? ???? ?? ?????.',
+          label: '사진 확인',
+          comment: 'AI가 이 사진에 대한 개별 코멘트를 반환하지 않았습니다. 원본 매물 사진으로 함께 확인하세요.',
           level: 'neutral',
         });
       }
@@ -3160,10 +3160,10 @@ const server = http.createServer(async (req, res) => {
           imageHeight: 0,
           debugGridImageUrl: '',
           debugGridMeta: null,
-          label: loadedIndexSet.size ? '?? ??' : '?? ??',
+          label: loadedIndexSet.size ? '사진 확인' : '사진 확인',
           comment: loadedIndexSet.size
-            ? '?? ??? ? ??? ???? ?????. ? ?? ??? ??? ???? ?? ?????.'
-            : '??? ? ?? ?? ??? ???? ?????.',
+            ? '분석 서버가 이 사진을 불러오지 못했습니다. 위 매물 사진과 동일한 원본으로 직접 확인하세요.'
+            : '분석할 수 있는 매물 사진을 불러오지 못했습니다.',
           level: 'neutral',
         });
       }
@@ -3172,7 +3172,7 @@ const server = http.createServer(async (req, res) => {
         parsedBatches
           .map((p) => String(p.overall || '').trim())
           .filter(Boolean)
-          .join(' ') || '??? ?? ???';
+          .join(' ') || '사진별 상태 코멘트';
       json(res, 200, {
         analysis: {
           images,
@@ -3196,7 +3196,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3204,7 +3204,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const rawOut = await runComparisonFilter(apiKey, model, body);
@@ -3225,7 +3225,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3233,7 +3233,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const rawOut = await runUsedPriceGuide(apiKey, model, body);
@@ -3254,7 +3254,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3262,7 +3262,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const rawOut = await runPurchaseReceipt(apiKey, model, body);
@@ -3283,7 +3283,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3291,12 +3291,12 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const prompt = String(body.prompt || '').trim();
       if (!prompt) {
-        json(res, 400, { error: '????? ?????.' });
+        json(res, 400, { error: '프롬프트를 입력하세요.' });
         return;
       }
       const answer = await runDirectAiChat(apiKey, model, prompt);
@@ -3316,7 +3316,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3324,7 +3324,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const prompt = buildSellerChatAssistantPrompt(body);
@@ -3357,7 +3357,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3365,7 +3365,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const prompt = buildSellerChatKeywordsPrompt(body);
@@ -3395,7 +3395,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3403,7 +3403,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const prompt = buildSellerChatMessagesPrompt(body);
@@ -3435,7 +3435,7 @@ const server = http.createServer(async (req, res) => {
       const apiKey = resolveRequestApiKey(req);
       const model = resolveRequestModel(req);
       if (!String(apiKey).trim()) {
-        json(res, 400, { error: 'X-Gemini-Key ?? ?? Authorization: Bearer ? ?????.' });
+        json(res, 400, { error: 'X-Gemini-Key 헤더 또는 Authorization: Bearer 가 필요합니다.' });
         return;
       }
       const bodyRaw = await readBody(req);
@@ -3443,7 +3443,7 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const prompt = buildSellerReplyAnalysisPrompt(body);
@@ -3474,17 +3474,17 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(bodyRaw || '{}');
       } catch {
-        json(res, 400, { error: 'JSON ??? ???? ????.' });
+        json(res, 400, { error: 'JSON 본문이 올바르지 않습니다.' });
         return;
       }
       const productName = String(body.productName || '').trim();
       const searchQuery = String(body.searchQuery || '').trim();
       const query = productName || searchQuery;
       if (!query) {
-        json(res, 400, { error: '??? ?? ???? ?????.' });
+        json(res, 400, { error: '제품명 또는 검색어가 필요합니다.' });
         return;
       }
-      const searchText = `${query} ?? ?? ???`;
+      const searchText = `${query} 공식 제품 이미지`;
       const directUrls = await fetchDuckDuckGoImageUrls(searchText);
       const imageUrls = directUrls.map(productImageProxyUrl).filter(Boolean);
       json(res, 200, {
@@ -3502,7 +3502,7 @@ const server = http.createServer(async (req, res) => {
     const signature = url.searchParams.get('sig');
     if (!target) {
       res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('??? URL? ???? ????.');
+      res.end('이미지 URL이 올바르지 않습니다.');
       return;
     }
     if (signature) {
@@ -3530,7 +3530,7 @@ const server = http.createServer(async (req, res) => {
       const type = upstream.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
       if (!upstream.ok || !type.startsWith('image/')) {
         res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('???? ???? ?????.');
+        res.end('이미지를 가져오지 못했습니다.');
         return;
       }
       const declaredSize = Number(upstream.headers.get('content-length')) || 0;
@@ -3597,9 +3597,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Buy or Bye ? ???? ????: http://127.0.0.1:${PORT}/`);
+  console.log(`Buy or Bye · 중고매물 살까말까: http://127.0.0.1:${PORT}/`);
   console.log(`bind: ${HOST}:${PORT}`);
   if (DEMO_MODE) console.log(`demo mode: on (server key ${SERVER_GEMINI_KEY ? 'ready' : 'missing'})`);
   if (PUBLIC_ANALYZER_ORIGIN) console.log(`public origin: ${PUBLIC_ANALYZER_ORIGIN}`);
-  console.log('??: Ctrl+C');
+  console.log('종료: Ctrl+C');
 });
