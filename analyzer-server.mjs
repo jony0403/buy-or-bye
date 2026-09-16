@@ -1740,8 +1740,8 @@ function normalizeGridSizeCells(raw) {
   const rows = Number(value.rows ?? value.height ?? value.h);
   if (!Number.isFinite(cols) && !Number.isFinite(rows)) return null;
   return {
-    cols: Math.max(5, Math.min(25, Math.round(Number.isFinite(cols) ? cols : rows))),
-    rows: Math.max(5, Math.min(25, Math.round(Number.isFinite(rows) ? rows : cols))),
+    cols: Math.max(3, Math.min(25, Math.round(Number.isFinite(cols) ? cols : rows))),
+    rows: Math.max(3, Math.min(25, Math.round(Number.isFinite(rows) ? rows : cols))),
   };
 }
 
@@ -1762,10 +1762,10 @@ function gridCenterToMarker(gridCenter, gridSizeCells, gridCols = 25, gridRows =
   const row = Number(match[2]) - 1;
   if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
   const size = gridSizeCells || { cols: 5, rows: 5 };
-  const cellCols = Math.max(5, Math.min(cols, Number(size.cols) || 5));
-  const cellRows = Math.max(5, Math.min(rows, Number(size.rows) || cellCols));
-  const width = Math.min(80, (cellCols / cols) * 100);
-  const height = Math.min(80, (cellRows / rows) * 100);
+  const cellCols = Math.max(3, Math.min(cols, Number(size.cols) || 5));
+  const cellRows = Math.max(3, Math.min(rows, Number(size.rows) || cellCols));
+  const width = Math.min(72, (cellCols / cols) * 100);
+  const height = Math.min(72, (cellRows / rows) * 100);
   const center = {
     x: ((col + 0.5) / cols) * 100,
     y: ((row + 0.5) / rows) * 100,

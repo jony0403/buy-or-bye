@@ -164,10 +164,10 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v20';
-const LISTING_IMAGE_OVERLAY_VERSION = 28;
-const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
-const IMAGE_DEFECT_MARKER_MAX_PERCENT = 12;
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v21';
+const LISTING_IMAGE_OVERLAY_VERSION = 29;
+const IMAGE_DEFECT_MARKER_MIN_PERCENT = 4;
+const IMAGE_DEFECT_MARKER_MAX_PERCENT = 72;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
 const AUTO_RUN_STORAGE_KEY = 'ulsa_auto_run_next_steps';
@@ -187,6 +187,7 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v17',
   'ulsa_ai_analysis_cache_v18',
   'ulsa_ai_analysis_cache_v19',
+  'ulsa_ai_analysis_cache_v20',
 ];
 
 function mapToPersistableObject(map) {
@@ -2204,8 +2205,14 @@ function gridDebugDefectToRect(defect, meta) {
   const rawSize = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
   const rawCols = Number(rawSize.cols ?? rawSize.columns ?? rawSize.width ?? rawSize.w);
   const rawRows = Number(rawSize.rows ?? rawSize.height ?? rawSize.h);
-  const cellCols = Math.max(5, Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5)));
-  const cellRows = Math.max(5, Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols)));
+  const cellCols = Math.max(
+    3,
+    Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5))
+  );
+  const cellRows = Math.max(
+    3,
+    Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols))
+  );
   const boardWidth = Number(meta?.boardWidth) || 0;
   const boardHeight = Number(meta?.boardHeight) || 0;
   const imageX = Number(meta?.imageX) || 0;
@@ -9097,10 +9104,17 @@ function defectGridToCenterMarker(defect) {
   const rawSize = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
   const rawCols = Number(rawSize.cols ?? rawSize.columns ?? rawSize.width ?? rawSize.w);
   const rawRows = Number(rawSize.rows ?? rawSize.height ?? rawSize.h);
-  const cellCols = Math.max(5, Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5)));
-  const cellRows = Math.max(5, Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols)));
-  const width = Math.min(80, (cellCols / point.cols) * 100);
-  const height = Math.min(80, (cellRows / point.rows) * 100);
+  // Keep size close to the AI grid block (debug rectangle). Avoid inflating to 5×5 when AI already sized it.
+  const cellCols = Math.max(
+    3,
+    Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5))
+  );
+  const cellRows = Math.max(
+    3,
+    Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols))
+  );
+  const width = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, (cellCols / point.cols) * 100);
+  const height = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, (cellRows / point.rows) * 100);
   return {
     centerX: point.centerX,
     centerY: point.centerY,
@@ -9140,8 +9154,9 @@ function enforceDefectMarkerMinimum(marker) {
   if (!marker) return null;
   const centerX = Math.max(0, Math.min(100, Number(marker.centerX)));
   const centerY = Math.max(0, Math.min(100, Number(marker.centerY)));
-  const rawWidth = Math.max(1, Math.min(80, Number(marker.width) || 0));
-  const rawHeight = Math.max(1, Math.min(80, Number(marker.height) || rawWidth));
+  const rawWidth = Math.max(1, Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, Number(marker.width) || 0));
+  const rawHeight = Math.max(1, Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, Number(marker.height) || rawWidth));
+  // Match grid debug rectangle footprint; only enforce a small floor so tiny defects stay visible.
   const width = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, Math.max(rawWidth, IMAGE_DEFECT_MARKER_MIN_PERCENT));
   const height = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, Math.max(rawHeight, IMAGE_DEFECT_MARKER_MIN_PERCENT));
   if (![centerX, centerY, width, height].every(Number.isFinite)) return null;
@@ -9209,17 +9224,8 @@ function resolveDefectCenterMarker(defect) {
 function renderImageDefectMarkers(image) {
   const markers = (Array.isArray(image?.defects) ? image.defects : [])
     .map((defect) => {
-      const rawGridCell =
-        defect?.gridCell ||
-        defect?.gridRange ||
-        defect?.range ||
-        defect?.cell ||
-        (defect?.startCell && defect?.endCell ? `${defect.startCell}-${defect.endCell}` : '');
-      const bboxRect = defectBoxToRect(defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area);
-      const rect = bboxRect || gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
-      const marker = enforceDefectMarkerMinimum(
-        defectToCenterMarker(defect) || defectRectToCenterMarker(rect) || defectGridToCenterMarker(defect)
-      );
+      // Always prefer gridCenter/gridSizeCells (same source as the blue debug rectangle).
+      const marker = resolveDefectCenterMarker(defect);
       if (!marker) return '';
       const description = String(defect?.description || defect?.detail || '하자 의심')
         .replace(/\s+/g, ' ')
@@ -13186,7 +13192,7 @@ async function loadChampionshipDemo(id) {
       }
     }
     if (pathOnly.startsWith('/demo-images/') && !/[?&]v=/.test(pathOnly)) {
-      pathOnly += (pathOnly.includes('?') ? '&' : '?') + 'v=20260916-sampleimg1';
+      pathOnly += (pathOnly.includes('?') ? '&' : '?') + 'v=20260916-sampleimg2';
     }
     return pathOnly;
   }).filter(Boolean);
