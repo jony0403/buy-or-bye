@@ -54,6 +54,7 @@ const productImageFailedUrlKeys = new Map();
 const productImageAutoSearchRounds = new Map();
 const imageAnalysisIndexes = new Map();
 const imageAnalysisDirections = new Map();
+const imageAnalysisBusyKeys = new Set();
 const stageTwoActiveKeys = new Set();
 const stageThreeActiveKeys = new Set();
 const stageFiveActiveKeys = new Set();
@@ -6371,7 +6372,7 @@ function renderProductSummaryBlock(item) {
             <h2 class="hover-full" title="${escapeAttr(productName)}">${escapeHtml(productName)}</h2>
             ${
               summary?.newPrice
-                ? `<p class="mini-value" title="${escapeAttr(`추정 신품가: ${summary.newPrice}`)}">추정 신품가: ${escapeHtml(summary.newPrice)}${
+                ? `<p class="mini-value">추정 신품가: ${escapeHtml(summary.newPrice)}${
                     danawaUrl ? ` <a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''
                   }</p>`
                 : ''
@@ -9945,6 +9946,75 @@ function bindScrollText(root) {
   });
 }
 
+function syncImageAnalysisChrome(wrap, images, idx) {
+  const current = images[idx];
+  const count = wrap?.querySelector('.photo-count');
+  if (count) count.textContent = `${idx + 1}/${images.length}`;
+  wrap?.querySelectorAll('.photo-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i === idx);
+  });
+  const comment = wrap?.querySelector('.image-analysis-comment');
+  if (comment && current) {
+    comment.textContent = current.comment || '';
+    comment.className = `image-analysis-comment risk-${String(current.level || 'neutral').trim() || 'neutral'}`;
+  }
+}
+
+function clearImageAnalysisSlideMotion(box) {
+  box?.classList.remove(
+    'is-leaving',
+    'is-entering',
+    'slide-next',
+    'slide-prev',
+    'slide-out-next',
+    'slide-out-prev'
+  );
+}
+
+async function advanceImageAnalysisSlider(item, dir) {
+  const key = summaryKey(item);
+  const images = imageAnalysisEntries(item);
+  if (!key || images.length < 2 || !dir || imageAnalysisBusyKeys.has(key)) return;
+  const wrap = $current?.querySelector('[data-image-analysis-slide-wrap]');
+  const slider = wrap?.querySelector('[data-image-analysis-slider]');
+  if (!wrap || !slider) return;
+  const currentIdx = Math.min(Math.max(imageAnalysisIndexes.get(key) || 0, 0), images.length - 1);
+  const nextIdx = (currentIdx + dir + images.length) % images.length;
+  const outgoing = wrap.querySelector(`[data-image-analysis-slide="${currentIdx}"]`);
+  const incoming = wrap.querySelector(`[data-image-analysis-slide="${nextIdx}"]`);
+  imageAnalysisBusyKeys.add(key);
+  slider.classList.add('is-photo-busy');
+  try {
+    await Promise.race([
+      preloadListingImage(images[nextIdx]?.imageUrl),
+      new Promise((resolve) => window.setTimeout(resolve, 1600)),
+    ]);
+    if (!outgoing || !incoming || !$current?.contains(wrap)) {
+      imageAnalysisIndexes.set(key, nextIdx);
+      showImageAnalysisSlide(item);
+      return;
+    }
+    clearImageAnalysisSlideMotion(outgoing);
+    clearImageAnalysisSlideMotion(incoming);
+    outgoing.classList.add('is-leaving', dir > 0 ? 'slide-out-next' : 'slide-out-prev');
+    incoming.classList.add('is-active', 'is-entering', dir > 0 ? 'slide-next' : 'slide-prev');
+    imageAnalysisIndexes.set(key, nextIdx);
+    imageAnalysisDirections.set(key, dir);
+    syncImageAnalysisChrome(wrap, images, nextIdx);
+    await new Promise((resolve) => window.setTimeout(resolve, 320));
+    if (!$current?.contains(wrap)) return;
+    wrap.querySelectorAll('[data-image-analysis-slide]').forEach((box) => {
+      clearImageAnalysisSlideMotion(box);
+      box.classList.toggle('is-active', Number(box.getAttribute('data-image-analysis-slide')) === nextIdx);
+    });
+    void preloadListingImage(images[(nextIdx + 1) % images.length]?.imageUrl);
+  } finally {
+    imageAnalysisBusyKeys.delete(key);
+    slider.classList.remove('is-photo-busy');
+    window.setTimeout(() => imageAnalysisDirections.delete(key), 80);
+  }
+}
+
 function bindImageAnalysisSlider(root, item) {
   const key = summaryKey(item);
   if (!key) return;
@@ -9961,17 +10031,13 @@ function bindImageAnalysisSlider(root, item) {
       e.stopPropagation();
       if (images.length < 2) return;
       const dir = Number(btn.getAttribute('data-image-analysis-dir')) || 0;
-      const current = imageAnalysisIndexes.get(key) || 0;
-      imageAnalysisIndexes.set(key, (current + dir + images.length) % images.length);
-      showImageAnalysisSlide(item);
+      void advanceImageAnalysisSlider(item, dir);
     });
   });
   if (images.length > 1) {
     imageAnalysisAutoTimer = window.setInterval(() => {
-      if (selectedKey !== key || ($lightbox && !$lightbox.hidden)) return;
-      const current = imageAnalysisIndexes.get(key) || 0;
-      imageAnalysisIndexes.set(key, (current + 1) % images.length);
-      showImageAnalysisSlide(item);
+      if (selectedKey !== key || ($lightbox && !$lightbox.hidden) || imageAnalysisBusyKeys.has(key)) return;
+      void advanceImageAnalysisSlider(item, 1);
     }, 6500);
   }
 }
@@ -9983,20 +10049,11 @@ function showImageAnalysisSlide(item) {
   const images = imageAnalysisEntries(item);
   if (!images.length) return;
   const idx = Math.min(Math.max(imageAnalysisIndexes.get(key) || 0, 0), images.length - 1);
-  const current = images[idx];
   wrap.querySelectorAll('[data-image-analysis-slide]').forEach((box) => {
+    clearImageAnalysisSlideMotion(box);
     box.classList.toggle('is-active', Number(box.getAttribute('data-image-analysis-slide')) === idx);
   });
-  const count = wrap.querySelector('.photo-count');
-  if (count) count.textContent = `${idx + 1}/${images.length}`;
-  wrap.querySelectorAll('.photo-dot').forEach((dot, i) => {
-    dot.classList.toggle('active', i === idx);
-  });
-  const comment = wrap.querySelector('.image-analysis-comment');
-  if (comment) {
-    comment.textContent = current.comment || '';
-    comment.className = `image-analysis-comment risk-${String(current.level || 'neutral').trim() || 'neutral'}`;
-  }
+  syncImageAnalysisChrome(wrap, images, idx);
   void preloadListingImage(images[(idx + 1) % images.length]?.imageUrl);
 }
 
@@ -11385,6 +11442,7 @@ function clearProductSummaryCaches(key) {
   productImageAutoSearchRounds.delete(key);
   imageAnalysisIndexes.delete(key);
   imageAnalysisDirections.delete(key);
+  imageAnalysisBusyKeys.delete(key);
   imageAnalysisPreviewedKeys.delete(key);
   searchQueryRegenerations.delete(key);
   stageThreeCollectionFinalizingKeys.delete(key);
@@ -11429,6 +11487,7 @@ function resetCurrentAnalysisRuntimeState() {
   if (!key) return;
   imageAnalysisIndexes.delete(key);
   imageAnalysisDirections.delete(key);
+  imageAnalysisBusyKeys.delete(key);
   imageAnalysisPreviewedKeys.delete(key);
   searchQueryRegenerations.delete(key);
   stageThreeCollectionFinalizingKeys.delete(key);
@@ -11488,6 +11547,7 @@ function clearCurrentAnalysisState() {
   relatedRequestedKeys.delete(key);
   imageAnalysisIndexes.delete(key);
   imageAnalysisDirections.delete(key);
+  imageAnalysisBusyKeys.delete(key);
   stageTwoActiveKeys.delete(key);
   stageThreeActiveKeys.delete(key);
   stageFiveActiveKeys.delete(key);
@@ -12315,6 +12375,7 @@ $btnHistoryClear?.addEventListener('click', () => {
   productImageAutoSearchRounds.clear();
   imageAnalysisIndexes.clear();
   imageAnalysisDirections.clear();
+  imageAnalysisBusyKeys.clear();
   stageTwoActiveKeys.clear();
   stageThreeActiveKeys.clear();
   stageThreeIsolatedRefreshKeys.clear();
@@ -12614,11 +12675,6 @@ function handleAppShortcut(e) {
     else document.getElementById('btnAiSettings')?.click();
     return;
   }
-  if (isShortcutCode(e, 'KeyN')) {
-    e.preventDefault();
-    startNewAnalysis();
-    return;
-  }
   if (isShortcutCode(e, 'KeyD')) {
     e.preventDefault();
     setThemeMode(isDarkModeEnabled() ? 'light' : 'dark');
@@ -12846,6 +12902,7 @@ function renderHistoryList() {
       productImageSearches.delete(key);
       imageAnalysisIndexes.delete(key);
       imageAnalysisDirections.delete(key);
+  imageAnalysisBusyKeys.delete(key);
       stageTwoActiveKeys.delete(key);
       stageThreeActiveKeys.delete(key);
       stageFiveActiveKeys.delete(key);

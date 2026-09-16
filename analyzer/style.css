@@ -17295,13 +17295,26 @@ body.theme-dark .app-shell span.inline-hard-keyword__text {
   text-overflow: ellipsis !important;
   word-break: keep-all !important;
 }
-.mini-card--product .product-summary-top .mini-value,
+.mini-card--product .product-summary-top .mini-value {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 4 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  overflow-wrap: anywhere !important;
+  word-break: keep-all !important;
+  line-height: 1.38 !important;
+}
 .mini-card--product .product-summary-top .mini-muted {
   display: -webkit-box !important;
   -webkit-box-orient: vertical !important;
-  -webkit-line-clamp: 1 !important;
+  -webkit-line-clamp: 2 !important;
+  white-space: normal !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
+  overflow-wrap: anywhere !important;
+  word-break: keep-all !important;
 }
 .mini-card--product .product-desc,
 .mini-card--product .product-desc--clamp {
@@ -17879,6 +17892,7 @@ body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button {
 /* Defect marks live on the photo box, not a delayed overlay. */
 .annotated-photo-stage {
   display: grid !important;
+  overflow: hidden !important;
 }
 .annotated-photo-box {
   grid-area: 1 / 1;
@@ -17893,7 +17907,9 @@ body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button {
   visibility: hidden;
   pointer-events: none;
 }
-.annotated-photo-box.is-active {
+.annotated-photo-box.is-active,
+.annotated-photo-box.is-leaving,
+.annotated-photo-box.is-entering {
   visibility: visible;
   pointer-events: auto;
 }
@@ -17949,13 +17965,25 @@ body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button {
   top: 0 !important;
 }
 
-/* Seller image analysis: hide inactive slides completely. A later img rule
-   used visibility:visible !important, so the photo stayed while only the circle changed. */
-.stage-two-card--image-analysis .annotated-photo-box:not(.is-active),
-.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .photo-main,
-.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .image-analysis-main,
-.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .image-defect-markers,
-.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .image-analysis-badge {
+.stage-two-card--image-analysis .annotated-photo-box.slide-next {
+  animation: slideInNext 0.32s ease both;
+}
+.stage-two-card--image-analysis .annotated-photo-box.slide-prev {
+  animation: slideInPrev 0.32s ease both;
+}
+.stage-two-card--image-analysis .annotated-photo-box.slide-out-next {
+  animation: slideOutNext 0.32s ease both;
+}
+.stage-two-card--image-analysis .annotated-photo-box.slide-out-prev {
+  animation: slideOutPrev 0.32s ease both;
+}
+
+/* Hide fully inactive slides. Keep leaving/entering visible so the Step 1 slide motion can run. */
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active):not(.is-leaving):not(.is-entering),
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active):not(.is-leaving):not(.is-entering) .photo-main,
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active):not(.is-leaving):not(.is-entering) .image-analysis-main,
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active):not(.is-leaving):not(.is-entering) .image-defect-markers,
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active):not(.is-leaving):not(.is-entering) .image-analysis-badge {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -17965,11 +17993,252 @@ body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button {
   z-index: 2 !important;
   pointer-events: auto !important;
 }
-.stage-two-card--image-analysis .annotated-photo-box.is-active,
+.stage-two-card--image-analysis .annotated-photo-box.is-leaving {
+  z-index: 3 !important;
+  pointer-events: none !important;
+}
+.stage-two-card--image-analysis .annotated-photo-box.is-entering {
+  z-index: 4 !important;
+  pointer-events: auto !important;
+}
 .stage-two-card--image-analysis .annotated-photo-box.is-active .photo-main,
 .stage-two-card--image-analysis .annotated-photo-box.is-active .image-analysis-main,
 .stage-two-card--image-analysis .annotated-photo-box.is-active .image-defect-markers,
-.stage-two-card--image-analysis .annotated-photo-box.is-active .image-analysis-badge {
+.stage-two-card--image-analysis .annotated-photo-box.is-active .image-analysis-badge,
+.stage-two-card--image-analysis .annotated-photo-box.is-leaving .photo-main,
+.stage-two-card--image-analysis .annotated-photo-box.is-leaving .image-analysis-main,
+.stage-two-card--image-analysis .annotated-photo-box.is-leaving .image-defect-markers,
+.stage-two-card--image-analysis .annotated-photo-box.is-leaving .image-analysis-badge,
+.stage-two-card--image-analysis .annotated-photo-box.is-entering .photo-main,
+.stage-two-card--image-analysis .annotated-photo-box.is-entering .image-analysis-main,
+.stage-two-card--image-analysis .annotated-photo-box.is-entering .image-defect-markers,
+.stage-two-card--image-analysis .annotated-photo-box.is-entering .image-analysis-badge {
+  visibility: visible !important;
+}
+
+/* Product summary: wrap long ??? instead of one-line overflow/tooltip. */
+.mini-card--product .product-summary-text,
+.mini-card--product .product-summary-top {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+.mini-card--product .product-summary-top .mini-value {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 4 !important;
+  white-space: normal !important;
+  overflow: hidden !important;
+  overflow-wrap: anywhere !important;
+  word-break: keep-all !important;
+  line-height: 1.38 !important;
+}
+
+/* Dark mode: same layout as light, readable charcoal surfaces (no hidden wraps, no white flashes). */
+html.theme-dark,
+html.theme-dark body,
+body.theme-dark,
+body.theme-dark #appShell,
+body.theme-dark .app-shell,
+body.theme-dark .analysis-board,
+body.theme-dark .listing-cluster,
+body.theme-dark #current {
+  background: #121212 !important;
+  background-image: none !important;
+  color: #ececec !important;
+}
+
+body.theme-dark .app-shell .stage-zone::before,
+body.theme-dark .app-shell .stage-one-zone::before,
+body.theme-dark .app-shell .stage-two-zone::before,
+body.theme-dark .app-shell .stage-three-zone::before,
+body.theme-dark .app-shell .stage-four-zone::before,
+body.theme-dark .app-shell .stage-five-zone::before {
+  display: block !important;
+  content: "" !important;
   opacity: 1 !important;
   visibility: visible !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  background: #1a1a1a !important;
+  background-image: none !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28) !important;
+  backdrop-filter: none !important;
+}
+
+body.theme-dark .app-shell .stage-zone-label,
+body.theme-dark .app-shell .stage-zone-label b,
+body.theme-dark .app-shell .stage-zone-label span {
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: #242424 !important;
+  color: #f0f0f0 !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+body.theme-dark .app-shell .dashboard-rail {
+  background: linear-gradient(180deg, #ff7a18 0%, #ff6f0f 48%, #e85d04 100%) !important;
+  box-shadow: 0 22px 52px rgba(232, 93, 4, 0.24) !important;
+}
+body.theme-dark .app-shell .dashboard-rail__logo,
+body.theme-dark .app-shell .dashboard-rail__logo.dashboard-rail__home {
+  background: #ff6f0f !important;
+  color: #fff !important;
+}
+body.theme-dark .app-shell .dashboard-rail__btn,
+body.theme-dark .app-shell .dashboard-rail__btn small,
+body.theme-dark .app-shell .dashboard-rail__btn .material-symbols-rounded {
+  color: rgba(255, 255, 255, 0.92) !important;
+  background: transparent !important;
+}
+body.theme-dark .app-shell .dashboard-rail__btn:hover,
+body.theme-dark .app-shell .dashboard-rail__btn:focus-visible,
+body.theme-dark .app-shell .dashboard-rail__btn.is-active,
+body.theme-dark .app-shell .dashboard-rail__btn.is-on {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #e85d04 !important;
+  box-shadow: 0 12px 26px rgba(84, 50, 18, 0.17) !important;
+}
+body.theme-dark .app-shell .dashboard-rail__btn:hover small,
+body.theme-dark .app-shell .dashboard-rail__btn:hover .material-symbols-rounded,
+body.theme-dark .app-shell .dashboard-rail__btn.is-active small,
+body.theme-dark .app-shell .dashboard-rail__btn.is-active .material-symbols-rounded {
+  color: #e85d04 !important;
+}
+body.theme-dark .app-shell .dashboard-rail__market-links {
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+body.theme-dark .app-shell .mini-card,
+body.theme-dark .app-shell .stage-two-card,
+body.theme-dark .app-shell .stage-two-risk-card,
+body.theme-dark .app-shell .stage-three-card,
+body.theme-dark .app-shell .stage-two-mini,
+body.theme-dark .app-shell .used-price-guide-card,
+body.theme-dark .app-shell .comparison-price-table-wrap,
+body.theme-dark .app-shell .comparison-filter-result,
+body.theme-dark .app-shell .current-price-card,
+body.theme-dark .app-shell .seller-chat__phone,
+body.theme-dark .app-shell .direct-chat-card,
+body.theme-dark .recent-drawer,
+body.theme-dark .dashboard-rail-panel,
+body.theme-dark .shortcut-panel,
+body.theme-dark .shortcut-panel section,
+body.theme-dark .sample-landing,
+body.theme-dark .api-fatal-modal__panel {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: #1c1c1c !important;
+  background-image: none !important;
+  color: #ececec !important;
+}
+
+body.theme-dark .app-shell .stage-two-mini,
+body.theme-dark .app-shell .image-analysis-group,
+body.theme-dark .app-shell .product-desc,
+body.theme-dark .app-shell .comparison-caution,
+body.theme-dark .shortcut-panel section {
+  background: #242424 !important;
+}
+
+body.theme-dark .app-shell .photo-slider,
+body.theme-dark .app-shell .photo-slider__stage,
+body.theme-dark .app-shell .annotated-photo-stage {
+  background: #141414 !important;
+}
+
+body.theme-dark .app-shell h1,
+body.theme-dark .app-shell h2,
+body.theme-dark .app-shell h3,
+body.theme-dark .app-shell h4,
+body.theme-dark .app-shell .item-title,
+body.theme-dark .app-shell .price,
+body.theme-dark .app-shell .mini-value,
+body.theme-dark .shortcut-panel__head strong,
+body.theme-dark .shortcut-panel h3 {
+  color: #f3f3f3 !important;
+}
+
+body.theme-dark .app-shell .sub,
+body.theme-dark .app-shell .mini-muted,
+body.theme-dark .app-shell .product-desc,
+body.theme-dark .app-shell .listing-mini-meta,
+body.theme-dark .app-shell .empty,
+body.theme-dark .shortcut-panel dd,
+body.theme-dark .api-fatal-modal__body {
+  color: #b0b0b0 !important;
+}
+
+body.theme-dark .app-shell .chip-btn:not(.direct-chat-command-chip):not(.stage-start-card):not(.chip-btn--primary),
+body.theme-dark .app-shell .image-refresh-btn,
+body.theme-dark .app-shell .wrong-product-btn,
+body.theme-dark .app-shell .btn-secondary,
+body.theme-dark .app-shell .icon-btn:not(#btnDirectAi) {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: #2a2a2a !important;
+  color: #f0f0f0 !important;
+}
+
+body.theme-dark .app-shell .stage-start-card,
+body.theme-dark .app-shell .auto-run-wait-card,
+body.theme-dark .app-shell [data-stage-slide-next]:not(:disabled) {
+  color: #fff !important;
+}
+
+body.theme-dark .app-shell #btnDirectAi.direct-chat-fab {
+  background: #ff6f0f !important;
+  border-color: rgba(255, 255, 255, 0.86) !important;
+  color: #fff !important;
+}
+body.theme-dark .app-shell #btnDirectAi.direct-chat-fab .material-symbols-rounded,
+body.theme-dark .app-shell #btnDirectAi.direct-chat-fab small {
+  color: #fff !important;
+}
+
+body.theme-dark .shortcut-panel kbd {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  background: #2b2b2b !important;
+  color: #f2f2f2 !important;
+}
+body.theme-dark .shortcut-panel__close {
+  background: #2b2b2b !important;
+  color: #ffb36b !important;
+}
+
+body.theme-dark .app-shell .comparison-price-table th {
+  background: #242424 !important;
+  color: #ddd !important;
+}
+body.theme-dark .app-shell .comparison-price-table td {
+  background: #1c1c1c !important;
+  color: #cfcfcf !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+body.theme-dark .app-shell .search-query-chip {
+  border-color: rgba(255, 111, 15, 0.28) !important;
+  background: rgba(255, 111, 15, 0.14) !important;
+  color: #ffc9a3 !important;
+}
+
+body.theme-dark .app-shell .top,
+body.theme-dark .app-shell .brand,
+body.theme-dark .app-shell .url-import,
+body.theme-dark .app-shell .top-actions,
+body.theme-dark .app-shell .stage-slide-controls {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(28, 28, 28, 0.94) !important;
+  color: #ececec !important;
+}
+
+body.theme-dark .app-shell input,
+body.theme-dark .app-shell textarea,
+body.theme-dark .app-shell select {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: #141414 !important;
+  color: #f2f2f2 !important;
+}
+
+body.theme-dark .app-toast,
+body.theme-dark .seller-chat-toast {
+  background: rgba(28, 28, 28, 0.96) !important;
+  color: #f2f2f2 !important;
 }
