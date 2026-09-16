@@ -49,6 +49,8 @@ const photoDirections = new Map();
 const photoSliderBusyKeys = new Set();
 const relatedRequestedKeys = new Set();
 const productImageSearches = new Set();
+const productImageFailedUrlKeys = new Map();
+const productImageAutoSearchRounds = new Map();
 const imageAnalysisIndexes = new Map();
 const imageAnalysisDirections = new Map();
 const stageTwoActiveKeys = new Set();
@@ -165,7 +167,7 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v24';
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v25';
 const LISTING_IMAGE_OVERLAY_VERSION = 32;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 4;
 const IMAGE_DEFECT_MARKER_MAX_PERCENT = 72;
@@ -190,6 +192,9 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v19',
   'ulsa_ai_analysis_cache_v20',
   'ulsa_ai_analysis_cache_v21',
+  'ulsa_ai_analysis_cache_v22',
+  'ulsa_ai_analysis_cache_v23',
+  'ulsa_ai_analysis_cache_v24',
 ];
 
 function mapToPersistableObject(map) {
@@ -1226,6 +1231,8 @@ function cancelActiveAiWork() {
   stageThreeSearchProgresses.clear();
   usedPriceGuideProgresses.clear();
   productImageSearches.clear();
+  productImageFailedUrlKeys.clear();
+  productImageAutoSearchRounds.clear();
   persistAiCaches();
 }
 
@@ -2125,12 +2132,42 @@ function listingOpenLinkHtml(item, { linkClass = 'link', disabledClass = 'link l
   return `<a class="${linkClass}" href="${escapeAttr(href)}" target="_blank" rel="noopener">판매글 열기</a>`;
 }
 
-function productSummaryImages(summary, item) {
-  // DuckDuckGo product search images only — never listing photos.
+function isUsableProductImageUrl(src) {
+  const url = String(displayImageUrl(src) || '').trim();
+  if (!url) return false;
+  try {
+    const u = new URL(url, location.href);
+    if (u.pathname === '/api/image-proxy') {
+      return Boolean(u.searchParams.get('sig') && u.searchParams.get('url'));
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+function failedProductImageSet(key) {
+  if (!key) return new Set();
+  if (!productImageFailedUrlKeys.has(key)) productImageFailedUrlKeys.set(key, new Set());
+  return productImageFailedUrlKeys.get(key);
+}
+
+function markProductImageFailed(key, src) {
+  const imageKey = imageUrlKey(src);
+  if (key && imageKey) failedProductImageSet(key).add(imageKey);
+}
+
+function usableProductImageUrls(summary, key = '') {
+  const failed = failedProductImageSet(key);
   return uniqueImageList([
     summary?.productImageUrl,
     ...(Array.isArray(summary?.productImageUrls) ? summary.productImageUrls : []),
-  ]).slice(0, 1);
+  ]).filter((url) => isUsableProductImageUrl(url) && !failed.has(imageUrlKey(url)));
+}
+
+function productSummaryImages(summary, item) {
+  // Signed product-search images only — never listing photos or unsigned hotlinks.
+  return usableProductImageUrls(summary, summaryKey(item)).slice(0, 1);
 }
 
 function stepTwoProductName(item) {
@@ -3148,6 +3185,8 @@ function invalidateAnalysisPart(item, target) {
     case 'productSummary':
       productSummaries.delete(key);
       productImageSearches.delete(key);
+      productImageFailedUrlKeys.delete(key);
+      productImageAutoSearchRounds.delete(key);
       invalidateStepTwoCaches(key);
       invalidateStepThreeCaches(item);
       resetDownstreamStageActivation(key, item);
@@ -6249,21 +6288,18 @@ function renderProductSummaryBlock(item) {
   }
 
   return `
-    <article class="mini-card mini-card--product mini-card--compact" data-product-summary data-product-summary-render-key="${escapeAttr(renderKey)}">
+    <article class="mini-card mini-card--product mini-card--compact" data-product-summary data-summary-key="${escapeAttr(key || '')}" data-product-summary-render-key="${escapeAttr(renderKey)}">
       <div class="product-summary-layout">
         <div class="product-image-strip">
           ${
             images.length
               ? (() => {
-                  const alts = uniqueImageList([
-                    ...(Array.isArray(summary?.productImageUrls) ? summary.productImageUrls : []),
-                    summary?.productImageUrl,
-                  ]);
+                  const alts = usableProductImageUrls(summary, key);
                   return images
                     .map((src) => {
-                      const rest = alts.filter((u) => u && u !== src);
+                      const rest = alts.filter((u) => u && imageUrlKey(u) !== imageUrlKey(src));
                       const altAttr = rest.length ? ` data-alt-urls="${escapeAttr(JSON.stringify(rest))}"` : '';
-                      return `<div class="product-summary-img-wrap is-loading"><span class="product-image-skeleton" aria-hidden="true"></span><img class="zoomable product-summary-img" src="${escapeAttr(src)}" data-full="${escapeAttr(src)}"${altAttr} alt="" loading="eager" onload="this.closest('.product-summary-img-wrap')?.classList.remove('is-loading')" onerror="(function(el){try{var q=JSON.parse(el.getAttribute('data-alt-urls')||'[]');if(q.length){var n=q.shift();el.setAttribute('data-alt-urls',JSON.stringify(q));el.src=n;el.dataset.full=n;return;}el.closest('.product-summary-img-wrap')?.classList.remove('is-loading');}catch(err){}var wrap=el.closest('.product-summary-img-wrap'); if(wrap){wrap.replaceWith(Object.assign(document.createElement('div'),{className:'product-image-placeholder',textContent:'이미지 없음'}));}else{el.replaceWith(Object.assign(document.createElement('div'),{className:'product-image-placeholder',textContent:'이미지 없음'}));}})(this);" /></div>`;
+                      return `<div class="product-summary-img-wrap is-loading"><span class="product-image-skeleton" aria-hidden="true"></span><img class="zoomable product-summary-img" src="${escapeAttr(src)}" data-full="${escapeAttr(src)}"${altAttr} alt="" loading="eager" onload="this.closest('.product-summary-img-wrap')?.classList.remove('is-loading')" onerror="globalThis.__ulsaProductImageError&&globalThis.__ulsaProductImageError(this)" /></div>`;
                     })
                     .join('');
                 })()
@@ -11089,50 +11125,122 @@ function refreshPhotoSlider(item) {
   bindPhotoSlider(updated, item);
 }
 
+function pickNextUsableProductImage(urls, current, key) {
+  const failed = failedProductImageSet(key);
+  const list = uniqueImageList(urls).filter((url) => isUsableProductImageUrl(url) && !failed.has(imageUrlKey(url)));
+  if (!list.length) return '';
+  const currentKey = imageUrlKey(displayImageUrl(current));
+  const idx = list.findIndex((url) => imageUrlKey(url) === currentKey);
+  if (idx < 0) return list[0];
+  return list[(idx + 1) % list.length] || list[0];
+}
+
+function applyProductImageUrls(item, imageUrls, { rotateFrom = '' } = {}) {
+  const key = summaryKey(item);
+  if (!key) return false;
+  const state = productSummaries.get(key);
+  const summary = state?.summary || {};
+  const merged = uniqueImageList([...(summary.productImageUrls || []), summary.productImageUrl, ...(imageUrls || [])]);
+  const nextUrl = pickNextUsableProductImage(merged, rotateFrom || summary.productImageUrl, key);
+  if (!nextUrl) return false;
+  productSummaries.set(key, {
+    ...(state || {}),
+    status: 'done',
+    summary: {
+      ...summary,
+      productImageUrl: nextUrl,
+      productImageUrls: merged.filter(isUsableProductImageUrl),
+    },
+  });
+  persistAiCaches();
+  return true;
+}
+
+async function searchProductImages(item, { force = false, rotate = false } = {}) {
+  const key = summaryKey(item);
+  const state = key ? productSummaries.get(key) : null;
+  const summary = state?.summary || {};
+  if (!key || !summary || typeof globalThis.UlsaAi?.fetchProductImage !== 'function') return false;
+  const usable = usableProductImageUrls(summary, key);
+  if (!force && usable.length) {
+    if (rotate && usable.length > 1) {
+      applyProductImageUrls(item, usable, { rotateFrom: summary.productImageUrl });
+      if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
+    }
+    return true;
+  }
+  const productName = summary.productName || fallbackSearchQuery(item);
+  const searchQuery = productSummaryQueries(summary, item)[0] || productName;
+  if (!productName) return false;
+  if (productImageSearches.has(key)) return false;
+
+  productImageSearches.add(key);
+  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
+  try {
+    const data = await globalThis.UlsaAi.fetchProductImage({ productName, searchQuery });
+    const applied = applyProductImageUrls(item, data.imageUrls, {
+      rotateFrom: rotate ? summary.productImageUrl : '',
+    });
+    return applied;
+  } catch (e) {
+    console.warn('제품 이미지 검색 실패:', e);
+    return false;
+  } finally {
+    productImageSearches.delete(key);
+    if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
+  }
+}
+
+globalThis.__ulsaProductImageError = function onProductSummaryImgError(el) {
+  if (!el) return;
+  const key = el.closest('[data-product-summary]')?.getAttribute('data-summary-key') || selectedKey;
+  markProductImageFailed(key, el.getAttribute('data-full') || el.src);
+  try {
+    const queue = JSON.parse(el.getAttribute('data-alt-urls') || '[]');
+    while (queue.length) {
+      const next = queue.shift();
+      if (!isUsableProductImageUrl(next) || failedProductImageSet(key).has(imageUrlKey(next))) continue;
+      el.setAttribute('data-alt-urls', JSON.stringify(queue));
+      el.src = next;
+      el.dataset.full = next;
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+  const wrap = el.closest('.product-summary-img-wrap');
+  const placeholder = Object.assign(document.createElement('div'), {
+    className: 'product-image-placeholder',
+    textContent: '이미지 없음',
+  });
+  if (wrap) wrap.replaceWith(placeholder);
+  else el.replaceWith(placeholder);
+  const item = latest && summaryKey(latest) === key ? latest : history.find((h) => summaryKey(h) === key);
+  const rounds = productImageAutoSearchRounds.get(key) || 0;
+  if (item && !productImageSearches.has(key) && rounds < 2) {
+    productImageAutoSearchRounds.set(key, rounds + 1);
+    void searchProductImages(item, { force: true });
+  }
+};
+
 function bindProductImageSearch(root, item) {
   root?.querySelectorAll('.product-image-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const key = summaryKey(item);
       const state = key ? productSummaries.get(key) : null;
       const summary = state?.summary || {};
-      const productName = summary.productName || fallbackSearchQuery(item);
-      const searchQuery = productSummaryQueries(summary, item)[0] || productName;
-      if (!productName || typeof globalThis.UlsaAi?.fetchProductImage !== 'function') return;
-
+      const showing = Boolean(root.querySelector('.product-summary-img'));
+      const usable = usableProductImageUrls(summary, key);
       btn.disabled = true;
       btn.classList.add('is-loading');
       btn.setAttribute('aria-busy', 'true');
       try {
-        const cachedUrls = uniqueImageList([...(summary.productImageUrls || []), summary.productImageUrl]);
-        if (cachedUrls.length > 1) {
-          const nextUrl = nextProductImageUrl(cachedUrls, summary.productImageUrl);
-          productSummaries.set(key, {
-            ...(state || {}),
-            status: 'done',
-            summary: {
-              ...summary,
-              productImageUrl: nextUrl,
-              productImageUrls: cachedUrls,
-            },
-          });
+        if (showing && usable.length > 1) {
+          applyProductImageUrls(item, usable, { rotateFrom: summary.productImageUrl });
           refreshProductSummaryBlock(item, { refreshStageTwo: false });
           return;
         }
-
-        const data = await globalThis.UlsaAi.fetchProductImage({ productName, searchQuery });
-        const imageUrls = uniqueImageList(data.imageUrls);
-        if (!imageUrls.length) {
-          return;
-        }
-        const nextUrl = nextProductImageUrl(imageUrls, summary.productImageUrl) || imageUrls[0];
-        const nextSummary = {
-          ...summary,
-          productImageUrl: nextUrl,
-          productImageUrls: imageUrls,
-        };
-        productSummaries.set(key, { ...(state || {}), status: 'done', summary: nextSummary });
-        refreshProductSummaryBlock(item, { refreshStageTwo: false });
-      } catch {
+        await searchProductImages(item, { force: true, rotate: showing && usable.length > 0 });
       } finally {
         btn.disabled = false;
         btn.classList.remove('is-loading');
@@ -11144,50 +11252,33 @@ function bindProductImageSearch(root, item) {
 
 async function ensureProductImage(item) {
   const key = summaryKey(item);
-  const state = key ? productSummaries.get(key) : null;
-  const summary = state?.summary;
-  if (!key || !summary || summary.productImageUrl || productImageSearches.has(key)) return;
-  if (typeof globalThis.UlsaAi?.fetchProductImage !== 'function') return;
-  const productName = summary.productName || fallbackSearchQuery(item);
-  const searchQuery = productSummaryQueries(summary, item)[0] || productName;
-  if (!productName) return;
-
-  productImageSearches.add(key);
-  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
-  try {
-    const data = await globalThis.UlsaAi.fetchProductImage({ productName, searchQuery });
-    const imageUrls = uniqueImageList(data.imageUrls);
-    if (!imageUrls.length) return;
-    productSummaries.set(key, {
-      ...state,
-      status: 'done',
-      summary: {
-        ...summary,
-        productImageUrl: imageUrls[0],
-        productImageUrls: imageUrls,
-      },
-    });
-    if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
-  } catch (e) {
-    console.warn('제품 이미지 자동 검색 실패:', e);
-  } finally {
-    productImageSearches.delete(key);
-    if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
-  }
+  const summary = key ? productSummaries.get(key)?.summary : null;
+  if (!key || !summary) return;
+  if (usableProductImageUrls(summary, key).length) return;
+  await searchProductImages(item, { force: true });
 }
 
 async function enrichSummaryWithProductImage(summary, item) {
   if (!summary || typeof globalThis.UlsaAi?.fetchProductImage !== 'function') return summary;
+  const key = summaryKey(item);
+  const usable = usableProductImageUrls(summary, key);
+  if (usable.length) {
+    return {
+      ...summary,
+      productImageUrl: usable[0],
+      productImageUrls: usable,
+    };
+  }
   const productName = summary.productName || fallbackSearchQuery(item);
   const searchQuery = productSummaryQueries(summary, item)[0] || productName;
   if (!productName) return summary;
   try {
     const data = await globalThis.UlsaAi.fetchProductImage({ productName, searchQuery });
-    const imageUrls = uniqueImageList(data.imageUrls);
+    const imageUrls = uniqueImageList(data.imageUrls).filter(isUsableProductImageUrl);
     if (!imageUrls.length) return summary;
     return {
       ...summary,
-      productImageUrl: summary.productImageUrl || imageUrls[0],
+      productImageUrl: imageUrls[0],
       productImageUrls: imageUrls,
     };
   } catch (e) {
@@ -11200,6 +11291,8 @@ function clearProductSummaryCaches(key) {
   if (!key) return;
   productSummaries.delete(key);
   productImageSearches.delete(key);
+  productImageFailedUrlKeys.delete(key);
+  productImageAutoSearchRounds.delete(key);
   imageAnalysisIndexes.delete(key);
   imageAnalysisDirections.delete(key);
   imageAnalysisPreviewedKeys.delete(key);
@@ -12128,6 +12221,8 @@ $btnHistoryClear?.addEventListener('click', () => {
   resetDirectAiChat();
   relatedRequestedKeys.clear();
   productImageSearches.clear();
+  productImageFailedUrlKeys.clear();
+  productImageAutoSearchRounds.clear();
   imageAnalysisIndexes.clear();
   imageAnalysisDirections.clear();
   stageTwoActiveKeys.clear();
@@ -12764,6 +12859,7 @@ async function ensureProductSummary(item, opts = {}) {
         if (selectedKey === key) refreshProductSummaryBlock(liveItem);
       }, 'productSummary');
       persistAiCaches();
+      void ensureProductImage(liveItem);
     } catch (e) {
       if (shouldIgnoreAiScope(aiScope, e)) return;
       productSummaries.set(key, {
