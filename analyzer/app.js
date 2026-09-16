@@ -10151,7 +10151,7 @@ function resetStageThreeComparisonWork(item, opts = {}) {
   stageThreeCollectionFinalizingKeys.delete(key);
   stageThreeSearchProgresses.delete(key);
   clearStageThreeCollectionTimeout(key);
-  usedPriceGuideProgresses.delete(key);
+  if (opts.clearGuide) usedPriceGuideProgresses.delete(key);
   for (const filterKey of [...comparisonFilters.keys()]) {
     if (!filterKey.startsWith(`${key}::`)) continue;
     comparisonFilters.delete(filterKey);
@@ -10180,7 +10180,8 @@ function resetStageThreeComparisonWork(item, opts = {}) {
 function skipStageThreeComparison(item) {
   const key = summaryKey(item);
   if (!key) return;
-  resetStageThreeComparisonWork(item, { clearGuide: true, clearReceipt: true, clearSearchQuery: true });
+  // 비교 매물만 건너뛴다. 이미 만든 중고 시세 참고표는 지우거나 다시 만들지 않는다.
+  resetStageThreeComparisonWork(item, { clearGuide: false, clearReceipt: true, clearSearchQuery: true });
   stageThreeAutoQueryRetryCounts.set(key, MAX_STAGE_THREE_AUTO_QUERY_RETRIES);
   stageThreeComparisonSkippedKeys.add(key);
   relatedRequestedKeys.add(key);
@@ -10190,6 +10191,12 @@ function skipStageThreeComparison(item) {
   if (filterKey) comparisonFilters.set(filterKey, { status: 'done', matches: [], skipped: true });
   persistAiCaches();
   refreshStageThreeSection(item);
+  const guideKey = usedPriceGuideKey(item);
+  const existingGuide = guideKey ? usedPriceGuides.get(guideKey) : null;
+  if (existingGuide?.status === 'loading' || isStageThreeCacheSettled(existingGuide?.status)) {
+    maybeAdvanceAfterStageThreePart(item);
+    return;
+  }
   void ensureUsedPriceGuide(item);
 }
 
