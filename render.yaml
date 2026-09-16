@@ -3,7 +3,7 @@ services:
     name: buy-or-bye
     runtime: node
     plan: free
-    buildCommand: npm install && npm run pack:extension
+    buildCommand: npm install && npx playwright install --with-deps chromium
     startCommand: npm start
     healthCheckPath: /api/demo/status
     envVars:

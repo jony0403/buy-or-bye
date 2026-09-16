@@ -4,8 +4,10 @@
 > `@PROJECT.md` 를 읽고 작업하세요.
 
 - **작성일:** 2026-05-19  
-- **확장 버전:** `extension/manifest.json` → `2.6.5`
+- **수집 방식:** Chrome 확장 **제거** → 서버 Playwright (`/api/import-listing`, `/api/collect-comps`)
 - **워크스페이스:** `buy-or-bye`
+
+**2026-09-16 업데이트:** 확장프로그램을 제거하고 매물 URL·Step3 비교매물 수집을 Playwright로 서버에서 처리한다. 아이콘은 `analyzer/icons/`. 상세 모듈은 `lib/marketplace-scrape.mjs`.
 
 **맥북 ↔ 윈도우:** 이쪽(윈도우 등)에서도 프로젝트 맥락은 이해한 상태로 맞춰 두었으니, 앞으로 맥북·윈도우를 오가며 할 때 `@PROJECT.md`와 저장소를 기준으로 서로 잘 맞춰가자.  
 **Git 동기화:** 두 PC 모두 이 저장소를 Cursor로 연 뒤 채팅에 **`깃동기화`**(또는 **`sync-repo`**)라고 입력하면 에이전트가 `pull`·(필요 시 `commit`/`push`)를 수행한다. 규칙 파일은 `.cursor/rules/git-sync-keyword.mdc`(저장소에 포함) — **다른 PC에서는 반드시 `git pull`로 최신을 받은 다음** 쓰면 된다. 자세한 절은 **§12.5**. 동기화 후 **`PROJECT.md`에 반영된 추가·수정이 있으면 에이전트가 한국어로 요약해 말해 준다** (diff 기준). 이번 동기화 구간에 **추가·변경된 `.cursor/rules` 파일은 전부 읽고** 새 키워드·동작을 **이해한 상태로** 이어 간다.  

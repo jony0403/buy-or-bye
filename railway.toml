@@ -1,7 +1,7 @@
 [build]
 builder = "RAILPACK"
-# ZIP is packed locally before `railway up`; keep install light on the builder.
-buildCommand = "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --omit=dev"
+# Playwright Chromium required for /api/import-listing and /api/collect-comps
+buildCommand = "npm install --omit=dev && npx playwright install --with-deps chromium"
 
 [deploy]
 startCommand = "npm start"
@@ -13,4 +13,3 @@ restartPolicyMaxRetries = 5
 [variables]
 HOST = "0.0.0.0"
 DEMO_MODE = "true"
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"

@@ -6,6 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import crypto from 'node:crypto';
+import {
+  classifyListingUrl,
+  collectCompsForQueries,
+  importListingByUrl,
+} from './lib/marketplace-scrape.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || process.env.ANALYZER_PORT) || 3920;
@@ -16,7 +21,7 @@ const DEMO_MODE = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'tr
 const DEMO_DAILY_LIMIT = Math.max(5, Number(process.env.DEMO_DAILY_LIMIT) || 500);
 const PUBLIC_ANALYZER_ORIGIN = String(process.env.PUBLIC_ANALYZER_ORIGIN || '').trim().replace(/\/$/, '');
 const ANALYZER_DIR = path.join(__dirname, 'analyzer');
-const EXTENSION_ICONS_DIR = path.join(__dirname, 'extension', 'icons');
+const ICONS_DIR = path.join(__dirname, 'analyzer', 'icons');
 const PROMPTS_DIR = path.join(__dirname, 'prompts');
 const DEMO_DIR = path.join(__dirname, 'demo');
 const DOWNLOADS_DIR = path.join(__dirname, 'public', 'downloads');
@@ -2598,6 +2603,8 @@ const server = http.createServer(async (req, res) => {
     url.pathname.startsWith('/api/') &&
     url.pathname !== '/api/verify-gemini' &&
     url.pathname !== '/api/verify-openai' &&
+    url.pathname !== '/api/import-listing' &&
+    url.pathname !== '/api/collect-comps' &&
     !url.pathname.startsWith('/api/demo')
   ) {
     const rateKey = resolveRequestApiKey(req);
@@ -2616,10 +2623,67 @@ const server = http.createServer(async (req, res) => {
       serverKey: Boolean(SERVER_GEMINI_KEY),
       dailyLimit: DEMO_DAILY_LIMIT,
       publicOrigin: PUBLIC_ANALYZER_ORIGIN || null,
-      extensionDownloadUrl: '/downloads/buy-or-bye-extension.zip',
       serverKeyToken: DEMO_SERVER_KEY_TOKEN,
+      playwrightImport: true,
     };
     json(res, DEMO_MODE && !SERVER_GEMINI_KEY ? 503 : 200, payload);
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/import-listing') {
+    try {
+      const bodyRaw = await readBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { ok: false, error: 'Invalid JSON body.' });
+        return;
+      }
+      const target = classifyListingUrl(body.url);
+      if (!target) {
+        json(res, 400, { ok: false, error: '지원하는 중고 매물 URL이 아닙니다. (당근·번개장터·중고나라)' });
+        return;
+      }
+      const listing = await importListingByUrl(body.url);
+      json(res, 200, { ok: true, listing });
+    } catch (e) {
+      const status = Number(e?.status) || errorHttpStatus(e) || 500;
+      json(res, status, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/collect-comps') {
+    try {
+      const bodyRaw = await readBody(req);
+      let body = {};
+      try {
+        body = JSON.parse(bodyRaw || '{}');
+      } catch {
+        json(res, 400, { ok: false, error: 'Invalid JSON body.' });
+        return;
+      }
+      const queries = Array.isArray(body.queries)
+        ? body.queries
+        : String(body.query || '')
+            .split(/\n|,/)
+            .map((q) => q.trim())
+            .filter(Boolean);
+      if (!queries.length) {
+        json(res, 400, { ok: false, error: '검색어가 필요합니다.' });
+        return;
+      }
+      const comps = await collectCompsForQueries({
+        queries,
+        forItemKey: body.forItemKey || null,
+        maxQueries: Math.min(4, Number(body.maxQueries) || 3),
+      });
+      json(res, 200, { ok: true, comps });
+    } catch (e) {
+      const status = Number(e?.status) || errorHttpStatus(e) || 500;
+      json(res, status, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    }
     return;
   }
 
@@ -2686,28 +2750,6 @@ const server = http.createServer(async (req, res) => {
     } catch {
       res.writeHead(404);
       res.end('not found');
-    }
-    return;
-  }
-
-if (
-    (req.method === 'GET' || req.method === 'HEAD') &&
-    url.pathname === '/downloads/buy-or-bye-extension.zip'
-  ) {
-    try {
-      const zipPath = path.join(DOWNLOADS_DIR, 'buy-or-bye-extension.zip');
-      const buf = await fs.readFile(zipPath);
-      res.writeHead(200, {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': 'attachment; filename="buy-or-bye-extension.zip"',
-        'Content-Length': String(buf.length),
-        'Cache-Control': 'no-store',
-      });
-      if (req.method === 'HEAD') res.end();
-      else res.end(buf);
-    } catch {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Extension ZIP missing. Run npm run pack:extension');
     }
     return;
   }
@@ -3495,7 +3537,7 @@ if (
   if (req.method === 'GET' && /^\/icons\/icon(?:16|32|48|128)\.png$/.test(url.pathname)) {
     const iconName = path.basename(url.pathname);
     try {
-      const buf = await fs.readFile(path.join(EXTENSION_ICONS_DIR, iconName));
+      const buf = await fs.readFile(path.join(ICONS_DIR, iconName));
       res.writeHead(200, {
         'Content-Type': 'image/png',
         'Cache-Control': 'public, max-age=3600',

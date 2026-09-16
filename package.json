@@ -7,10 +7,10 @@
     "start": "node analyzer-server.mjs",
     "start:analyzer": "node analyzer-server.mjs",
     "start:images": "node server.mjs",
-    "pack:extension": "node scripts/pack-extension.mjs",
-    "prestart:demo": "node scripts/pack-extension.mjs",
     "start:demo": "node analyzer-server.mjs",
-    "install-browser": "npx playwright install chromium"
+    "install-browser": "npx playwright install chromium",
+    "smoke:comps": "node scripts/smoke-playwright-comps.mjs",
+    "smoke:import": "node scripts/smoke-playwright-url.mjs"
   },
   "engines": {
     "node": ">=20"

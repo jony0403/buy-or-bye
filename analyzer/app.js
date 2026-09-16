@@ -61,9 +61,9 @@ let activeDemoScenarioId = '';
 let stayOnLanding = false;
 let landingHoldKey = '';
 let landingHoldExportedAt = '';
-let extensionPresent = false;
+let extensionPresent = true;
 let extensionProbeTimer = 0;
-const EXT_REQUIRED_TITLE = 'Chrome 확장프로그램을 설치해야 사용할 수 있습니다.';
+const EXT_REQUIRED_TITLE = '';
 let demoFallbackUsed = false;
 let demoCatalogCache = null;
 const listingImageAnalyses = new Map();
@@ -3758,7 +3758,6 @@ const DIRECT_AI_ACTIONS = [
         renderItem(item, null);
         void ensureProductSummary(item);
       }
-      window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
       refreshDirectAiPanelIfOpen();
       return { message: '현재 매물 분석을 처음부터 다시 시작합니다.' };
     },
@@ -5732,7 +5731,7 @@ function renderStageThreeSection(item, comps) {
                   '신품가·비교 매물·시세 참고표를 바로 모읍니다.',
                   'stage-three-card stage-three-card--ready'
                 )
-              : `<button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}" data-needs-extension>
+              : `<button type="button" class="mini-card stage-three-card stage-three-card--ready stage-start-card" data-stage-three-start="${escapeAttr(key)}">
             <div class="stage-two-ready">
               <div>
                 <p class="stage-two-card-label">다음 단계 대기</p>
@@ -5775,11 +5774,11 @@ function renderStageThreeSearchCard(item, comps) {
     <article class="mini-card stage-three-card" data-stage-three-search-card>
       <div class="stage-three-head">
         <div>
-          <p class="stage-two-card-label">자동 매물 검색</p>
+          <p class="stage-two-card-label">비교 매물 검색</p>
           <h3>${escapeHtml(summary.productName || primaryQuery || '관련 매물 검색')}</h3>
         </div>
         <div class="stage-three-actions">
-          <button type="button" class="chip-btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>다시 검색·정리</button>
+          <button type="button" class="chip-btn" data-stage-three-refresh="${escapeAttr(key)}">다시 검색·정리</button>
           <button type="button" class="chip-btn chip-btn--ghost" data-stage-three-skip-comps="${escapeAttr(key)}">비교 매물 스킵</button>
           ${danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
         </div>
@@ -8257,7 +8256,7 @@ function renderCompsBlock(item, comps) {
         <div class="stage-three-empty-search">
           <p class="stage-three-empty-search__text">비교 매물 검색을 시작하지 못했습니다.</p>
           <p class="meta">${escapeHtml(comps.collectionError)}</p>
-          <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>
+          <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}">
             다시 검색
           </button>
         </div>
@@ -8331,7 +8330,7 @@ function renderStageThreeEmptySearch(key = '') {
   return `
     <div class="stage-three-empty-search">
       <p class="stage-three-empty-search__text">비교 매물 목록을 가져오지 못했습니다.</p>
-      <p class="meta">아래 중고 시세 참고표만으로도 가격 판단은 가능합니다. 확장프로그램이 있으면 「다시 검색·정리」로 다시 시도하세요.</p>
+      <p class="meta">아래 중고 시세 참고표만으로도 가격 판단은 가능합니다. 「다시 검색·정리」로 비교 매물을 다시 모아보세요.</p>
       ${
         key
           ? `<button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-skip-comps="${escapeAttr(key)}">비교 매물 스킵하고 계속</button>`
@@ -8353,7 +8352,7 @@ function renderStageThreeRestoredSearchState(item) {
     return `
       <div class="stage-three-restored-search">
         <p class="stage-three-status-pill">저장된 비교 결과 ${matchCount}건 · 새로고침·최근 매물에서 이어서 불러왔습니다.</p>
-        <p class="meta stage-three-restored-search__hint">목록을 다시 보려면 상단 「다시 검색·정리」를 누르세요. (확장프로그램 필요)</p>
+        <p class="meta stage-three-restored-search__hint">목록을 다시 보려면 상단 「다시 검색·정리」를 누르세요.</p>
       </div>
     `;
   }
@@ -8369,7 +8368,7 @@ function renderStageThreeInterruptedSearch(key = '') {
   if (typeof extensionPresent !== 'undefined' && !extensionPresent) {
     return `
       <div class="stage-three-empty-search">
-        <p class="stage-three-empty-search__text">확장프로그램이 없어 비교 매물 검색을 건너뜁니다.</p>
+        <p class="stage-three-empty-search__text">비교 매물을 아직 모으지 못했습니다. 「다시 검색·정리」로 다시 시도하세요.</p>
         <p class="meta">아래 중고 시세 참고표로 가격을 확인하세요.</p>
         ${
           key
@@ -8382,7 +8381,7 @@ function renderStageThreeInterruptedSearch(key = '') {
   return `
     <div class="stage-three-empty-search">
       <p class="stage-three-empty-search__text">이전 검색이 완료되지 않았습니다.</p>
-      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}" data-needs-extension>
+      <button type="button" class="chip-btn stage-three-empty-search__btn" data-stage-three-refresh="${escapeAttr(key)}">
         다시 검색
       </button>
       ${
@@ -9452,53 +9451,51 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
     if (isolated) refreshStageThreeCompsBlock(item, { schedule: false });
     else refreshStageThreeSection(item);
   }
-  // 중고 시세 참고표는 자동 매물검색과 완전히 독립된 병렬 작업으로, 검색 탭 결과를 기다리지 않고 바로 시작한다.
+  // 중고 시세 참고표는 자동 매물검색과 완전히 독립된 병렬 작업으로, 검색 결과를 기다리지 않고 바로 시작한다.
   if (selectedKey === key) void ensureUsedPriceGuide(item);
-  if (!extensionPresent) {
-    showAppToast?.(EXT_REQUIRED_TITLE);
-    comps = {
-      forItemKey: listingKey,
-      status: 'collected',
-      collectedAt: new Date().toISOString(),
-      bunjang: null,
-      daangn: null,
-      joongna: null,
-      extensionMissing: true,
-    };
-    if (key) stageThreeSearchProgresses.delete(key);
-    if (btn) btn.disabled = false;
-    if (selectedKey === key) refreshStageThreeSection(item);
-    return;
-  }
   if (btn) btn.disabled = true;
-  const searchPostKey = `${key}::${queryList.join('|')}`;
-  const now = Date.now();
-  if (
-    !opts.force &&
-    globalThis.__ulsaSearchPostAt &&
-    now - globalThis.__ulsaSearchPostAt < 2000 &&
-    globalThis.__ulsaSearchPostKey === searchPostKey
-  ) {
-    if (btn) btn.disabled = false;
-    return;
-  }
-  globalThis.__ulsaSearchPostAt = now;
-  globalThis.__ulsaSearchPostKey = searchPostKey;
-  window.postMessage(
-    {
-      type: 'MARKET_SCRAPE_OPEN_SEARCH_TABS',
-      query: queryList[0],
-      queries: queryList,
-      forItemKey: listingKey,
-      listing: item,
-    },
-    '*'
-  );
-  if (btn) {
-    setTimeout(() => {
-      btn.disabled = false;
-    }, 2500);
-  }
+  void (async () => {
+    try {
+      const res = await fetch('/api/collect-comps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          queries: queryList,
+          forItemKey: listingKey,
+          maxQueries: 3,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (selectedKey !== key) return;
+      if (!res.ok || !data?.ok || !data.comps) {
+        comps = {
+          ...emptyComparisonComps(item),
+          collectionError: data?.error || '비교 매물을 수집하지 못했습니다.',
+        };
+        if (key) stageThreeSearchProgresses.delete(key);
+        refreshStageThreeSection(item);
+        showAppToast?.(data?.error || '비교 매물 수집에 실패했습니다.');
+        return;
+      }
+      comps = restoredStageThreeComps(item, data.comps) || data.comps;
+      if (key) stageThreeSearchProgresses.delete(key);
+      lastStageThreeCompsRenderKey = '';
+      if (isolated) refreshStageThreeCompsBlock(item);
+      else refreshStageThreeSection(item);
+      scheduleComparisonFilter(item);
+      void ensureUsedPriceGuide(item);
+    } catch (e) {
+      if (selectedKey !== key) return;
+      comps = {
+        ...emptyComparisonComps(item),
+        collectionError: e instanceof Error ? e.message : String(e),
+      };
+      if (key) stageThreeSearchProgresses.delete(key);
+      refreshStageThreeSection(item);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  })();
 }
 
 function resetStageThreeComparisonWork(item, opts = {}) {
@@ -10805,7 +10802,6 @@ function clearCurrentAnalysisState() {
   lastStageThreeCompsRenderKey = '';
   stageSlideIndex = 0;
   persistAiCaches();
-  window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_COMPS' }, '*');
 }
 
 function releaseLandingHold() {
@@ -11226,7 +11222,6 @@ function maybeStartStageThreeCollection(item) {
   const key = summaryKey(item);
   if (!key || !item || !isStepThreeUnlocked(item)) return;
   if (stageThreeComparisonSkippedKeys.has(key)) return;
-  if (typeof extensionPresent !== 'undefined' && !extensionPresent) return;
   if (comps?.status === 'collecting') return;
   if (comparisonItems(comps).length) return;
   if (hasRestorableComparisonListings(key)) return;
@@ -11556,7 +11551,7 @@ $favoriteCompareModal?.addEventListener('click', (e) => {
   refreshDirectAiPanelForListingChange();
   void ensureProductSummary(found);
   renderHistoryList();
-  window.postMessage({ type: 'MARKET_SCRAPE_PROMOTE_HISTORY', key }, '*');
+        saveLocalListingHistory(history);
 });
 $btnHistoryClear?.addEventListener('click', () => {
   history = [];
@@ -11600,7 +11595,7 @@ $btnHistoryClear?.addEventListener('click', () => {
   renderItem(null);
   renderHistoryList();
   setHistoryOpen(false);
-  window.postMessage({ type: 'MARKET_SCRAPE_CLEAR_HISTORY' }, '*');
+  saveLocalListingHistory([]);
 });
 $drawerBackdrop?.addEventListener('click', () => setHistoryOpen(false));
 
@@ -12089,7 +12084,7 @@ function renderHistoryList() {
         refreshDirectAiPanelForListingChange();
         void ensureProductSummary(found);
         renderHistoryList();
-        window.postMessage({ type: 'MARKET_SCRAPE_PROMOTE_HISTORY', key }, '*');
+        saveLocalListingHistory(history);
       }
     });
   });
@@ -12139,7 +12134,7 @@ function renderHistoryList() {
       }
       persistAiCaches();
       renderHistoryList();
-      window.postMessage({ type: 'MARKET_SCRAPE_DELETE_HISTORY', key }, '*');
+      saveLocalListingHistory(history);
     });
   });
 }
@@ -12564,14 +12559,13 @@ function renderChampionshipEmptyState() {
         <div class="sample-landing__hero-copy">
           <p class="sample-landing__eyebrow">BUY OR BYE</p>
           <h2>중고 매물, 링크 하나로 판단까지</h2>
-          <p>샘플로 먼저 둘러보거나 확장프로그램을 설치해 실제 매물을 불러오세요.</p>
+          <p>샘플로 먼저 체험하거나, 당근·번개·중고나라 매물 URL을 붙여넣어 분석을 시작하세요.</p>
         </div>
       </header>
       <div class="sample-copy-guide" data-sample-copy-guide>
         <p><strong>중고 매물을 살지 말지, 이 화면에서 바로 판단하세요.</strong></p>
-        <p>아래 샘플을 누르면 Step 1~5 분석 흐름을 확장프로그램 없이 먼저 볼 수 있습니다.</p>
-        <p>실제 당근·번개장터·중고나라 매물을 불러오려면 Chrome 확장프로그램을 설치해야 합니다.</p>
-        <p>확장프로그램이 없으면 실제 매물 전송과 Step 3 유사매물 자동 수집이 제한됩니다.</p>
+        <p>아래 샘플로 Step 1~5 흐름을 먼저 볼 수 있고, 실제 매물은 상단(또는 왼쪽 레일) URL 입력으로 불러옵니다.</p>
+        <p>비교 매물 수집도 서버에서 자동으로 진행됩니다. 별도 확장프로그램 설치는 필요 없습니다.</p>
       </div>
       <section class="sample-guide-block" aria-labelledby="sampleGuideTitle">
         <div class="sample-section-heading">
@@ -12587,85 +12581,24 @@ function renderChampionshipEmptyState() {
           </div>
           <div class="sample-guide-card">
             <span class="sample-guide-card__number">2</span>
-            <div><strong>실제 매물 전송</strong><p>확장프로그램 설치 후 판매글 우측 하단 버튼으로 매물을 가져옵니다.</p></div>
+            <div><strong>URL로 불러오기</strong><p>당근·번개장터·중고나라 매물 링크를 붙여넣으면 서버가 내용을 가져옵니다.</p></div>
           </div>
           <div class="sample-guide-card">
             <span class="sample-guide-card__number">3</span>
-            <div><strong>단계별 확인</strong><p>제품·하자·시세·최종 판단·협상 문구까지 차례로 확인합니다.</p></div>
+            <div><strong>단계별 확인</strong><p>제품·리스크·시세·최종 판단·협상 문구까지 차례로 확인합니다.</p></div>
           </div>
         </div>
       </section>
-      <aside class="sample-extension-notice" data-ext-notice>
-        <span class="material-symbols-rounded" aria-hidden="true">extension</span>
-        <div>
-          <strong data-ext-status>확장프로그램을 설치해야 실제 매물을 분석할 수 있어요</strong>
-          <p>확장프로그램 없이도 샘플 체험은 가능하지만, 실제 매물 불러오기와 Step 3 유사매물 자동 수집은 제한됩니다.</p>
-        </div>
-      </aside>
       <div class="sample-demo-block">
         <div class="sample-section-heading">
           <div>
             <p class="sample-section-label">샘플로 먼저 체험하기</p>
-            <p class="sample-section-desc">설치 전에 대표 분석 사례를 바로 실행해 볼 수 있습니다.</p>
+            <p class="sample-section-desc">대표 분석 사례를 바로 실행해 볼 수 있습니다.</p>
           </div>
-          <span class="sample-section-chip">확장프로그램 없이 가능</span>
+          <span class="sample-section-chip">바로 가능</span>
         </div>
         <div class="sample-demo-grid" data-demo-grid>
           <p class="mini-muted">샘플을 불러오는 중…</p>
-        </div>
-      </div>
-      <div class="sample-ext-block" data-ext-block>
-        <div class="sample-section-heading">
-          <div>
-            <p class="sample-section-label">실제 매물 분석 준비</p>
-            <p class="sample-section-desc">Chrome 확장프로그램 설치 후 당근·번개장터·중고나라 판매글을 바로 전송하세요.</p>
-          </div>
-          <span class="sample-section-chip sample-section-chip--required">실사용 필수</span>
-        </div>
-        <div class="sample-ext-actions">
-          <a class="btn btn-small" href="/downloads/buy-or-bye-extension.zip" download>확장프로그램 ZIP 받기</a>
-          <button type="button" class="chip-btn chip-btn--ghost" data-ext-help>설치 방법 자세히</button>
-        </div>
-        <div class="sample-ext-steps" data-ext-steps hidden>
-          <ol>
-            <li>
-              <strong>ZIP 받기</strong>를 눌러 <code>buy-or-bye-extension.zip</code>을 다운로드한 뒤 압축을 풉니다.
-              <figure class="sample-ext-shot">
-                <img src="/install-guide/03-select-folder.jpg" alt="압축 푼 buy-or-bye-extension 폴더" width="720" height="auto" loading="lazy" />
-              </figure>
-            </li>
-            <li>
-              Chrome 주소창에 <code>chrome://extensions</code>를 입력한 뒤 <strong>개발자 모드</strong>를 켭니다.
-              <figure class="sample-ext-shot">
-                <img src="/install-guide/01-developer-mode.jpg" alt="개발자 모드 스위치" width="720" height="auto" loading="lazy" />
-              </figure>
-            </li>
-            <li>
-              <strong>압축해제된 확장 프로그램을 로드합니다</strong>에서 방금 푼 폴더를 선택합니다.
-              <figure class="sample-ext-shot">
-                <img src="/install-guide/02-load-unpacked.jpg" alt="압축해제된 확장 프로그램 로드 버튼" width="720" height="auto" loading="lazy" />
-              </figure>
-            </li>
-            <li>
-              「Buy or Bye」가 보이면 설치 완료입니다.
-              <figure class="sample-ext-shot">
-                <img src="/install-guide/04-installed.jpg" alt="설치된 Buy or Bye 확장프로그램" width="720" height="auto" loading="lazy" />
-              </figure>
-            </li>
-            <li>
-              Chrome 툴바의 <strong>퍼즐</strong> 버튼을 누른 뒤, 「Buy or Bye」 옆 <strong>핀</strong>을 눌러 아이콘을 고정합니다.
-              <figure class="sample-ext-shot">
-                <img src="/install-guide/05-pin-extension.jpg" alt="Chrome 확장프로그램 목록에서 Buy or Bye 핀 고정" width="720" height="auto" loading="lazy" />
-              </figure>
-            </li>
-            <li>
-              당근·번개장터·중고나라 <strong>매물 상세 페이지</strong>로 이동하면, 화면 <strong>우측 하단</strong>에 이 버튼이 나타납니다. 누르면 매물이 이 분석 화면으로 전송됩니다.
-              <figure class="sample-ext-shot sample-ext-shot--fab">
-                <img src="/install-guide/06-extension-icon.jpg" alt="매물 페이지 우측 하단 Buy or Bye 전송 버튼" width="320" height="auto" loading="lazy" />
-                <figcaption>매물 상세 페이지 우측 하단에 보이는 전송 버튼</figcaption>
-              </figure>
-            </li>
-          </ol>
         </div>
       </div>
     </article>
@@ -12876,19 +12809,69 @@ function supportedListingUrl(rawUrl) {
 }
 
 function requestListingUrlImport(rawUrl) {
-  if (!extensionPresent) {
-    setUrlImportStatus('확장프로그램 설치 필요', 'error');
-    showAppToast?.(EXT_REQUIRED_TITLE);
-    return;
-  }
   const url = supportedListingUrl(rawUrl);
   if (!url) {
-    setUrlImportStatus('지원 URL 아님', 'error');
+    setUrlImportStatus('지원 URL 아님 (당근·번개·중고나라)', 'error');
     return;
   }
   pendingImportUrl = url;
-  setUrlImportStatus('페이지 여는 중...', 'loading');
-  window.postMessage({ type: 'MARKET_SCRAPE_IMPORT_URL', url }, '*');
+  setUrlImportStatus('매물 불러오는 중…', 'loading');
+  void (async () => {
+    try {
+      const res = await fetch('/api/import-listing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (pendingImportUrl && pendingImportUrl !== url) return;
+      if (!res.ok || !data?.ok || !data.listing) {
+        pendingImportUrl = '';
+        setUrlImportStatus(data?.error || '불러오기 실패', 'error');
+        showAppToast?.(data?.error || '매물을 불러오지 못했습니다.');
+        return;
+      }
+      pendingImportUrl = '';
+      setUrlImportStatus('불러옴', 'success');
+      if ($urlImportInput) $urlImportInput.value = '';
+      if ($railUrlInput) $railUrlInput.value = '';
+      releaseLandingHold();
+      rememberImportedListing(data.listing);
+      activateListingItem(data.listing, { skipIfSameActive: true, comps: null });
+      closeRailPanel();
+    } catch (e) {
+      if (pendingImportUrl === url) pendingImportUrl = '';
+      setUrlImportStatus(e instanceof Error ? e.message : '불러오기 실패', 'error');
+    }
+  })();
+}
+
+const LOCAL_HISTORY_KEY = 'buy_or_bye_listing_history_v1';
+
+function loadLocalListingHistory() {
+  try {
+    const raw = localStorage.getItem(LOCAL_HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalListingHistory(list) {
+  try {
+    localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify((list || []).slice(0, 40)));
+  } catch {
+    /* ignore */
+  }
+}
+
+function rememberImportedListing(listing) {
+  if (!listing?.platform || !listing?.itemId) return;
+  const key = itemKey(listing);
+  const next = [listing, ...loadLocalListingHistory().filter((h) => itemKey(h) !== key)];
+  saveLocalListingHistory(next);
+  history = next;
 }
 
 function escapeHtml(s) {
@@ -12907,57 +12890,14 @@ let __appStarted = false;
 function initMain() {
   if (__appStarted) return;
   __appStarted = true;
-  void refreshExtensionPresence();
-  if (extensionProbeTimer) window.clearInterval(extensionProbeTimer);
-  extensionProbeTimer = window.setInterval(() => void refreshExtensionPresence(), 4000);
+  extensionPresent = true;
+  applyExtensionUiState();
 
-  window.addEventListener('message', (ev) => {
-    if (ev.source !== window) return;
-    const d = ev.data;
-    if (!d) return;
-    if (d.type === 'MARKET_SCRAPE_BRIDGE') {
-      applyPayload({ latest: d.latest, history: d.history, comps: d.comps });
-      return;
-    }
-    if (d.type === 'MARKET_SCRAPE_SEARCH_TABS_RESULT') {
-      const activeItem = currentRenderedItem();
-      const activeKey = activeItem ? itemKey(activeItem) : '';
-      if (!d.ok && activeItem && (!d.forItemKey || d.forItemKey === activeKey)) {
-        clearStageThreeCollectionTimeout(summaryKey(activeItem));
-        stageThreeSearchProgresses.delete(summaryKey(activeItem));
-        comps = {
-          ...emptyComparisonComps(activeItem),
-          collectionError: d.error || '확장프로그램이 검색 탭을 열지 못했습니다.',
-        };
-        refreshStageThreeSection(activeItem);
-        showAppToast(d.error || '비교 매물 검색을 시작하지 못했습니다.');
-      }
-      return;
-    }
-    if (d.type === 'MARKET_SCRAPE_URL_IMPORT_RESULT') {
-      const resultUrl = String(d.url || '').trim();
-      if (pendingImportUrl && resultUrl && resultUrl !== pendingImportUrl) return;
-      if (d.ok) {
-        pendingImportUrl = '';
-        setUrlImportStatus('불러옴', 'success');
-        if ($urlImportInput) $urlImportInput.value = '';
-        if ($railUrlInput) $railUrlInput.value = '';
-        if (d.listing) {
-          releaseLandingHold();
-          activateListingItem(d.listing, { skipIfSameActive: true });
-          closeRailPanel();
-        } else {
-          window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
-        }
-        window.setTimeout(() => {
-          window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
-        }, 800);
-      } else if (!pendingImportUrl || !resultUrl || resultUrl === pendingImportUrl) {
-        pendingImportUrl = '';
-        setUrlImportStatus(d.error || '불러오기 실패', 'error');
-      }
-    }
-  });
+  const localHistory = loadLocalListingHistory();
+  if (localHistory.length && !history.length) {
+    history = localHistory;
+    renderHistoryList();
+  }
 
   $urlImportForm?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -12976,33 +12916,22 @@ function initMain() {
 
   $btnRefresh.addEventListener('click', () => {
     clearCurrentAnalysisState();
+    latest = null;
+    selectedKey = null;
+    comps = null;
     renderItem(null);
-    window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
   });
 
-  // 빈 화면은 index.html 정적 마크업이 아니라 샘플·확장 안내가 있는 랜딩으로 그린다.
   if (!latest) renderItem(null);
-
-  for (const delay of [0, 250, 800, 1600]) {
-    window.setTimeout(() => {
-      window.postMessage({ type: 'MARKET_SCRAPE_REQUEST' }, '*');
-    }, delay);
-  }
 }
 
 function applyExtensionUiState() {
-  const tip = EXT_REQUIRED_TITLE;
+  // 확장 제거 후: URL 입력·Step3 버튼은 항상 활성
   document.querySelectorAll('[data-needs-extension]').forEach((el) => {
-    const on = extensionPresent;
-    el.classList.toggle('is-ext-disabled', !on);
-    el.toggleAttribute('disabled', !on);
-    if (!on) {
-      el.setAttribute('title', tip);
-      el.setAttribute('aria-disabled', 'true');
-    } else {
-      el.removeAttribute('title');
-      el.removeAttribute('aria-disabled');
-    }
+    el.classList.remove('is-ext-disabled');
+    el.removeAttribute('disabled');
+    el.removeAttribute('title');
+    el.removeAttribute('aria-disabled');
   });
   const urlForm = document.getElementById('urlImportForm');
   const railForm = document.getElementById('railImportForm');
@@ -13012,53 +12941,29 @@ function applyExtensionUiState() {
   const railBtn = railForm?.querySelector('button[type="submit"]');
   for (const el of [urlInput, railInput, urlBtn, railBtn]) {
     if (!el) continue;
-    el.classList.toggle('is-ext-disabled', !extensionPresent);
-    if ('disabled' in el) el.disabled = !extensionPresent;
-    if (!extensionPresent) el.setAttribute('title', tip);
-    else el.removeAttribute('title');
+    el.classList.remove('is-ext-disabled');
+    if ('disabled' in el) el.disabled = false;
+    el.removeAttribute('title');
   }
-  document.querySelectorAll('[data-ext-notice]').forEach((notice) => {
-    notice.dataset.state = extensionPresent ? 'ready' : 'missing';
-  });
-  document.querySelectorAll('[data-ext-status]').forEach((status) => {
-    status.textContent = extensionPresent
-      ? '확장프로그램이 연결되었습니다 — 실제 매물을 바로 가져올 수 있어요'
-      : '확장프로그램을 설치해야 실제 매물을 분석할 수 있어요';
-  });
-  document.body.classList.toggle('ext-missing', !extensionPresent);
-  document.body.classList.toggle('ext-ready', extensionPresent);
+  if (urlForm) urlForm.hidden = false;
+  document.body.classList.remove('ext-missing');
+  document.body.classList.add('ext-ready');
 }
 
 function probeExtensionPresence() {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (ok) => {
-      if (done) return;
-      done = true;
-      window.removeEventListener('message', onMsg);
-      resolve(Boolean(ok));
-    };
-    const onMsg = (ev) => {
-      if (ev.source !== window || ev.data?.type !== 'ULSA_EXT_PONG') return;
-      finish(true);
-    };
-    window.addEventListener('message', onMsg);
-    window.postMessage({ type: 'ULSA_EXT_PING' }, '*');
-    window.setTimeout(() => finish(false), 450);
-  });
+  return Promise.resolve(true);
 }
 
 async function refreshExtensionPresence() {
-  extensionPresent = await probeExtensionPresence();
+  extensionPresent = true;
   applyExtensionUiState();
-  return extensionPresent;
+  return true;
 }
 
 function bootstrapApp() {
   window.addEventListener('ulsa:ai-ready', () => initMain(), { once: true });
   if (globalThis.__ulsaAiReady) initMain();
 
-  // 게이트 대기 중이어도 샘플·확장 안내는 바로 붙인다.
   const mountSampleLanding = () => {
     const root = document.getElementById('current');
     if (!root) return;
@@ -13067,10 +12972,7 @@ function bootstrapApp() {
       !root.querySelector('[data-sample-landing]') ||
       !root.querySelector('[data-sample-copy-guide]') ||
       !root.querySelector('[data-demo-id]') ||
-      Boolean(root.querySelector('[data-demo-grid] .mini-muted')) ||
-      Boolean(root.querySelector('img[src*="07-pin-and-fab"], .sample-ext-fab-preview')) ||
-      !root.querySelector('img[src*="05-pin-extension.jpg"]') ||
-      !root.querySelector('img[src*="06-extension-icon.jpg"]');
+      Boolean(root.querySelector('[data-demo-grid] .mini-muted'));
     if (!needsMount) return;
     root.innerHTML = renderChampionshipEmptyState();
     void bindChampionshipEmptyState(root);
