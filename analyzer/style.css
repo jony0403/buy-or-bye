@@ -17703,3 +17703,141 @@ body .app-shell .top .url-import__search-icon {
   color: #fff !important;
   stroke: currentColor !important;
 }
+
+/* ??? ??: ???? ??·? */
+body .app-shell #directAiPanel .direct-chat-form {
+  align-items: flex-end !important;
+  gap: 0.42rem !important;
+  padding: 0.64rem 0.78rem 0.78rem !important;
+}
+body .app-shell #directAiPanel .direct-chat-form textarea {
+  min-height: 2.55rem !important;
+  max-height: 6.5rem !important;
+  resize: none !important;
+  border-radius: 1.15rem !important;
+  padding: 0.62rem 0.82rem !important;
+  line-height: 1.45 !important;
+}
+body .app-shell #directAiPanel .direct-chat-form textarea::-webkit-resizer {
+  display: none !important;
+}
+body .app-shell #directAiPanel .direct-chat-form .btn,
+body .app-shell #directAiPanel .direct-chat-submit {
+  width: 2.35rem !important;
+  min-width: 2.35rem !important;
+  min-height: 2.35rem !important;
+  height: 2.35rem !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  padding: 0 !important;
+  background: #ff6f0f !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+body .app-shell #directAiPanel .direct-chat-form .btn:hover:not(:disabled),
+body .app-shell #directAiPanel .direct-chat-submit:hover:not(:disabled) {
+  background: #ea580c !important;
+  transform: none !important;
+}
+body .app-shell #directAiPanel .direct-chat-form .btn:disabled,
+body .app-shell #directAiPanel .direct-chat-submit:disabled {
+  background: #e7e5e4 !important;
+  color: #a8a29e !important;
+}
+body .app-shell #directAiPanel .direct-chat-submit .material-symbols-rounded {
+  font-size: 1.12rem !important;
+  font-variation-settings: "FILL" 1, "wght" 600, "GRAD" 0, "opsz" 24 !important;
+}
+body .app-shell #directAiPanel .direct-chat-actions .chip-btn,
+body .app-shell #directAiPanel .direct-chat-clear,
+body .app-shell #directAiPanel .direct-chat-close {
+  min-height: 1.7rem !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+  font-size: 0.72rem !important;
+  font-weight: 650 !important;
+}
+body .app-shell #directAiPanel .direct-chat-close {
+  width: 1.7rem !important;
+  min-width: 1.7rem !important;
+  padding: 0 !important;
+  font-size: 1.05rem !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+}
+body .app-shell #directAiPanel .direct-chat-actions .chip-btn:hover,
+body .app-shell #directAiPanel .direct-chat-clear:hover,
+body .app-shell #directAiPanel .direct-chat-close:hover {
+  background: rgba(15, 23, 42, 0.05) !important;
+  color: #64748b !important;
+}
+body .app-shell #directAiPanel .direct-chat-command-chip {
+  max-width: none !important;
+  min-height: 1.7rem !important;
+  border: 1px solid rgba(28, 25, 23, 0.1) !important;
+  border-radius: 999px !important;
+  padding: 0 0.62rem !important;
+  background: #f6f4f1 !important;
+  color: #44403c !important;
+  font-size: 0.68rem !important;
+  font-weight: 650 !important;
+  box-shadow: none !important;
+}
+body .app-shell #directAiPanel .direct-chat-command-chip:hover {
+  border-color: rgba(28, 25, 23, 0.16) !important;
+  background: #efece8 !important;
+  color: #292524 !important;
+  transform: none !important;
+}
+body .app-shell #directAiPanel .direct-chat-suggestions button {
+  max-width: none !important;
+  min-height: 1.7rem !important;
+  border: 1px solid rgba(255, 111, 15, 0.22) !important;
+  border-radius: 999px !important;
+  padding: 0 0.62rem !important;
+  background: #fff8f3 !important;
+  color: #9a3412 !important;
+  font-size: 0.68rem !important;
+  font-weight: 650 !important;
+  box-shadow: none !important;
+}
+body .app-shell #directAiPanel .direct-chat-suggestions button:hover {
+  border-color: rgba(255, 111, 15, 0.38) !important;
+  background: #fff1e8 !important;
+  color: #7c2d12 !important;
+  transform: none !important;
+}
+body.theme-dark .app-shell #directAiPanel .direct-chat-form .btn,
+body.theme-dark .app-shell #directAiPanel .direct-chat-submit {
+  background: #ff6f0f !important;
+  color: #fff !important;
+}
+body.theme-dark .app-shell #directAiPanel .direct-chat-form .btn:disabled,
+body.theme-dark .app-shell #directAiPanel .direct-chat-submit:disabled {
+  background: #3f3f46 !important;
+  color: #a1a1aa !important;
+}
+body.theme-dark .app-shell #directAiPanel .direct-chat-actions .chip-btn,
+body.theme-dark .app-shell #directAiPanel .direct-chat-clear,
+body.theme-dark .app-shell #directAiPanel .direct-chat-close {
+  background: transparent !important;
+  color: #8b8b8b !important;
+}
+body.theme-dark .app-shell #directAiPanel .direct-chat-actions .chip-btn:hover,
+body.theme-dark .app-shell #directAiPanel .direct-chat-clear:hover,
+body.theme-dark .app-shell #directAiPanel .direct-chat-close:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #d4d4d8 !important;
+}
+body.theme-dark .app-shell #directAiPanel .direct-chat-command-chip {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: #242424 !important;
+  color: #d6d3d1 !important;
+}
+body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button {
+  border-color: rgba(255, 111, 15, 0.28) !important;
+  background: rgba(255, 111, 15, 0.08) !important;
+  color: #fdba74 !important;
+}

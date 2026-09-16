@@ -596,7 +596,6 @@ function buildImageGridBoardOverlaySvg(imageWidth, imageHeight, pad, cols = 25, 
     );
   }
   const labels = [];
-  const guideLabels = [];
   for (let c = 0; c < cols; c += 1) {
     const label = gridColumnLabel(c);
     const x = x0 + (c + 0.5) * cellW;
@@ -605,16 +604,6 @@ function buildImageGridBoardOverlaySvg(imageWidth, imageHeight, pad, cols = 25, 
       `<text x="${x}" y="${h - Math.max(8, p * 0.22)}" text-anchor="middle">${svgText(label)}</text>`
     );
   }
-  const guideFontSize = Math.max(7, Math.round(smallFontSize * 0.62));
-  const columnGuideRows = [5, 12, 18];
-  for (const guideRow of columnGuideRows) {
-    const y = y0 + (guideRow + 0.5) * cellH + guideFontSize / 2 - 2;
-    for (let c = 0; c < cols; c += 1) {
-      const label = gridColumnLabel(c);
-      const x = x0 + (c + 0.5) * cellW;
-      guideLabels.push(`<text x="${x}" y="${y}" text-anchor="middle">${svgText(label)}</text>`);
-    }
-  }
   for (let r = 0; r < rows; r += 1) {
     const label = String(r + 1);
     const y = y0 + (r + 0.5) * cellH + smallFontSize / 2 - 2;
@@ -622,15 +611,6 @@ function buildImageGridBoardOverlaySvg(imageWidth, imageHeight, pad, cols = 25, 
       `<text x="${Math.max(8, p * 0.26)}" y="${y}" text-anchor="start">${svgText(label)}</text>`,
       `<text x="${w - Math.max(8, p * 0.26)}" y="${y}" text-anchor="end">${svgText(label)}</text>`
     );
-  }
-  const rowGuideCols = [4, 12, 20];
-  for (let r = 0; r < rows; r += 1) {
-    const label = String(r + 1);
-    const y = y0 + (r + 0.5) * cellH + guideFontSize / 2 - 2;
-    for (const guideCol of rowGuideCols) {
-      const x = x0 + (guideCol + 0.5) * cellW;
-      guideLabels.push(`<text x="${x}" y="${y}" text-anchor="middle">${svgText(label)}</text>`);
-    }
   }
   const centerX = x0 + iw / 2;
   const centerY = y0 + ih / 2;
@@ -649,9 +629,6 @@ function buildImageGridBoardOverlaySvg(imageWidth, imageHeight, pad, cols = 25, 
         ${lines.join('\n')}
         <line x1="${centerX}" y1="${y0}" x2="${centerX}" y2="${y1}" stroke="rgba(239,68,68,0.72)" stroke-width="${majorStroke}"/>
         <line x1="${x0}" y1="${centerY}" x2="${x1}" y2="${centerY}" stroke="rgba(239,68,68,0.72)" stroke-width="${majorStroke}"/>
-        <g font-family="Arial, Helvetica, sans-serif" font-size="${guideFontSize}" font-weight="900" fill="rgba(15,23,42,0.66)" stroke="rgba(255,255,255,0.72)" stroke-width="2.4" paint-order="stroke">
-          ${guideLabels.join('\n')}
-        </g>
         <g font-family="Arial, Helvetica, sans-serif" font-size="${smallFontSize}" font-weight="900" fill="#111827" stroke="#ffffff" stroke-width="4" paint-order="stroke">
           ${labels.join('\n')}
         </g>
@@ -1228,8 +1205,21 @@ async function fetchDuckDuckGoImageUrls(query) {
   return uniqueImageUrls(out);
 }
 
+function stripGroundingArtifacts(text) {
+  let s = String(text || '');
+  if (!s) return '';
+  s = s.replace(/[\uE000-\uF8FF\uFFFC]/g, '');
+  s = s.replace(/\[\s*(?:search|\d+|cite|web|source)\s*\]/gi, '');
+  s = s.replace(/【\s*\d+\s*】/g, '');
+  s = s.replace(/([가-힣A-Za-z0-9])search(?=[가-힣]|과|은|는|을|를|이|가|와|의|로|에|및|,|\.|;|:|\s|$)/gi, '$1');
+  s = s.replace(/(^|[\s,])search(?=[가-힣]|과|은|는|을|를|이|가|와|의|로|에|및|,|\.|\s|$)/gi, '$1');
+  s = s.replace(/\s{2,}/g, ' ');
+  s = s.replace(/\s+([,.])/g, '$1');
+  return s.trim();
+}
+
 function cleanProductName(raw, fallback = '') {
-  let s = String(raw || fallback || '')
+  let s = stripGroundingArtifacts(String(raw || fallback || ''))
     .replace(/```(?:json)?/gi, ' ')
     .replace(/["'`??]/g, '')
     .replace(/\bproductName\b\s*[:?]\s*/i, '')
@@ -1349,9 +1339,11 @@ function parseProductSummary(text, fallbackTitle) {
 
   return {
     productName,
-    newPrice: String(parsed.newPrice || '').trim(),
-    description: String(parsed.description || (!parsed.productName && rawAsDescription ? rawAsDescription.slice(0, 220) : '')).trim(),
-    makerOrSeller: String(parsed.makerOrSeller || '').trim(),
+    newPrice: stripGroundingArtifacts(String(parsed.newPrice || '')),
+    description: stripGroundingArtifacts(
+      String(parsed.description || (!parsed.productName && rawAsDescription ? rawAsDescription.slice(0, 220) : ''))
+    ),
+    makerOrSeller: stripGroundingArtifacts(String(parsed.makerOrSeller || '')),
     searchQuery,
     searchQueries,
     newPriceSourceUrl: normalizeProductImageUrl(parsed.newPriceSourceUrl),
@@ -2151,7 +2143,7 @@ async function runProductInfoLookup(apiKey, model, productName, listing = {}) {
   const jsonPrompt = renderPrompt(PROMPTS.productInfoLookup, {
     productName: name,
     title: title || '(제목 없음)',
-    researchText: String(researchText || '').trim() || '(조사 결과 없음)',
+    researchText: stripGroundingArtifacts(String(researchText || '').trim()) || '(조사 결과 없음)',
   });
   return geminiGenerateFromParts(apiKey, model, [{ text: jsonPrompt }], {
     temperature: 0.05,

@@ -111,7 +111,7 @@ const APP_SHORTCUT_GROUPS = [
   {
     title: '기본',
     items: [
-      ['Esc', '열린 팝업·AI 비서 닫기'],
+      ['Esc', '열린 팝업·도우미 닫기'],
       ['/', '매물 URL 입력 열기'],
       ['?', '단축키 패널 열기/닫기'],
       ['R', '전체 재분석'],
@@ -141,7 +141,7 @@ const APP_SHORTCUT_GROUPS = [
       ['↑ / ↓', '화면 위/아래 스크롤'],
       ['I, P, F', '매물 사진 전체보기'],
       ['Shift+I / X', '하자/이미지 분석 사진 전체보기'],
-      ['A', 'AI 비서 열기/닫기'],
+      ['A', '도우미 열기/닫기'],
     ],
   },
 ];
@@ -167,8 +167,8 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v25';
-const LISTING_IMAGE_OVERLAY_VERSION = 32;
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v26';
+const LISTING_IMAGE_OVERLAY_VERSION = 33;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 4;
 const IMAGE_DEFECT_MARKER_MAX_PERCENT = 72;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
@@ -195,6 +195,7 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v22',
   'ulsa_ai_analysis_cache_v23',
   'ulsa_ai_analysis_cache_v24',
+  'ulsa_ai_analysis_cache_v25',
 ];
 
 function mapToPersistableObject(map) {
@@ -1972,8 +1973,21 @@ function meaningfulListingTextAnalysis(analysis) {
   };
 }
 
+function stripGroundingArtifacts(text) {
+  let s = String(text || '');
+  if (!s) return '';
+  s = s.replace(/[\uE000-\uF8FF\uFFFC]/g, '');
+  s = s.replace(/\[\s*(?:search|\d+|cite|web|source)\s*\]/gi, '');
+  s = s.replace(/【\s*\d+\s*】/g, '');
+  s = s.replace(/([가-힣A-Za-z0-9])search(?=[가-힣]|과|은|는|을|를|이|가|와|의|로|에|및|,|\.|;|:|\s|$)/gi, '$1');
+  s = s.replace(/(^|[\s,])search(?=[가-힣]|과|은|는|을|를|이|가|와|의|로|에|및|,|\.|\s|$)/gi, '$1');
+  s = s.replace(/\s{2,}/g, ' ');
+  s = s.replace(/\s+([,.])/g, '$1');
+  return s.trim();
+}
+
 function productSummaryDescription(summary, item) {
-  if (summary?.description) return summary.description;
+  if (summary?.description) return stripGroundingArtifacts(summary.description);
   return '제품 상세 정보가 비어 있습니다. 제품 정리 다시 시도를 눌러 정보 조회를 다시 실행하세요.';
 }
 
@@ -4860,7 +4874,7 @@ async function ensureDirectAiKeywords(item = currentRenderedItem()) {
 function directAiPrompt(question, item = currentRenderedItem()) {
   const context = directAiContext(item);
   return [
-    '너는 중고 매물 분석 화면에서 제품 용어를 설명하고 사용자의 요청을 실행하는 AI 비서입니다.',
+    '너는 중고 매물 분석 화면에서 제품 용어를 설명하고 사용자의 요청을 실행하는 도우미입니다.',
     '중고거래 일반 용어는 웬만하면 설명하지 말고, 제품/브랜드/장르/기기 구조/펌웨어/부품/캐릭터/제조사처럼 해당 제품을 모르면 생소할 수 있는 정보만 중심으로 설명하세요.',
     '현재 완료된 단계까지만 확정적으로 말하고, 아직 나오지 않은 분석은 추측하지 마세요.',
     '답변은 한국어 일반 텍스트로 짧고 친절하게 작성하세요. 용어가 무엇인지 먼저 설명하고, 중고로 살 때 확인할 점이 있으면 1~2문장으로만 덧붙이세요.',
@@ -4900,7 +4914,7 @@ function renderDirectAiSuggestionsHtml() {
   if (chips.length) {
     return chips.map((chip) => `<button type="button" data-direct-chat-keyword="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`).join('');
   }
-  return `<p>${directAiChat.keywordStatus === 'loading' ? 'AI가 제품 관련 키워드를 고르는 중...' : 'AI 비서가 제품 관련 질문과 분석 요청을 도와줍니다.'}</p>`;
+  return `<p>${directAiChat.keywordStatus === 'loading' ? 'AI가 제품 관련 키워드를 고르는 중...' : '도우미가 제품 관련 질문과 분석 요청을 도와줍니다.'}</p>`;
 }
 
 function bindDirectAiKeywordButtons(root = $directAiPanel) {
@@ -4932,7 +4946,7 @@ function renderDirectAiPanel() {
         .map(
           (msg) => `
             <div class="direct-chat-msg direct-chat-msg--${escapeAttr(msg.role || 'ai')}">
-              <span>${msg.role === 'user' ? '나' : 'AI 비서'}</span>
+              <span>${msg.role === 'user' ? '나' : '도우미'}</span>
               <p>${escapeHtml(msg.text || '')}</p>
               ${
                 msg.meta?.confirmActionId
@@ -4952,7 +4966,7 @@ function renderDirectAiPanel() {
       </div>`;
   const loadingRow =
     directAiChat.status === 'loading'
-      ? `<div class="direct-chat-msg direct-chat-msg--ai direct-chat-msg--loading"><span>AI 비서</span><p>분석 맥락을 읽고 답변 중...</p></div>`
+      ? `<div class="direct-chat-msg direct-chat-msg--ai direct-chat-msg--loading"><span>도우미</span><p>분석 맥락을 읽고 답변 중...</p></div>`
       : '';
   $directAiPanel.hidden = !directAiChat.open;
   $directAiPanel.setAttribute('aria-hidden', directAiChat.open ? 'false' : 'true');
@@ -4962,13 +4976,13 @@ function renderDirectAiPanel() {
     <article class="direct-chat-card">
       <div class="direct-chat-head">
         <div>
-          <p class="stage-two-card-label">AI 비서</p>
+          <p class="stage-two-card-label">도우미</p>
           <h3>모르는 용어 설명부터 분석 요청까지 도와드려요</h3>
           <span data-direct-chat-stage>${escapeHtml(directAiStepLabel(item))}</span>
         </div>
         <div class="direct-chat-actions">
           <button type="button" class="chip-btn direct-chat-clear">지우기</button>
-          <button type="button" class="chip-btn direct-chat-close" aria-label="AI 비서 닫기">×</button>
+          <button type="button" class="chip-btn direct-chat-close" aria-label="도우미 닫기">×</button>
         </div>
       </div>
       ${renderDirectAiCommandChipsHtml(item)}
@@ -4978,8 +4992,8 @@ function renderDirectAiPanel() {
       <div class="direct-chat-log">${rows}${loadingRow}</div>
       <form class="direct-chat-form">
         <textarea name="prompt" rows="2" placeholder="${escapeAttr(defaultPrompt)}"${directAiChat.status === 'loading' ? ' disabled' : ''}></textarea>
-        <button type="submit" class="btn btn-small direct-chat-submit" aria-label="AI 비서에게 보내기"${directAiChat.status === 'loading' ? ' disabled' : ''}>
-          <span class="material-symbols-rounded" aria-hidden="true">${directAiChat.status === 'loading' ? 'more_horiz' : 'auto_awesome'}</span>
+        <button type="submit" class="btn btn-small direct-chat-submit" aria-label="도우미에게 보내기"${directAiChat.status === 'loading' ? ' disabled' : ''}>
+          <span class="material-symbols-rounded" aria-hidden="true">${directAiChat.status === 'loading' ? 'more_horiz' : 'send'}</span>
         </button>
       </form>
     </article>
