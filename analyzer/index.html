@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Buy or Bye · 중고매물 살까말까</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="logo-buyorbye-orange.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="logo-buyorbye-orange.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -12,7 +13,7 @@
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0"
     />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
-    <link rel="stylesheet" href="style.css?v=20260916-imgfix3" />
+    <link rel="stylesheet" href="style.css?v=20260916-header1" />
   </head>
   <body>
     <div id="apiFatalModal" class="api-fatal-modal" hidden aria-hidden="true" role="alertdialog" aria-modal="true" aria-labelledby="apiFatalTitle" aria-describedby="apiFatalBody">
@@ -199,6 +200,7 @@
       </aside>
       <header class="top">
         <button type="button" class="brand brand-home" data-home-action aria-label="처음 화면으로 돌아가기" title="처음 화면으로">
+          <img class="bob-logo brand-icon" src="logo-buyorbye-orange.png" width="32" height="32" alt="" aria-hidden="true" decoding="async" />
           <div>
             <h1>중고매물 살까말까</h1>
             <p class="sub">Buy or Bye · 가격·하자·네고까지 구매 판단을 도와줍니다.</p>
@@ -206,6 +208,16 @@
         </button>
         <form id="urlImportForm" class="url-import" autocomplete="off">
           <label class="url-import__label" for="urlImportInput">매물 URL</label>
+          <button
+            type="button"
+            id="btnUrlPasteImport"
+            class="url-import__paste"
+            data-tooltip="클립보드 링크를 붙여넣고 바로 분석"
+            title="클립보드 링크를 붙여넣고 바로 분석"
+            aria-label="클립보드 링크를 붙여넣고 바로 분석"
+          >
+            <span class="material-symbols-rounded" aria-hidden="true">content_paste</span>
+          </button>
           <input
             id="urlImportInput"
             class="url-import__input"
@@ -214,7 +226,9 @@
             placeholder="매물 URL 붙여넣기"
             aria-label="매물 URL"
           />
-          <button type="submit" id="btnUrlImport" class="btn btn-small url-import__submit">불러오기</button>
+          <button type="submit" id="btnUrlImport" class="btn btn-small url-import__submit url-import__submit--icon" title="매물 불러오기" aria-label="매물 불러오기">
+            <span class="material-symbols-rounded" aria-hidden="true">search</span>
+          </button>
           <label class="auto-run-toggle" title="대기 버튼 없이 가능한 다음 단계를 자동으로 진행합니다.">
             <input id="autoRunToggle" type="checkbox" />
             <span class="auto-run-toggle__track" aria-hidden="true"><i></i></span>
@@ -307,6 +321,6 @@
     <script src="ai/config.js?v=20260916-imginit1"></script>
     <script src="ai/client.js?v=20260916-imginit1"></script>
     <script src="ai/gate.js?v=20260916-imginit1"></script>
-    <script src="app.js?v=20260916-imgfix3"></script>
+    <script src="app.js?v=20260916-header1"></script>
   </body>
 </html>
