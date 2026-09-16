@@ -17542,3 +17542,120 @@ body.theme-dark .product-image-skeleton {
   max-height: none !important;
   align-items: stretch !important;
 }
+
+/* —— header-rail-fix2: visible logo/paste/search + market glyphs —— */
+body .app-shell .dashboard-rail {
+  bottom: auto !important;
+  height: auto !important;
+  max-height: calc(100dvh - 1.7rem) !important;
+  padding-bottom: 0.5rem !important;
+}
+body .app-shell .dashboard-rail__market-links {
+  display: grid !important;
+  gap: 0.22rem !important;
+  width: 3.78rem !important;
+  margin-top: 0.42rem !important;
+  margin-bottom: 0 !important;
+  padding: 0.28rem 0.2rem !important;
+}
+body .app-shell .dashboard-rail__market-link--joongna {
+  display: none !important;
+}
+body .app-shell .dashboard-rail__market-link {
+  display: grid !important;
+  place-items: center !important;
+  position: relative !important;
+  min-height: 2.55rem !important;
+  padding: 0.28rem 0 !important;
+  color: #fff !important;
+}
+body .app-shell .dashboard-rail__market-link .market-shortcut__glyph,
+body .app-shell .dashboard-rail__market-link .market-shortcut__icon,
+body .app-shell .dashboard-rail__market-link small {
+  display: none !important;
+}
+body .app-shell .dashboard-rail__market-link--daangn::before,
+body .app-shell .dashboard-rail__market-link--bunjang::before {
+  content: '' !important;
+  display: block !important;
+  width: 1.42rem !important;
+  height: 1.42rem !important;
+  background: #fff !important;
+  -webkit-mask-repeat: no-repeat !important;
+  mask-repeat: no-repeat !important;
+  -webkit-mask-position: center !important;
+  mask-position: center !important;
+  -webkit-mask-size: contain !important;
+  mask-size: contain !important;
+}
+body .app-shell .dashboard-rail__market-link--daangn::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 1.4c-1.7 2.1-2.5 4-2.4 5.5 1.1-.55 1.95-.85 2.4-.85.45 0 1.3.3 2.4.85.1-1.5-.7-3.4-2.4-5.5Zm-4.7 1.9c.05 1.85.75 3.4 1.85 4.5.95-.85 1.6-2 1.85-3.25-1.15-.65-2.55-1.15-3.7-1.25Zm9.4 0c-1.15.1-2.55.6-3.7 1.25.25 1.25.9 2.4 1.85 3.25 1.1-1.1 1.8-2.65 1.85-4.5ZM9 8.15c-2.05.9-3.35 3.25-3.1 5.95.35 3.7 3.25 7.35 5.45 8.9.4.28.9.28 1.3 0 2.2-1.55 5.1-5.2 5.45-8.9.25-2.7-1.05-5.05-3.1-5.95-1.3-.55-2.95-.55-4.15 0-.3.15-.6.3-.85.5Z'/%3E%3C/svg%3E") !important;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M12 1.4c-1.7 2.1-2.5 4-2.4 5.5 1.1-.55 1.95-.85 2.4-.85.45 0 1.3.3 2.4.85.1-1.5-.7-3.4-2.4-5.5Zm-4.7 1.9c.05 1.85.75 3.4 1.85 4.5.95-.85 1.6-2 1.85-3.25-1.15-.65-2.55-1.15-3.7-1.25Zm9.4 0c-1.15.1-2.55.6-3.7 1.25.25 1.25.9 2.4 1.85 3.25 1.1-1.1 1.8-2.65 1.85-4.5ZM9 8.15c-2.05.9-3.35 3.25-3.1 5.95.35 3.7 3.25 7.35 5.45 8.9.4.28.9.28 1.3 0 2.2-1.55 5.1-5.2 5.45-8.9.25-2.7-1.05-5.05-3.1-5.95-1.3-.55-2.95-.55-4.15 0-.3.15-.6.3-.85.5Z'/%3E%3C/svg%3E") !important;
+}
+body .app-shell .dashboard-rail__market-link--bunjang::before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M13.15.7 3.2 14.2h7.35l-1.15 9.1L20.8 9.05h-7.4L13.15.7Z'/%3E%3C/svg%3E") !important;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='black' d='M13.15.7 3.2 14.2h7.35l-1.15 9.1L20.8 9.05h-7.4L13.15.7Z'/%3E%3C/svg%3E") !important;
+}
+
+body .app-shell .top .brand.brand-home {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.55rem !important;
+  overflow: visible !important;
+}
+body .app-shell .top .brand.brand-home .bob-logo.brand-icon,
+body .app-shell .top .bob-logo.brand-icon,
+body .app-shell .top img.brand-icon {
+  display: block !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  max-width: 40px !important;
+  max-height: 40px !important;
+  flex: 0 0 40px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  object-fit: contain !important;
+}
+
+body .app-shell .top .url-import__paste {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 2.1rem !important;
+  height: 2.1rem !important;
+  min-width: 2.1rem !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  overflow: visible !important;
+}
+body .app-shell .top .url-import__paste .material-symbols-rounded {
+  display: block !important;
+  font-size: 1.12rem !important;
+  line-height: 1 !important;
+  color: #475569 !important;
+  opacity: 1 !important;
+}
+
+body .app-shell .top .url-import__submit,
+body .app-shell #btnUrlImport {
+  display: inline-grid !important;
+  place-items: center !important;
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+  min-width: 2.35rem !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  color: #fff !important;
+}
+body .app-shell .top .url-import__submit .material-symbols-rounded {
+  display: none !important;
+}
+body .app-shell .top .url-import__search-icon {
+  display: block !important;
+  width: 1.15rem !important;
+  height: 1.15rem !important;
+  color: #fff !important;
+  stroke: currentColor !important;
+}
