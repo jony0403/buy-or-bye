@@ -16589,28 +16589,7 @@ body.theme-dark .market-shortcut--joongna {
 
 /* —— url import loading feedback —— */
 .url-import__status {
-  display: none;
-  grid-column: 1 / -1;
-  margin: 0.15rem 0.35rem 0.2rem;
-  padding: 0 0.35rem;
-  font-size: 0.78rem;
-  font-weight: 650;
-  line-height: 1.4;
-}
-.url-import__status:not([hidden]):not(:empty) {
-  display: block;
-}
-.url-import__status[data-tone='loading'] {
-  color: #0f766e;
-}
-.url-import__status[data-tone='success'] {
-  color: #07855c;
-}
-.url-import__status[data-tone='error'] {
-  color: #d80027;
-}
-.url-import.is-importing {
-  box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.22), 0 12px 30px rgba(17, 24, 39, 0.08);
+  display: none !important;
 }
 .url-import.is-importing .url-import__submit {
   position: relative;

@@ -2362,7 +2362,7 @@ function parsePurchaseReceipt(text) {
     cautions: normalizeReceiptList(parsed.cautions, 4),
     disclaimer:
       String(parsed.disclaimer || recoverJsonStringField(text, 'disclaimer') || '').replace(/\s+/g, ' ').trim() ||
-      '? ???? AI? ??? ?? ??? ??? ?? ??? ???? ?? ?? ?????. ??? ???? ?? ??? ??? ?? ??? ??????, ?? ????????? ??? ?? ???? ???.',
+      '이 영수증은 AI가 제한된 화면 정보와 수집된 비교 매물을 바탕으로 만든 참고 의견입니다. 가격은 감정가나 확정 기준이 아니라 구매 판단용 참고자료이며, 실제 하자·구성품·거래 조건은 직접 확인해야 합니다.',
     parseOk: Boolean(Object.keys(parsed).length),
   };
 }
@@ -2424,12 +2424,12 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
   for (const s of list) {
     const index = Number(s?.index) || messageParts.length + 1;
     if (s?.part) {
-      messageParts.push({ text: `${index}? ?? ?????. ?? ?? ??? ?? ? ???? ?????.` });
+      messageParts.push({ text: `${index}번 사진 원본입니다. 실제 하자 여부를 먼저 이 원본에서 확인하세요.` });
       messageParts.push(s.part);
     }
     if (s?.gridPart) {
       messageParts.push({
-        text: `${index}? ??? 25?(A-Y) ? 25?(1-25) ?? ???? ??? ??? ?? ??????. defects[].gridCenter? defects[].gridSizeCells? ??? ? ??? ???? ???? ?????.`,
+        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요.`,
       });
       messageParts.push(s.gridPart);
     }
@@ -3550,6 +3550,19 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end(e instanceof Error ? e.message : String(e));
     }
+    return;
+  }
+
+
+  // Championship: do not expose trademark assets / extension install guide via static root.
+  if (
+    req.method === 'GET' &&
+    (/^\/market-logos(?:\/|$)/i.test(url.pathname) ||
+      /^\/install-guide(?:\/|$)/i.test(url.pathname) ||
+      /^\/icons\//i.test(url.pathname))
+  ) {
+    res.writeHead(404);
+    res.end('Not Found');
     return;
   }
 

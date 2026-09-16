@@ -12866,14 +12866,20 @@ function setUrlImportBusy(busy, message = '') {
 }
 
 function setUrlImportStatus(message = '', tone = '') {
+  // Top-bar status chip stayed noisy (green loading / success). Loading = overlay only; errors = toast.
   if ($urlImportStatus) {
-    $urlImportStatus.textContent = message;
-    $urlImportStatus.dataset.tone = tone || '';
-    $urlImportStatus.hidden = !message;
+    $urlImportStatus.textContent = '';
+    $urlImportStatus.dataset.tone = '';
+    $urlImportStatus.hidden = true;
   }
   if ($railStatus) {
-    $railStatus.textContent = message || '링크를 붙여넣으면 기존 분석 흐름으로 바로 전달됩니다.';
-    $railStatus.dataset.tone = tone || '';
+    if (tone === 'error' && message) {
+      $railStatus.textContent = message;
+      $railStatus.dataset.tone = 'error';
+    } else {
+      $railStatus.textContent = '링크를 붙여넣으면 기존 분석 흐름으로 바로 전달됩니다.';
+      $railStatus.dataset.tone = '';
+    }
   }
   setUrlImportBusy(tone === 'loading', message || '매물을 불러오는 중…');
 }
@@ -12900,10 +12906,11 @@ function requestListingUrlImport(rawUrl) {
   const url = supportedListingUrl(rawUrl);
   if (!url) {
     setUrlImportStatus('지원 URL 아님 (당근·번개·중고나라)', 'error');
+    showAppToast?.('지원 URL 아님 (당근·번개·중고나라)');
     return;
   }
   pendingImportUrl = url;
-  setUrlImportStatus('매물 페이지에서 사진·가격을 가져오는 중…', 'loading');
+  setUrlImportStatus('페이지에서 사진·가격을 가져오고 있습니다…', 'loading');
   void (async () => {
     try {
       const res = await fetch('/api/import-listing', {
@@ -12929,7 +12936,9 @@ function requestListingUrlImport(rawUrl) {
       closeRailPanel();
     } catch (e) {
       if (pendingImportUrl === url) pendingImportUrl = '';
-      setUrlImportStatus(e instanceof Error ? e.message : '불러오기 실패', 'error');
+      const errMsg = e instanceof Error ? e.message : '불러오기 실패';
+      setUrlImportStatus(errMsg, 'error');
+      showAppToast?.(errMsg);
     }
   })();
 }
