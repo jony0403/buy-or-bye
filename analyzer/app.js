@@ -46,6 +46,7 @@ const productSummaries = new Map();
 const productSummaryLocks = new Set();
 const photoIndexes = new Map();
 const photoDirections = new Map();
+const photoSliderBusyKeys = new Set();
 const relatedRequestedKeys = new Set();
 const productImageSearches = new Set();
 const imageAnalysisIndexes = new Map();
@@ -164,8 +165,8 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v22';
-const LISTING_IMAGE_OVERLAY_VERSION = 30;
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v23';
+const LISTING_IMAGE_OVERLAY_VERSION = 31;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 4;
 const IMAGE_DEFECT_MARKER_MAX_PERCENT = 72;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
@@ -2104,11 +2105,24 @@ function danawaPriceUrl(summary) {
 }
 
 function isSampleListing(item) {
-  if (activeDemoScenarioId) return true;
   const id = String(item?.itemId || '');
   if (/^demo-/i.test(id)) return true;
-  const url = String(item?.pageUrl || '');
-  return /\/products\/demo-/i.test(url) || /\/demo\//i.test(url);
+  const url = String(item?.pageUrl || item?.url || item?.listingUrl || item?.sourceUrl || '');
+  if (/\/products\/demo-/i.test(url) || /\/articles\/demo-/i.test(url) || /\/demo\//i.test(url)) return true;
+  const images = Array.isArray(item?.imageUrls) ? item.imageUrls : [];
+  if (images.some((u) => String(u || '').includes('/demo-images/'))) return true;
+  return false;
+}
+
+function listingOpenLinkHtml(item, { linkClass = 'link', disabledClass = 'link link--disabled' } = {}) {
+  if (isSampleListing(item)) {
+    return `<span class="${disabledClass}" title="샘플 매물이라 원본 판매글이 없습니다.">판매글 없음</span>`;
+  }
+  const href = listingPageUrl(item);
+  if (!href) {
+    return `<span class="${disabledClass}" title="원본 판매글 URL을 찾지 못했습니다.">판매글 없음</span>`;
+  }
+  return `<a class="${linkClass}" href="${escapeAttr(href)}" target="_blank" rel="noopener">판매글 열기</a>`;
 }
 
 function productSummaryImages(summary, item) {
@@ -5647,13 +5661,10 @@ function renderSellerChatMeta(item) {
           <p>${escapeHtml([platform, sellerText].filter(Boolean).join(' · '))}</p>
         </div>
       </div>
-      ${
-        isSampleListing(item)
-          ? '<span class="seller-chat__listing-link seller-chat__listing-link--disabled">판매글 없음</span>'
-          : item?.pageUrl
-            ? `<a class="seller-chat__listing-link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>`
-            : ''
-      }
+      ${listingOpenLinkHtml(item, {
+        linkClass: 'seller-chat__listing-link',
+        disabledClass: 'seller-chat__listing-link seller-chat__listing-link--disabled',
+      })}
     </div>
   `;
 }
@@ -8871,8 +8882,6 @@ function renderPhotoSlider(item) {
   if (!urls.length) return '<span class="empty">없음</span>';
   const key = itemKey(item);
   const idx = Math.min(Math.max(photoIndexes.get(key) || 0, 0), urls.length - 1);
-  const dir = photoDirections.get(key) || 0;
-  const animClass = dir > 0 ? ' slide-next' : dir < 0 ? ' slide-prev' : '';
   const src = urls[idx];
   const lightboxItems = JSON.stringify(lightboxImageItems(urls));
   const dots = urls
@@ -8881,15 +8890,18 @@ function renderPhotoSlider(item) {
   return `
     <div class="photo-slider" data-photo-slider>
       <button type="button" class="photo-nav prev" data-photo-dir="-1" ${urls.length < 2 ? 'disabled' : ''}>‹</button>
-      <img
-        class="zoomable photo-main${animClass}"
-        src="${escapeAttr(src)}"
-        data-full="${escapeAttr(src)}"
-        data-lightbox-items="${escapeAttr(lightboxItems)}"
-        data-lightbox-index="${idx}"
-        alt=""
-        loading="lazy"
-      />
+      <div class="photo-slider__stage">
+        <img
+          class="zoomable photo-main"
+          src="${escapeAttr(src)}"
+          data-full="${escapeAttr(src)}"
+          data-lightbox-items="${escapeAttr(lightboxItems)}"
+          data-lightbox-index="${idx}"
+          alt=""
+          loading="eager"
+          decoding="async"
+        />
+      </div>
       <button type="button" class="photo-nav next" data-photo-dir="1" ${urls.length < 2 ? 'disabled' : ''}>›</button>
       <div class="photo-count">${idx + 1}/${urls.length}</div>
       <div class="photo-dots">${dots}</div>
@@ -9419,13 +9431,7 @@ function renderItem(item, comps) {
         <article class="mini-card mini-card--hero">
           <div class="listing-head">
             <span class="badge ${plat}">${escapeHtml(item.platformLabel || item.platform)}</span>
-            ${
-            isSampleListing(item)
-              ? '<span class="link link--disabled" title="샘플 매물이라 원본 판매글이 없습니다.">판매글 없음</span>'
-              : item.pageUrl
-                ? `<a class="link" href="${escapeAttr(item.pageUrl)}" target="_blank" rel="noopener">판매글 열기</a>`
-                : ''
-          }
+            ${listingOpenLinkHtml(item)}
           </div>
           <div>
             <h3 class="item-title hover-full" title="${escapeAttr(item.title || '(제목 없음)')}">${
@@ -9695,32 +9701,127 @@ function bindImageZoom(root) {
   });
 }
 
+function preloadListingImage(src) {
+  return new Promise((resolve) => {
+    const url = String(src || '').trim();
+    if (!url) {
+      resolve(false);
+      return;
+    }
+    const img = new Image();
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    img.onload = () => {
+      if (typeof img.decode === 'function') {
+        img.decode().then(() => finish(true)).catch(() => finish(true));
+      } else {
+        finish(true);
+      }
+    };
+    img.onerror = () => finish(false);
+    img.src = url;
+    if (img.complete && img.naturalWidth > 0) {
+      img.onload = null;
+      if (typeof img.decode === 'function') {
+        img.decode().then(() => finish(true)).catch(() => finish(true));
+      } else {
+        finish(true);
+      }
+    }
+  });
+}
+
+function preloadNeighborListingPhotos(urls, idx) {
+  const list = Array.isArray(urls) ? urls : [];
+  if (list.length < 2) return;
+  const len = list.length;
+  const order = [1, -1, 2, -2]
+    .map((delta) => list[(idx + delta + len) % len])
+    .filter((src, i, arr) => src && arr.indexOf(src) === i && src !== list[idx]);
+  order.forEach((src) => {
+    void preloadListingImage(src);
+  });
+}
+
+function syncPhotoSliderChrome(slider, idx, total) {
+  const count = slider?.querySelector('.photo-count');
+  if (count) count.textContent = `${idx + 1}/${total}`;
+  slider?.querySelectorAll('.photo-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i === idx);
+  });
+}
+
+async function advancePhotoSlider(item, dir) {
+  const urls = uniqueImageList(item.imageUrls || []);
+  if (urls.length < 2 || !dir) return;
+  const key = itemKey(item);
+  if (!key || photoSliderBusyKeys.has(key)) return;
+  const slider = $current?.querySelector('[data-photo-slider]');
+  if (!slider) return;
+  const stage = slider.querySelector('.photo-slider__stage');
+  const currentImg = stage?.querySelector('.photo-main:not(.photo-main--leave)');
+  const current = photoIndexes.get(key) || 0;
+  const nextIdx = (current + dir + urls.length) % urls.length;
+  const nextSrc = urls[nextIdx];
+  photoSliderBusyKeys.add(key);
+  slider.classList.add('is-photo-busy');
+  try {
+    await Promise.race([preloadListingImage(nextSrc), new Promise((resolve) => window.setTimeout(resolve, 1600))]);
+    if (!stage || !currentImg || !$current?.contains(slider)) {
+      photoIndexes.set(key, nextIdx);
+      photoDirections.set(key, dir);
+      refreshPhotoSlider(item);
+      return;
+    }
+    const incoming = currentImg.cloneNode(false);
+    incoming.className = `zoomable photo-main ${dir > 0 ? 'slide-next' : 'slide-prev'}`;
+    incoming.src = nextSrc;
+    incoming.setAttribute('data-full', nextSrc);
+    incoming.setAttribute('data-lightbox-index', String(nextIdx));
+    incoming.setAttribute('loading', 'eager');
+    incoming.setAttribute('decoding', 'async');
+    currentImg.classList.add('photo-main--leave', dir > 0 ? 'slide-out-next' : 'slide-out-prev');
+    stage.appendChild(incoming);
+    photoIndexes.set(key, nextIdx);
+    photoDirections.set(key, dir);
+    syncPhotoSliderChrome(slider, nextIdx, urls.length);
+    bindImageZoom(slider);
+    await new Promise((resolve) => window.setTimeout(resolve, 320));
+    if (currentImg.parentNode) currentImg.remove();
+    incoming.classList.remove('slide-next', 'slide-prev');
+    preloadNeighborListingPhotos(urls, nextIdx);
+  } finally {
+    photoSliderBusyKeys.delete(key);
+    slider.classList.remove('is-photo-busy');
+    window.setTimeout(() => photoDirections.delete(key), 80);
+  }
+}
+
 function bindPhotoSlider(root, item) {
   window.clearInterval(photoSliderAutoTimer);
+  photoSliderAutoTimer = 0;
+  const slider = root?.matches?.('[data-photo-slider]') ? root : root?.querySelector?.('[data-photo-slider]');
+  const urls = uniqueImageList(item?.imageUrls || []);
+  const key = itemKey(item);
+  const idx = Math.min(Math.max(photoIndexes.get(key) || 0, 0), Math.max(0, urls.length - 1));
+  preloadNeighborListingPhotos(urls, idx);
   root?.querySelectorAll('[data-photo-dir]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const urls = item.imageUrls || [];
       if (urls.length < 2) return;
-      const key = itemKey(item);
       const dir = Number(btn.getAttribute('data-photo-dir')) || 0;
-      const current = photoIndexes.get(key) || 0;
-      photoIndexes.set(key, (current + dir + urls.length) % urls.length);
-      photoDirections.set(key, dir);
-      refreshPhotoSlider(item);
+      void advancePhotoSlider(item, dir);
     });
   });
-  const urls = item?.imageUrls || [];
-  if (urls.length > 1) {
-    const key = itemKey(item);
+  if (urls.length > 1 && key) {
     photoSliderAutoTimer = window.setInterval(() => {
-      if (selectedKey !== key || ($lightbox && !$lightbox.hidden)) return;
-      const current = photoIndexes.get(key) || 0;
-      photoDirections.set(key, 1);
-      photoIndexes.set(key, (current + 1) % urls.length);
-      refreshPhotoSlider(item);
-      setTimeout(() => photoDirections.delete(key), 260);
+      if (selectedKey !== key || ($lightbox && !$lightbox.hidden) || photoSliderBusyKeys.has(key)) return;
+      void advancePhotoSlider(item, 1);
     }, 6000);
   }
 }
@@ -10980,11 +11081,12 @@ window.addEventListener('resize', () => {
 function refreshPhotoSlider(item) {
   const current = $current.querySelector('[data-photo-slider]');
   if (!current) return;
+  const keepBusy = photoSliderBusyKeys.has(itemKey(item));
   current.outerHTML = renderPhotoSlider(item);
   const updated = $current.querySelector('[data-photo-slider]');
+  if (keepBusy) updated?.classList.add('is-photo-busy');
   bindImageZoom(updated);
   bindPhotoSlider(updated, item);
-  setTimeout(() => photoDirections.delete(itemKey(item)), 260);
 }
 
 function bindProductImageSearch(root, item) {
@@ -11162,6 +11264,7 @@ function resetCurrentAnalysisRuntimeState() {
 
 function activateListingItem(item, opts = {}) {
   if (!item) return;
+  if (!isSampleListing(item)) activeDemoScenarioId = '';
   item = normalizeListingItem(item);
   const key = itemKey(item);
   const currentKey = selectedKey || (latest ? itemKey(latest) : '');
@@ -13406,6 +13509,7 @@ function requestListingUrlImport(rawUrl) {
       setUrlImportStatus('', '');
       if ($urlImportInput) $urlImportInput.value = '';
       if ($railUrlInput) $railUrlInput.value = '';
+      activeDemoScenarioId = '';
       releaseLandingHold();
       rememberImportedListing(data.listing);
       activateListingItem(data.listing, { skipIfSameActive: true, comps: null });

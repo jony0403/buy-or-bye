@@ -777,6 +777,7 @@ async function createImageGridPart(buf, preNormalized = null) {
         data,
       },
       dataUrl: `data:image/jpeg;base64,${data}`,
+      buf: out,
       width,
       height,
       normalizedBuf: normalizedBuf,
@@ -866,6 +867,7 @@ async function fetchImageUrlToInlineSource(url) {
     gridPart: grid ? { inline_data: grid.inline_data } : null,
     gridImageUrl: grid?.dataUrl || '',
     gridMeta: grid?.meta || null,
+    gridBuf: grid?.buf || null,
     normalizedBuf: normalized.buf,
     width: normalized.width || grid?.width || 0,
     height: normalized.height || grid?.height || 0,
@@ -1766,14 +1768,66 @@ function gridColumnIndex(label) {
   return n - 1;
 }
 
-function gridCenterToMarker(gridCenter, gridSizeCells, gridCols = 25, gridRows = 25) {
-  const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
-  const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
-  const match = String(gridCenter || '').trim().toUpperCase().match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
+function parseGridCell(label, cols = 25, rows = 25) {
+  const match = String(label || '')
+    .trim()
+    .toUpperCase()
+    .match(/^([A-Z]{1,2})\s*0?([1-9]|[1-9][0-9])$/);
   if (!match) return null;
   const col = gridColumnIndex(match[1]);
   const row = Number(match[2]) - 1;
   if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
+  return { col, row, label: `${match[1]}${Number(match[2])}` };
+}
+
+function parseGridRangePair(raw) {
+  const value = String(raw || '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  const match = value.match(/^([A-Z]{1,2}[1-9][0-9]?)[:~\-–—]([A-Z]{1,2}[1-9][0-9]?)$/);
+  if (!match) return { start: '', end: '' };
+  return { start: match[1], end: match[2] };
+}
+
+function gridRangeToMarker(startLabel, endLabel, gridCols = 25, gridRows = 25) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
+  const start = parseGridCell(startLabel, cols, rows);
+  const end = parseGridCell(endLabel, cols, rows);
+  if (!start || !end) return null;
+  const c0 = Math.min(start.col, end.col);
+  const c1 = Math.max(start.col, end.col);
+  const r0 = Math.min(start.row, end.row);
+  const r1 = Math.max(start.row, end.row);
+  const cellCols = Math.max(3, c1 - c0 + 1);
+  const cellRows = Math.max(3, r1 - r0 + 1);
+  const width = Math.min(72, (cellCols / cols) * 100);
+  const height = Math.min(72, (cellRows / rows) * 100);
+  const center = {
+    x: ((((c0 + c1) / 2) + 0.5) / cols) * 100,
+    y: ((((r0 + r1) / 2) + 0.5) / rows) * 100,
+  };
+  return {
+    center,
+    size: { width, height },
+    bbox: {
+      x: center.x - width / 2,
+      y: center.y - height / 2,
+      width,
+      height,
+    },
+    gridSizeCells: { cols: cellCols, rows: cellRows },
+  };
+}
+
+function gridCenterToMarker(gridCenter, gridSizeCells, gridCols = 25, gridRows = 25) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
+  const cell = parseGridCell(gridCenter, cols, rows);
+  if (!cell) return null;
+  const col = cell.col;
+  const row = cell.row;
   const size = gridSizeCells || { cols: 5, rows: 5 };
   const cellCols = Math.max(3, Math.min(cols, Number(size.cols) || 5));
   const cellRows = Math.max(3, Math.min(rows, Number(size.rows) || cellCols));
@@ -1869,88 +1923,113 @@ function readPercentSize(raw, fallback = {}) {
   };
 }
 
+function normalizeImageDefect(defect) {
+  if (!defect || typeof defect !== 'object') return null;
+  const bbox = defect.bbox || defect.bboxPercent || defect.box || defect.rect || defect.area || null;
+  const impactCell = String(defect.impactCell || '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  const gridCenter = String(defect.gridCenter || defect.centerCell || defect.centerGrid || defect.centerGridCell || impactCell || '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  const parsedRange = parseGridRangePair(defect.gridRange || defect.gridCell || defect.range || '');
+  const gridStart = String(defect.gridStart || defect.startCell || parsedRange.start || '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  const gridEnd = String(defect.gridEnd || defect.endCell || parsedRange.end || '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  let gridSizeCells = normalizeGridSizeCells(defect.gridSizeCells || defect.gridSize || defect.sizeCells || defect.cellSize);
+  const gridCell = String(
+    defect.gridCell ||
+      defect.gridRange ||
+      defect.range ||
+      defect.cell ||
+      (gridStart && gridEnd ? `${gridStart}:${gridEnd}` : '') ||
+      gridCenter ||
+      impactCell
+  )
+    .replace(/\s+/g, '')
+    .trim();
+  const description = String(defect.description || defect.detail || defect.label || '하자 의심')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  const gridReason = String(
+    defect.gridReason || defect.coordinateReason || defect.locationReason || defect.reason || defect.evidence || ''
+  )
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  const normalizedBox = readPercentBox(bbox);
+  const normalizedCenterFromInput = readPercentPoint(
+    defect.center || defect.centerPercent || defect.point || defect.position,
+    defect
+  );
+  const normalizedSizeFromInput = readPercentSize(defect.size && typeof defect.size === 'object' ? defect.size : null, defect);
+  const boxCenter = normalizedBox
+    ? {
+        x: Math.max(0, Math.min(100, normalizedBox.x + normalizedBox.width / 2)),
+        y: Math.max(0, Math.min(100, normalizedBox.y + normalizedBox.height / 2)),
+      }
+    : null;
+  const boxSize = normalizedBox ? { width: normalizedBox.width, height: normalizedBox.height } : null;
+  const normalizedCenter = boxCenter || normalizedCenterFromInput;
+  const normalizedSize = boxSize || normalizedSizeFromInput;
+  const boxFromCenter =
+    !normalizedBox && normalizedCenter && normalizedSize
+      ? {
+          x: Math.max(0, normalizedCenter.x - normalizedSize.width / 2),
+          y: Math.max(0, normalizedCenter.y - normalizedSize.height / 2),
+          width: normalizedSize.width,
+          height: normalizedSize.height,
+        }
+      : null;
+  if (!normalizedBox && !normalizedCenter && !gridCell && !gridCenter && !impactCell && !(gridStart && gridEnd)) return null;
+  const severity = normalizeImageLevel(defect.severity || defect.level || 'caution');
+  const rangeMarker = gridRangeToMarker(gridStart, gridEnd, defect.gridCols, defect.gridRows);
+  if (rangeMarker?.gridSizeCells) gridSizeCells = rangeMarker.gridSizeCells;
+  const centerMarker = gridCenterToMarker(
+    impactCell || gridCenter,
+    gridSizeCells || rangeMarker?.gridSizeCells,
+    defect.gridCols,
+    defect.gridRows
+  );
+  const gridMarker = rangeMarker || centerMarker;
+  const approximateSize =
+    typeof defect.approximateSize === 'string'
+      ? defect.approximateSize
+      : typeof defect.size === 'string'
+        ? defect.size
+        : '';
+  return {
+    impactCell: impactCell || gridCenter,
+    gridCenter: impactCell || gridCenter,
+    gridStart,
+    gridEnd,
+    gridSizeCells: gridSizeCells || rangeMarker?.gridSizeCells || null,
+    gridCell,
+    bbox: gridMarker?.bbox || normalizedBox || boxFromCenter || null,
+    center: gridMarker?.center || normalizedCenter || null,
+    size: gridMarker?.size || normalizedSize || null,
+    description,
+    gridReason,
+    approximateSize: String(approximateSize)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 40),
+    severity: severity === 'neutral' || severity === 'safe' ? 'caution' : severity,
+    gridCols: Number(defect.gridCols) || 25,
+    gridRows: Number(defect.gridRows) || 25,
+  };
+}
+
 function normalizeImageDefects(items) {
-  return (Array.isArray(items) ? items : [])
-    .map((defect) => {
-      if (!defect || typeof defect !== 'object') return null;
-      const bbox = defect.bbox || defect.bboxPercent || defect.box || defect.rect || defect.area || null;
-      const gridCenter = String(defect.gridCenter || defect.centerCell || defect.centerGrid || defect.centerGridCell || '')
-        .replace(/\s+/g, '')
-        .trim();
-      const gridSizeCells = normalizeGridSizeCells(defect.gridSizeCells || defect.gridSize || defect.sizeCells || defect.cellSize);
-      const gridCell = String(
-        defect.gridCell ||
-          defect.gridRange ||
-          defect.range ||
-          defect.cell ||
-          gridCenter ||
-          (defect.startCell && defect.endCell ? `${defect.startCell}-${defect.endCell}` : '')
-      )
-        .replace(/\s+/g, '')
-        .trim();
-      const description = String(defect.description || defect.detail || defect.label || '하자 의심')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 80);
-      const gridReason = String(
-        defect.gridReason || defect.coordinateReason || defect.locationReason || defect.reason || defect.evidence || ''
-      )
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 120);
-      const normalizedBox = readPercentBox(bbox);
-      const normalizedCenterFromInput = readPercentPoint(
-        defect.center || defect.centerPercent || defect.point || defect.position,
-        defect
-      );
-      const normalizedSizeFromInput = readPercentSize(defect.size && typeof defect.size === 'object' ? defect.size : null, defect);
-      const boxCenter = normalizedBox
-        ? {
-            x: Math.max(0, Math.min(100, normalizedBox.x + normalizedBox.width / 2)),
-            y: Math.max(0, Math.min(100, normalizedBox.y + normalizedBox.height / 2)),
-          }
-        : null;
-      const boxSize = normalizedBox ? { width: normalizedBox.width, height: normalizedBox.height } : null;
-      const normalizedCenter = boxCenter || normalizedCenterFromInput;
-      const normalizedSize = boxSize || normalizedSizeFromInput;
-      const boxFromCenter =
-        !normalizedBox && normalizedCenter && normalizedSize
-          ? {
-              x: Math.max(0, normalizedCenter.x - normalizedSize.width / 2),
-              y: Math.max(0, normalizedCenter.y - normalizedSize.height / 2),
-              width: normalizedSize.width,
-              height: normalizedSize.height,
-            }
-          : null;
-      if (!normalizedBox && !normalizedCenter && !gridCell && !gridCenter) return null;
-      const severity = normalizeImageLevel(defect.severity || defect.level || 'caution');
-      const gridMarker = gridCenterToMarker(gridCenter, gridSizeCells, defect.gridCols, defect.gridRows);
-      const approximateSize =
-        typeof defect.approximateSize === 'string'
-          ? defect.approximateSize
-          : typeof defect.size === 'string'
-            ? defect.size
-            : '';
-      return {
-        gridCenter,
-        gridSizeCells,
-        gridCell,
-        bbox: gridMarker?.bbox || normalizedBox || boxFromCenter || null,
-        center: gridMarker?.center || normalizedCenter || null,
-        size: gridMarker?.size || normalizedSize || null,
-        description,
-        gridReason,
-        approximateSize: String(approximateSize)
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 40),
-        severity: severity === 'neutral' || severity === 'safe' ? 'caution' : severity,
-        gridCols: Number(defect.gridCols) || 25,
-        gridRows: Number(defect.gridRows) || 25,
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 6);
+  return (Array.isArray(items) ? items : []).map(normalizeImageDefect).filter(Boolean).slice(0, 6);
 }
 
 function parseListingImageAnalysis(text, imageUrls = [], sourceMeta = []) {
@@ -2479,7 +2558,7 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
     }
     if (s?.gridPart) {
       messageParts.push({
-        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요.`,
+        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요. 기스는 선 전체를 감싸고, 큰 충격점은 별 모양 중심에 두세요.`,
       });
       messageParts.push(s.gridPart);
     }
@@ -2504,7 +2583,7 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
   });
   return geminiGenerateFromParts(apiKey, model, [{ text: prompt }, ...messageParts], {
     responseMimeType: 'application/json',
-    temperature: 0.15,
+    temperature: 0.08,
     maxOutputTokens: 4096,
     timeoutMs: GEMINI_GROUNDED_TIMEOUT_MS,
   });
