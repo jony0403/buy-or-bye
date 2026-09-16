@@ -1782,6 +1782,17 @@ function parseGridRangePair(raw) {
   return { start: match[1], end: match[2] };
 }
 
+function gridRangeCenterLabel(startLabel, endLabel, gridCols = 25, gridRows = 25) {
+  const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
+  const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
+  const start = parseGridCell(startLabel, cols, rows);
+  const end = parseGridCell(endLabel, cols, rows);
+  if (!start || !end) return '';
+  const midCol = Math.round((start.col + end.col) / 2);
+  const midRow = Math.round((start.row + end.row) / 2);
+  return `${gridColumnLabel(midCol)}${midRow + 1}`;
+}
+
 function gridRangeToMarker(startLabel, endLabel, gridCols = 25, gridRows = 25) {
   const cols = Math.max(1, Math.min(52, Number(gridCols) || 25));
   const rows = Math.max(1, Math.min(99, Number(gridRows) || 25));
@@ -1810,6 +1821,7 @@ function gridRangeToMarker(startLabel, endLabel, gridCols = 25, gridRows = 25) {
       height,
     },
     gridSizeCells: { cols: cellCols, rows: cellRows },
+    gridCenter: `${gridColumnLabel(Math.round((c0 + c1) / 2))}${Math.round((r0 + r1) / 2) + 1}`,
   };
 }
 
@@ -1985,8 +1997,13 @@ function normalizeImageDefect(defect) {
   const severity = normalizeImageLevel(defect.severity || defect.level || 'caution');
   const rangeMarker = gridRangeToMarker(gridStart, gridEnd, defect.gridCols, defect.gridRows);
   if (rangeMarker?.gridSizeCells) gridSizeCells = rangeMarker.gridSizeCells;
+  const resolvedCenter =
+    rangeMarker?.gridCenter ||
+    gridRangeCenterLabel(gridStart, gridEnd, defect.gridCols, defect.gridRows) ||
+    gridCenter ||
+    impactCell;
   const centerMarker = gridCenterToMarker(
-    impactCell || gridCenter,
+    resolvedCenter,
     gridSizeCells || rangeMarker?.gridSizeCells,
     defect.gridCols,
     defect.gridRows
@@ -2000,7 +2017,7 @@ function normalizeImageDefect(defect) {
         : '';
   return {
     impactCell: impactCell || gridCenter,
-    gridCenter: impactCell || gridCenter,
+    gridCenter: resolvedCenter,
     gridStart,
     gridEnd,
     gridSizeCells: gridSizeCells || rangeMarker?.gridSizeCells || null,
@@ -2550,7 +2567,7 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
     }
     if (s?.gridPart) {
       messageParts.push({
-        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요. 박스는 물건 실루엣 안에서 하자 전체를 감싸고, 테이블·손가락·배경으로 나가면 안 됩니다.`,
+        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridStart와 defects[].gridEnd는 물건 표면 위 하자 영역의 좌상단~우하단 셀입니다. gridCenter는 그 박스의 중간 셀이지 충격점 칸이 아닙니다. 모서리 크레이터에 큰 정사각형을 씌워 테이블로 나가면 안 됩니다.`,
       });
       messageParts.push(s.gridPart);
     }

@@ -167,8 +167,8 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v26';
-const LISTING_IMAGE_OVERLAY_VERSION = 33;
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v27';
+const LISTING_IMAGE_OVERLAY_VERSION = 34;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 4;
 const IMAGE_DEFECT_MARKER_MAX_PERCENT = 72;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
@@ -196,6 +196,7 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v23',
   'ulsa_ai_analysis_cache_v24',
   'ulsa_ai_analysis_cache_v25',
+  'ulsa_ai_analysis_cache_v26',
 ];
 
 function mapToPersistableObject(map) {
@@ -2264,20 +2265,53 @@ function imageDebugDefectSummary(image) {
     .join('\n');
 }
 
+function defectGridRangeBox(defect, gridCols = 25, gridRows = 25) {
+  const start = gridCellToPoint(
+    defect?.gridStart || defect?.startCell,
+    gridCols,
+    gridRows
+  );
+  const end = gridCellToPoint(defect?.gridEnd || defect?.endCell, gridCols, gridRows);
+  if (!start || !end) return null;
+  const c0 = Math.min(start.col, end.col);
+  const c1 = Math.max(start.col, end.col);
+  const r0 = Math.min(start.row, end.row);
+  const r1 = Math.max(start.row, end.row);
+  const cellCols = Math.max(3, Math.min(start.cols, c1 - c0 + 1));
+  const cellRows = Math.max(3, Math.min(start.rows, r1 - r0 + 1));
+  const centerX = ((((c0 + c1) / 2) + 0.5) / start.cols) * 100;
+  const centerY = ((((r0 + r1) / 2) + 0.5) / start.rows) * 100;
+  return {
+    centerX,
+    centerY,
+    cellCols,
+    cellRows,
+    cols: start.cols,
+    rows: start.rows,
+  };
+}
+
 function gridDebugDefectToRect(defect, meta) {
+  const rangeBox = defectGridRangeBox(defect, meta?.gridCols, meta?.gridRows);
   const gridCenter = defect?.gridCenter || defect?.centerCell || defect?.centerGrid || defect?.centerGridCell;
-  const point = gridCellToPoint(gridCenter, meta?.gridCols, meta?.gridRows);
+  const point = rangeBox || gridCellToPoint(gridCenter, meta?.gridCols, meta?.gridRows);
   if (!point) return null;
   const rawSize = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
   const rawCols = Number(rawSize.cols ?? rawSize.columns ?? rawSize.width ?? rawSize.w);
   const rawRows = Number(rawSize.rows ?? rawSize.height ?? rawSize.h);
   const cellCols = Math.max(
     3,
-    Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5))
+    Math.min(
+      point.cols,
+      Math.round(rangeBox?.cellCols || (Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5))
+    )
   );
   const cellRows = Math.max(
     3,
-    Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols))
+    Math.min(
+      point.rows,
+      Math.round(rangeBox?.cellRows || (Number.isFinite(rawRows) ? rawRows : rawCols || cellCols))
+    )
   );
   const boardWidth = Number(meta?.boardWidth) || 0;
   const boardHeight = Number(meta?.boardHeight) || 0;
@@ -2301,7 +2335,15 @@ function gridDebugDefectToRect(defect, meta) {
 function gridDebugMarkerHtml(defect, meta, idx) {
   const rect = gridDebugDefectToRect(defect, meta);
   if (!rect) return '';
-  const center = String(defect?.gridCenter || defect?.gridCell || '셀 미지정')
+  const start = String(defect?.gridStart || defect?.startCell || '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  const end = String(defect?.gridEnd || defect?.endCell || '')
+    .replace(/\s+/g, '')
+    .trim()
+    .toUpperCase();
+  const center = String(start && end ? `${start}:${end}` : defect?.gridCenter || defect?.gridCell || '셀 미지정')
     .replace(/\s+/g, '')
     .trim()
     .toUpperCase();
@@ -2341,9 +2383,9 @@ function lightboxAnalysisGridItems(images) {
         src: image.debugGridImageUrl,
         imageWidth: image.imageWidth,
         imageHeight: image.imageHeight,
-        label: `AI 전송 그리드 ${index}`.trim(),
+        label: `좌표 그리드 ${index}`.trim(),
         kind: 'gridDebug',
-        comment: `${index}번 사진 · Gemini로 보낸 25×25 좌표 그리드 보드\n${imageDebugDefectSummary(image)}`,
+        comment: `${index}번 사진 좌표 그리드\n${imageDebugDefectSummary(image)}`,
         level: 'neutral',
         defects: Array.isArray(image.defects) ? image.defects : [],
         debugGridMeta: image.debugGridMeta || null,
@@ -4042,7 +4084,7 @@ const DIRECT_AI_ACTIONS = [
     },
     async run() {
       $btnHistoryClear?.click();
-      return { message: '전체 기록과 분석 캐시를 삭제했습니다.' };
+      return { message: '전체 기록과 분석 결과를 삭제했습니다.' };
     },
   },
 ];
@@ -4914,7 +4956,7 @@ function renderDirectAiSuggestionsHtml() {
   if (chips.length) {
     return chips.map((chip) => `<button type="button" data-direct-chat-keyword="${escapeAttr(chip)}">${escapeHtml(chip)}</button>`).join('');
   }
-  return `<p>${directAiChat.keywordStatus === 'loading' ? 'AI가 제품 관련 키워드를 고르는 중...' : '도우미가 제품 관련 질문과 분석 요청을 도와줍니다.'}</p>`;
+  return `<p>${directAiChat.keywordStatus === 'loading' ? '제품 관련 키워드를 고르는 중...' : '도우미가 제품 관련 질문과 분석 요청을 도와줍니다.'}</p>`;
 }
 
 function bindDirectAiKeywordButtons(root = $directAiPanel) {
@@ -6196,7 +6238,7 @@ function renderStageThreeSearchCard(item, comps) {
         ${
           queryState?.status === 'loading'
             ? renderCompsLoading(
-                'AI가 검색어를 다시 만들고 있습니다...',
+                '검색어를 다시 만들고 있습니다...',
                 stageThreeSearchProgressState(item, 'collecting', {
                   startedAt: queryState.startedAt || Date.now(),
                   startPercent: 0,
@@ -6263,7 +6305,7 @@ function renderProductSummaryBlock(item) {
         <div class="summary-loading summary-loading--skeleton">
           <div class="ai-loading-copy">
             <p class="mini-value">매물 정보를 확인하는 중...</p>
-            <p class="mini-muted">제목·본문·사진이 준비되면 AI 제품 정리를 시작합니다.</p>
+            <p class="mini-muted">제목과 사진을 확인한 뒤 제품 정보를 정리합니다.</p>
           </div>
           <div class="risk-loader">
             <span></span><span></span><span></span>
@@ -6274,12 +6316,12 @@ function renderProductSummaryBlock(item) {
   }
 
   if (state?.status === 'loading') {
-    const loadingHint = '현재 선택한 모델로 제품명·신품 가격 참고자료·대표 이미지를 준비합니다.';
+    const loadingHint = '제품명, 신품가, 대표 이미지를 준비하고 있습니다.';
     return `
       <article class="mini-card mini-card--product mini-card--compact mini-card--loading" data-product-summary data-product-summary-render-key="${escapeAttr(renderKey)}">
         <div class="summary-loading summary-loading--skeleton">
           <div class="ai-loading-copy">
-            <p class="mini-value">AI가 제품 정보를 정리하는 중...</p>
+            <p class="mini-value">제품 정보를 정리하는 중...</p>
             <p class="mini-muted">${escapeHtml(loadingHint)}</p>
             ${renderAiLoadingProgress(state, 'productSummary')}
           </div>
@@ -6532,7 +6574,7 @@ function fallbackComparisonMatches(item, comps, limit = COMPARISON_LIST_LIMIT) {
     same: true,
     reason: compatible.length
       ? '제목·모델·용량 키워드로 같은 제품 후보를 골랐습니다.'
-      : 'AI 확정 매칭이 없어 수집된 검색 후보를 참고용으로 포함했습니다.',
+      : '같은 제품 확인 결과가 없어 수집된 검색 후보를 참고용으로 포함했습니다.',
     fallback: true,
   }));
 }
@@ -8698,7 +8740,7 @@ function renderCompsBlock(item, comps) {
     if (key && hasRestorableComparisonListings(key)) return renderStageThreeRestoredSearchState(item);
     if ((stageThreeAutoQueryRetryCounts.get(key) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
       return renderCompsLoading(
-        'AI가 검색어를 다시 조정 중입니다...',
+        '검색어를 다시 조정 중입니다...',
         stageThreeSearchProgressState(item, 'collecting'),
         STAGE_THREE_SEARCH_PROGRESS_KIND
       );
@@ -8721,14 +8763,14 @@ function renderCompsBlock(item, comps) {
     currentFilterKey !== filterKey
   ) {
     return renderCompsLoading(
-      '수집한 매물을 AI가 같은 제품인지 판별 중입니다...',
+      '수집한 매물이 같은 제품인지 확인하는 중입니다...',
       stageThreeSearchProgressState(item, 'identifying'),
       STAGE_THREE_SEARCH_PROGRESS_KIND
     );
   }
   if (!filterState || filterState.status === 'loading') {
     return renderCompsLoading(
-      '수집한 매물을 AI가 같은 제품인지 판별 중입니다...',
+      '수집한 매물이 같은 제품인지 확인하는 중입니다...',
       stageThreeSearchProgressState(item, 'identifying'),
       STAGE_THREE_SEARCH_PROGRESS_KIND
     );
@@ -8740,7 +8782,7 @@ function renderCompsBlock(item, comps) {
     const emptyKey = summaryKey(item);
     if ((stageThreeAutoQueryRetryCounts.get(emptyKey) || 0) < MAX_STAGE_THREE_AUTO_QUERY_RETRIES) {
       return renderCompsLoading(
-        'AI가 더 맞는 검색어를 다시 생각하고 있습니다...',
+        '더 맞는 검색어를 찾는 중입니다...',
         stageThreeSearchProgressState(item, 'identifying'),
         STAGE_THREE_SEARCH_PROGRESS_KIND
       );
@@ -8755,8 +8797,8 @@ function renderCompsBlock(item, comps) {
     : `${shown}건 표시`;
   const matchNote = filterState?.fallback
     ? filterState?.heuristic
-      ? 'AI 판별이 비어 제목·모델·용량 기준으로 비슷한 매물을 골랐습니다.'
-      : 'AI 동일 제품 판별 결과가 없어 수집된 비교 매물을 참고용으로 표시합니다.'
+      ? '제목·용량 기준으로 비슷한 매물을 골랐습니다.'
+      : '같은 제품 확인 결과가 없어 수집된 비교 매물을 참고용으로 표시합니다.'
     : '같은 제품으로 판별된 매물';
   const listLimit = COMPARISON_LIST_LIMIT;
   const caution =
@@ -9161,8 +9203,9 @@ function gridCellToPoint(cell, gridCols = 25, gridRows = 25) {
 }
 
 function defectGridToCenterMarker(defect) {
+  const rangeBox = defectGridRangeBox(defect, defect?.gridCols, defect?.gridRows);
   const gridCenter = defect?.gridCenter || defect?.centerCell || defect?.centerGrid || defect?.centerGridCell;
-  const point = gridCellToPoint(gridCenter, defect?.gridCols, defect?.gridRows);
+  const point = rangeBox || gridCellToPoint(gridCenter, defect?.gridCols, defect?.gridRows);
   if (!point) return null;
   const rawSize = defect?.gridSizeCells || defect?.gridSize || defect?.sizeCells || defect?.cellSize || {};
   const rawCols = Number(rawSize.cols ?? rawSize.columns ?? rawSize.width ?? rawSize.w);
@@ -9170,11 +9213,14 @@ function defectGridToCenterMarker(defect) {
   // Keep size close to the AI grid block (debug rectangle). Avoid inflating to 5×5 when AI already sized it.
   const cellCols = Math.max(
     3,
-    Math.min(point.cols, Math.round(Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5))
+    Math.min(
+      point.cols,
+      Math.round(rangeBox?.cellCols || (Number.isFinite(rawCols) ? rawCols : Number.isFinite(rawRows) ? rawRows : 5))
+    )
   );
   const cellRows = Math.max(
     3,
-    Math.min(point.rows, Math.round(Number.isFinite(rawRows) ? rawRows : rawCols || cellCols))
+    Math.min(point.rows, Math.round(rangeBox?.cellRows || (Number.isFinite(rawRows) ? rawRows : rawCols || cellCols)))
   );
   const width = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, (cellCols / point.cols) * 100);
   const height = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, (cellRows / point.rows) * 100);
@@ -12654,7 +12700,7 @@ function renderFavoriteComparePanel() {
       <div class="favorite-compare-head">
         <div>
           <strong id="favoriteCompareTitle">즐겨찾기 매물 비교</strong>
-          <p>${snapshots.length}개 매물을 현재 분석 캐시 기준으로 정렬했습니다. 대표 이미지와 판단 근거를 같이 봅니다.</p>
+          <p>${snapshots.length}개 매물을 지금까지 분석한 내용 기준으로 정렬했습니다. 대표 이미지와 판단 근거를 같이 봅니다.</p>
         </div>
         <button type="button" data-favorite-compare-close aria-label="비교 닫기">×</button>
       </div>
