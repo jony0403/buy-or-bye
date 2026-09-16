@@ -29,6 +29,7 @@ const $railStatus = document.querySelector('[data-rail-status]');
 const $lightbox = document.getElementById('lightbox');
 const $lightboxImg = document.getElementById('lightboxImg');
 const $lightboxOverlay = document.getElementById('lightboxOverlay');
+const $lightboxPhotoStack = document.getElementById('lightboxPhotoStack') || $lightboxImg?.closest('.lightbox-photo-stack');
 const $lightboxBadge = document.getElementById('lightboxBadge');
 const $lightboxCount = document.getElementById('lightboxCount');
 const $lightboxCaption = document.getElementById('lightboxCaption');
@@ -9407,48 +9408,43 @@ function markerImageDimensions(img) {
   };
 }
 
+function photoAspectStyle(image) {
+  const w = Number(image?.imageWidth || image?.width || 0);
+  const h = Number(image?.imageHeight || image?.height || 0);
+  if (!(w > 0 && h > 0)) return '';
+  return ` style="--photo-ar:${w} / ${h}"`;
+}
+
+function applyPhotoAspect(el, image) {
+  if (!el) return;
+  const w = Number(image?.imageWidth || image?.width || el?.naturalWidth || 0);
+  const h = Number(image?.imageHeight || image?.height || el?.naturalHeight || 0);
+  if (w > 0 && h > 0) el.style.setProperty('--photo-ar', `${w} / ${h}`);
+}
+
 function updateDefectMarkerFrames(root = document) {
   const boxes = root?.matches?.('.annotated-photo-box')
     ? [root]
     : Array.from(root?.querySelectorAll?.('.annotated-photo-box') || []);
   boxes.forEach((box) => {
-    const img = box.querySelector('img');
     const markers = box.querySelector('.image-defect-markers');
-    if (!img || !markers) return;
-    if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
-      img.addEventListener('load', () => updateDefectMarkerFrames(box), { once: true });
-      return;
-    }
-    const boxRect = box.getBoundingClientRect();
-    const dims = markerImageDimensions(img);
-    const frame = containImageFrame(boxRect.width, boxRect.height, dims.width, dims.height);
-    if (!frame) return;
-    markers.style.width = `${frame.width}px`;
-    markers.style.height = `${frame.height}px`;
-    markers.style.left = `${frame.left}px`;
-    markers.style.top = `${frame.top}px`;
+    if (!markers) return;
+    markers.style.width = '100%';
+    markers.style.height = '100%';
+    markers.style.left = '0px';
+    markers.style.top = '0px';
   });
 }
 
 function updateLightboxOverlayFrame() {
-  if (!$lightboxOverlay || !$lightboxImg) return;
-  // object-fit:contain 기준으로 오버레이만 맞춘다. img width/height를 강제하면
-  // max-width/max-height와 어긋나 동그라미가 옆으로 밀린다.
-  $lightboxImg.style.width = '';
-  $lightboxImg.style.height = '';
-  if (!$lightboxImg.complete || !$lightboxImg.naturalWidth || !$lightboxImg.naturalHeight) {
-    return;
-  }
-  const wrap = $lightboxImg.parentElement;
-  const wrapRect = wrap?.getBoundingClientRect();
-  if (!wrapRect?.width || !wrapRect?.height) return;
-  const dims = markerImageDimensions($lightboxImg);
-  const frame = containImageFrame(wrapRect.width, wrapRect.height, dims.width, dims.height);
-  if (!frame) return;
-  $lightboxOverlay.style.width = `${frame.width}px`;
-  $lightboxOverlay.style.height = `${frame.height}px`;
-  $lightboxOverlay.style.left = `${frame.left}px`;
-  $lightboxOverlay.style.top = `${frame.top}px`;
+  if (!$lightboxOverlay) return;
+  $lightboxOverlay.style.width = '';
+  $lightboxOverlay.style.height = '';
+  $lightboxOverlay.style.left = '';
+  $lightboxOverlay.style.top = '';
+  const stack = $lightboxPhotoStack || $lightboxOverlay.closest('.lightbox-photo-stack');
+  const item = lightboxState.items[lightboxState.index];
+  applyPhotoAspect(stack, item || $lightboxImg);
 }
 
 function renderImageAnalysisSlider(item) {
@@ -9460,37 +9456,41 @@ function renderImageAnalysisSlider(item) {
     return `<p class="mini-muted">${escapeHtml(analysis?.overall || '분석할 사진을 불러오지 못했습니다.')}</p>`;
   }
   const idx = Math.min(Math.max(imageAnalysisIndexes.get(key) || 0, 0), images.length - 1);
-  const dir = imageAnalysisDirections.get(key) || 0;
-  const animClass = dir > 0 ? ' slide-next' : dir < 0 ? ' slide-prev' : '';
   const current = images[idx];
-  const label = imageAnalysisLabel(current);
   const lightboxItems = JSON.stringify(lightboxAnalysisItems(images));
   const dots = images
     .map((_, i) => `<span class="photo-dot${i === idx ? ' active' : ''}" aria-label="${i + 1}/${images.length}"></span>`)
+    .join('');
+  const slides = images
+    .map((image, i) => {
+      const label = imageAnalysisLabel(image);
+      return `
+          <div class="annotated-photo-box${i === idx ? ' is-active' : ''}" data-image-analysis-slide="${i}"${photoAspectStyle(image)}>
+            <img
+              class="zoomable photo-main image-analysis-main"
+              src="${escapeAttr(image.imageUrl)}"
+              data-full="${escapeAttr(image.imageUrl)}"
+              data-image-width="${escapeAttr(image.imageWidth || '')}"
+              data-image-height="${escapeAttr(image.imageHeight || '')}"
+              data-label="${escapeAttr(label)}"
+              data-comment="${escapeAttr(image.comment || '')}"
+              data-level="${escapeAttr(image.level || 'neutral')}"
+              data-lightbox-items="${escapeAttr(lightboxItems)}"
+              data-lightbox-index="${i}"
+              alt=""
+              loading="${i === idx ? 'eager' : 'lazy'}"
+            />
+            <span class="image-analysis-badge risk-${escapeAttr(image.level || 'neutral')}">${escapeHtml(label)}</span>
+            ${renderImageDefectMarkers(image)}
+          </div>`;
+    })
     .join('');
   return `
     <div class="image-analysis-slide-wrap" data-image-analysis-slide-wrap>
       <div class="photo-slider image-analysis-slider" data-image-analysis-slider>
         <button type="button" class="photo-nav prev image-analysis-nav" data-image-analysis-dir="-1" ${images.length < 2 ? 'disabled' : ''}>‹</button>
         <div class="annotated-photo-stage">
-          <div class="annotated-photo-box">
-            <img
-              class="zoomable photo-main${animClass} image-analysis-main"
-              src="${escapeAttr(current.imageUrl)}"
-              data-full="${escapeAttr(current.imageUrl)}"
-              data-image-width="${escapeAttr(current.imageWidth || '')}"
-              data-image-height="${escapeAttr(current.imageHeight || '')}"
-              data-label="${escapeAttr(label)}"
-              data-comment="${escapeAttr(current.comment || '')}"
-              data-level="${escapeAttr(current.level || 'neutral')}"
-              data-lightbox-items="${escapeAttr(lightboxItems)}"
-              data-lightbox-index="${idx}"
-              alt=""
-              loading="lazy"
-            />
-            <span class="image-analysis-badge risk-${escapeAttr(current.level || 'neutral')}">${escapeHtml(label)}</span>
-            ${renderImageDefectMarkers(current)}
-          </div>
+          ${slides}
         </div>
         <button type="button" class="photo-nav next image-analysis-nav" data-image-analysis-dir="1" ${images.length < 2 ? 'disabled' : ''}>›</button>
         <div class="photo-count">${idx + 1}/${images.length}</div>
@@ -9608,12 +9608,14 @@ function setLightboxImage(item, opts = {}) {
   const src = item?.src || '';
   if (!$lightboxImg || !src) return;
   const content = $lightbox?.querySelector('.lightbox-content');
+  const stack = $lightboxPhotoStack || $lightboxOverlay?.closest('.lightbox-photo-stack');
   const motionClass =
     opts.dir > 0 ? 'is-slide-next' : opts.dir < 0 ? 'is-slide-prev' : opts.opening ? 'is-slide-open' : '';
   if (content && motionClass) {
     content.classList.remove('is-slide-open', 'is-slide-next', 'is-slide-prev');
     void content.offsetWidth;
   }
+  applyPhotoAspect(stack, item);
   $lightboxImg.src = src;
   $lightboxImg.setAttribute('data-image-width', item?.imageWidth || '');
   $lightboxImg.setAttribute('data-image-height', item?.imageHeight || '');
@@ -9645,7 +9647,10 @@ function setLightboxImage(item, opts = {}) {
     $lightboxCount.textContent = `${lightboxState.index + 1}/${lightboxState.items.length}`;
     $lightboxCount.hidden = !lightboxState.items.length;
   }
-  $lightboxImg.onload = updateLightboxOverlayFrame;
+  $lightboxImg.onload = () => {
+    applyPhotoAspect(stack, { ...item, imageWidth: $lightboxImg.naturalWidth, imageHeight: $lightboxImg.naturalHeight });
+    updateLightboxOverlayFrame();
+  };
   if (content && motionClass) content.classList.add(motionClass);
 }
 
@@ -9665,11 +9670,6 @@ function openLightbox(src, opts = {}) {
   $lightbox.setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
   setLightboxImage(lightboxState.items[lightboxState.index], { opening: true });
-  window.requestAnimationFrame(() => {
-    updateLightboxOverlayFrame();
-    window.setTimeout(updateLightboxOverlayFrame, 40);
-    window.setTimeout(updateLightboxOverlayFrame, 320);
-  });
 }
 
 function closeLightbox() {
@@ -9950,31 +9950,54 @@ function bindImageAnalysisSlider(root, item) {
   if (!key) return;
   window.clearInterval(imageAnalysisAutoTimer);
   updateDefectMarkerFrames(root);
+  const images = imageAnalysisEntries(item);
+  images.forEach((image, i) => {
+    if (i === (imageAnalysisIndexes.get(key) || 0)) return;
+    void preloadListingImage(image.imageUrl);
+  });
   root?.querySelectorAll('.image-analysis-nav').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const images = imageAnalysisEntries(item);
       if (images.length < 2) return;
       const dir = Number(btn.getAttribute('data-image-analysis-dir')) || 0;
       const current = imageAnalysisIndexes.get(key) || 0;
-      imageAnalysisDirections.set(key, dir);
       imageAnalysisIndexes.set(key, (current + dir + images.length) % images.length);
-      refreshImageAnalysisSlider(item);
-      setTimeout(() => imageAnalysisDirections.delete(key), 260);
+      showImageAnalysisSlide(item);
     });
   });
-  const images = imageAnalysisEntries(item);
   if (images.length > 1) {
     imageAnalysisAutoTimer = window.setInterval(() => {
       if (selectedKey !== key || ($lightbox && !$lightbox.hidden)) return;
       const current = imageAnalysisIndexes.get(key) || 0;
-      imageAnalysisDirections.set(key, 1);
       imageAnalysisIndexes.set(key, (current + 1) % images.length);
-      refreshImageAnalysisSlider(item);
-      setTimeout(() => imageAnalysisDirections.delete(key), 260);
+      showImageAnalysisSlide(item);
     }, 6500);
   }
+}
+
+function showImageAnalysisSlide(item) {
+  const wrap = $current?.querySelector('[data-image-analysis-slide-wrap]');
+  if (!wrap) return;
+  const key = summaryKey(item);
+  const images = imageAnalysisEntries(item);
+  if (!images.length) return;
+  const idx = Math.min(Math.max(imageAnalysisIndexes.get(key) || 0, 0), images.length - 1);
+  const current = images[idx];
+  wrap.querySelectorAll('[data-image-analysis-slide]').forEach((box) => {
+    box.classList.toggle('is-active', Number(box.getAttribute('data-image-analysis-slide')) === idx);
+  });
+  const count = wrap.querySelector('.photo-count');
+  if (count) count.textContent = `${idx + 1}/${images.length}`;
+  wrap.querySelectorAll('.photo-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i === idx);
+  });
+  const comment = wrap.querySelector('.image-analysis-comment');
+  if (comment) {
+    comment.textContent = current.comment || '';
+    comment.className = `image-analysis-comment risk-${String(current.level || 'neutral').trim() || 'neutral'}`;
+  }
+  void preloadListingImage(images[(idx + 1) % images.length]?.imageUrl);
 }
 
 function refreshImageAnalysisSlider(item) {
