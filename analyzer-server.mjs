@@ -2558,7 +2558,7 @@ async function runListingImageAnalysis(apiKey, model, payload, sources) {
     }
     if (s?.gridPart) {
       messageParts.push({
-        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요. 기스는 선 전체를 감싸고, 큰 충격점은 별 모양 중심에 두세요.`,
+        text: `${index}번 사진에 25열(A-Y) × 25행(1-25) 좌표 그리드를 실제로 합성한 비교 이미지입니다. defects[].gridCenter와 defects[].gridSizeCells는 반드시 이 그리드 이미지를 기준으로 산출하세요. 박스는 물건 실루엣 안에서 하자 전체를 감싸고, 테이블·손가락·배경으로 나가면 안 됩니다.`,
       });
       messageParts.push(s.gridPart);
     }
