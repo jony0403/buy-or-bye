@@ -6518,8 +6518,7 @@ function prepareReportStageClone(clone, item, comps) {
 
 function renderPurchaseReportDocument(item, comps) {
   const stylesheetUrl = new URL('style.css?v=20260611-defect-grid-cells', location.href).href;
-  const logoUrl = new URL('/icons/icon128.png', location.href).href;
-  const reportIssuedAt = new Date().toLocaleString('ko-KR');
+const reportIssuedAt = new Date().toLocaleString('ko-KR');
   const reportTitle = item?.title || getProductSummaryState(item)?.summary?.productName || '중고 매물 구매 리포트';
   const cloneStage = (label, selector) => {
     const source = $current?.querySelector(selector);
@@ -6914,9 +6913,6 @@ function renderPurchaseReportDocument(item, comps) {
         </div>
         <main class="report-doc">
           <section class="report-cover">
-            <div class="report-logo">
-              <img src="${escapeAttr(logoUrl)}" alt="Buy or Bye" />
-            </div>
             <div class="report-cover-copy">
               <span>BUY OR BYE 구매 판단 리포트 · ${escapeHtml(reportIssuedAt)}</span>
               <h1>${escapeHtml(reportTitle)}</h1>
@@ -7618,10 +7614,7 @@ function renderPurchaseReportDocumentStatic(item, comps) {
         <div class="print-actions"><button type="button" onclick="window.print()">전체 분석 PDF로 저장 / 인쇄</button></div>
         <main>
           <section class="report-cover">
-            <div class="report-logo">
-              <img src="/icons/icon128.png" alt="Buy or Bye" />
-            </div>
-            <div class="report-cover-copy">
+<div class="report-cover-copy">
               <span class="report-kicker">BUY OR BYE 구매 판단 리포트 · ${escapeHtml(issuedAt)}</span>
               <h1>${escapeHtml(title)}</h1>
               <span class="verdict">${escapeHtml(receiptVerdictLabel(receipt.verdict))}</span>
@@ -7964,8 +7957,7 @@ async function capturePurchaseReportPages(item) {
 function renderCapturedPurchaseReportDocument(item, pages) {
   const reportIssuedAt = new Date().toLocaleString('ko-KR');
   const reportTitle = item?.title || getProductSummaryState(item)?.summary?.productName || '중고 매물 구매 리포트';
-  const logoUrl = new URL('/icons/icon128.png', location.href).href;
-  return `<!doctype html>
+return `<!doctype html>
     <html lang="ko">
       <head>
         <meta charset="utf-8" />
@@ -8072,7 +8064,6 @@ function renderCapturedPurchaseReportDocument(item, pages) {
         </div>
         <main>
           <section class="report-cover">
-            <div class="report-logo"><img src="${escapeAttr(logoUrl)}" alt="Buy or Bye" /></div>
             <div>
               <span class="report-kicker">BUY OR BYE 구매 판단 리포트 · ${escapeHtml(reportIssuedAt)}</span>
               <h1>${escapeHtml(reportTitle)}</h1>
@@ -12646,60 +12637,26 @@ function renderChampionshipEmptyState() {
   return `
     <article class="mini-card mini-card--empty sample-landing" data-sample-landing>
       <header class="sample-landing__hero">
-        <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="64" height="64" />
         <div class="sample-landing__hero-copy">
           <p class="sample-landing__eyebrow">BUY OR BYE</p>
           <h2>중고 매물, 링크 하나로 판단까지</h2>
-          <p>샘플로 먼저 체험하거나, 당근·번개·중고나라 매물 URL을 붙여넣어 분석을 시작하세요.</p>
+          <p>상단 URL에 매물 링크를 붙여넣거나, 아래 샘플로 바로 체험하세요.</p>
         </div>
       </header>
-      <div class="sample-copy-guide" data-sample-copy-guide>
-        <p><strong>중고 매물을 살지 말지, 이 화면에서 바로 판단하세요.</strong></p>
-        <p>아래 샘플로 흐름을 먼저 보거나, 상단 URL에 당근·번개·중고나라 매물 링크를 붙여넣으세요.</p>
-      </div>
+      <div class="sample-copy-guide" data-sample-copy-guide hidden aria-hidden="true"></div>
       <nav class="market-shortcuts" data-market-shortcuts aria-label="중고마켓 바로가기">
-        <a class="market-shortcut market-shortcut--daangn" href="https://www.daangn.com/" target="_blank" rel="noopener noreferrer">
-          <strong>당근</strong>
-          <small>바로가기</small>
-        </a>
-        <a class="market-shortcut market-shortcut--bunjang" href="https://m.bunjang.co.kr/" target="_blank" rel="noopener noreferrer">
-          <strong>번개장터</strong>
-          <small>바로가기</small>
-        </a>
-        <a class="market-shortcut market-shortcut--joongna" href="https://web.joongna.com/" target="_blank" rel="noopener noreferrer">
-          <strong>중고나라</strong>
-          <small>바로가기</small>
-        </a>
+        <a class="market-shortcut market-shortcut--daangn" href="https://www.daangn.com/" target="_blank" rel="noopener noreferrer">당근</a>
+        <a class="market-shortcut market-shortcut--bunjang" href="https://m.bunjang.co.kr/" target="_blank" rel="noopener noreferrer">번개장터</a>
+        <a class="market-shortcut market-shortcut--joongna" href="https://web.joongna.com/" target="_blank" rel="noopener noreferrer">중고나라</a>
       </nav>
-      <section class="sample-guide-block" aria-labelledby="sampleGuideTitle">
-        <div class="sample-section-heading">
-          <div>
-            <p class="sample-section-label" id="sampleGuideTitle">처음이라면 이렇게 시작하세요</p>
-            <p class="sample-section-desc">복잡한 설정 없이 아래 순서대로 진행하면 됩니다.</p>
-          </div>
-        </div>
-        <div class="sample-guide-grid">
-          <div class="sample-guide-card">
-            <span class="sample-guide-card__number">1</span>
-            <div><strong>샘플로 체험</strong><p>아래 샘플을 눌러 Step 1~5 분석 흐름을 먼저 확인합니다.</p></div>
-          </div>
-          <div class="sample-guide-card">
-            <span class="sample-guide-card__number">2</span>
-            <div><strong>URL로 불러오기</strong><p>당근·번개장터·중고나라 매물 링크를 붙여넣으면 서버가 내용을 가져옵니다.</p></div>
-          </div>
-          <div class="sample-guide-card">
-            <span class="sample-guide-card__number">3</span>
-            <div><strong>단계별 확인</strong><p>제품·리스크·시세·최종 판단·협상 문구까지 차례로 확인합니다.</p></div>
-          </div>
-        </div>
-      </section>
+      <ol class="sample-flow" aria-label="시작 방법">
+        <li><strong>샘플</strong>로 흐름 보기</li>
+        <li><strong>URL</strong>로 매물 불러오기</li>
+        <li><strong>Step 1~5</strong>에서 판단·협상 확인</li>
+      </ol>
       <div class="sample-demo-block">
         <div class="sample-section-heading">
-          <div>
-            <p class="sample-section-label">샘플로 먼저 체험하기</p>
-            <p class="sample-section-desc">대표 분석 사례를 바로 실행해 볼 수 있습니다.</p>
-          </div>
-          <span class="sample-section-chip">바로 가능</span>
+          <p class="sample-section-label">샘플 체험</p>
         </div>
         <div class="sample-demo-grid" data-demo-grid>
           <p class="mini-muted">샘플을 불러오는 중…</p>
