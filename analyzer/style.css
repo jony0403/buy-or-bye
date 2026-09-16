@@ -16244,9 +16244,9 @@ body.theme-dark .api-fatal-modal__body {
 .market-shortcuts {
   display: flex !important;
   flex-wrap: wrap !important;
-  gap: 0.55rem !important;
+  gap: 0.6rem !important;
   width: auto !important;
-  max-width: 28rem !important;
+  max-width: 32rem !important;
   grid-template-columns: none !important;
 }
 .market-shortcut {
@@ -16255,18 +16255,27 @@ body.theme-dark .api-fatal-modal__body {
   align-items: center !important;
   justify-content: center !important;
   min-height: 2.55rem !important;
-  padding: 0.55rem 1.05rem !important;
+  padding: 0.55rem 1.15rem !important;
   border-radius: 999px !important;
+  border: 1px solid transparent !important;
   font-size: 0.9rem !important;
   font-weight: 700 !important;
   letter-spacing: -0.02em !important;
-  color: #20242c !important;
   box-shadow: none !important;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease !important;
+  will-change: transform;
 }
 .market-shortcut:hover {
-  transform: none !important;
+  transform: translateY(-2px) !important;
+}
+.market-shortcut:active {
+  transform: translateY(0) scale(0.98) !important;
   box-shadow: none !important;
-  background: #f8fafc !important;
 }
 .market-shortcut strong,
 .market-shortcut small {
@@ -16368,89 +16377,133 @@ body.theme-dark .market-shortcut:hover {
 }
 
 /* —— platform colors + sample thumbs —— */
-/* landing market chips — muted brand tints */
+/* soft brand washes + refined hover */
 .market-shortcut--daangn {
-  background: #d4926a !important;
-  border-color: #c9845a !important;
-  color: #fff !important;
+  background: #fff1e8 !important;
+  border-color: #f0d5c0 !important;
+  color: #c45e12 !important;
 }
 .market-shortcut--bunjang {
-  background: #b87378 !important;
-  border-color: #a8666b !important;
-  color: #fff !important;
+  background: #fbf0f1 !important;
+  border-color: #ebd0d3 !important;
+  color: #a33b44 !important;
 }
 .market-shortcut--joongna {
-  background: #6a9e7a !important;
-  border-color: #5d9170 !important;
-  color: #fff !important;
+  background: #eef6f0 !important;
+  border-color: #c9e0d0 !important;
+  color: #2f7a48 !important;
 }
-.market-shortcut--daangn:hover,
-.market-shortcut--bunjang:hover,
+.market-shortcut--daangn:hover {
+  background: #ffe7d6 !important;
+  border-color: #e8bf9f !important;
+  color: #a84c0c !important;
+  box-shadow: 0 10px 24px rgba(196, 94, 18, 0.16) !important;
+}
+.market-shortcut--bunjang:hover {
+  background: #f7e4e6 !important;
+  border-color: #dfb8bd !important;
+  color: #8a2f37 !important;
+  box-shadow: 0 10px 24px rgba(163, 59, 68, 0.14) !important;
+}
 .market-shortcut--joongna:hover {
-  filter: brightness(1.05);
-  background: inherit !important;
+  background: #e3f1e7 !important;
+  border-color: #b5d6c0 !important;
+  color: #24633a !important;
+  box-shadow: 0 10px 24px rgba(47, 122, 72, 0.14) !important;
 }
 
 /* sidebar rail action buttons */
+.app-shell .dashboard-rail__btn:not(.dashboard-rail__market-link),
+.app-shell .dashboard-rail__logo.dashboard-rail__home {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
 .app-shell .dashboard-rail__btn:not(.dashboard-rail__market-link) {
-  background: rgba(255, 255, 255, 0.14) !important;
-  color: rgba(255, 255, 255, 0.96) !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.94) !important;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
 }
 .app-shell .dashboard-rail__btn--accent:not(.dashboard-rail__market-link) {
-  background: rgba(255, 255, 255, 0.22) !important;
-  color: #fff7ed !important;
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #fff8f1 !important;
 }
 .app-shell .dashboard-rail__logo.dashboard-rail__home {
-  background: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.14) !important;
   color: #fff !important;
   border-radius: 20px !important;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
 }
-.app-shell .dashboard-rail__btn:hover,
-.app-shell .dashboard-rail__btn:focus-visible,
-.app-shell .dashboard-rail__btn.is-active,
-.app-shell .dashboard-rail__btn--accent:hover,
-.app-shell .dashboard-rail__btn--accent:focus-visible {
+.app-shell .dashboard-rail__btn:not(.dashboard-rail__market-link):hover,
+.app-shell .dashboard-rail__btn:not(.dashboard-rail__market-link):focus-visible,
+.app-shell .dashboard-rail__btn:not(.dashboard-rail__market-link).is-active,
+.app-shell .dashboard-rail__btn--accent:not(.dashboard-rail__market-link):hover,
+.app-shell .dashboard-rail__btn--accent:not(.dashboard-rail__market-link):focus-visible,
+.app-shell .dashboard-rail__logo.dashboard-rail__home:hover,
+.app-shell .dashboard-rail__logo.dashboard-rail__home:focus-visible {
   background: rgba(255, 255, 255, 0.96) !important;
-  color: #e85d04 !important;
+  color: #c45e12 !important;
+  box-shadow: 0 12px 28px rgba(20, 20, 24, 0.18) !important;
+  transform: translateY(-1px) !important;
+}
+.app-shell .dashboard-rail__btn:not(.dashboard-rail__market-link):active,
+.app-shell .dashboard-rail__logo.dashboard-rail__home:active {
+  transform: translateY(0) scale(0.97) !important;
 }
 
-/* sidebar market shortcuts — muted brand tints */
+/* sidebar market shortcuts */
+.app-shell .dashboard-rail__market-link {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
 .app-shell .dashboard-rail__market-link--daangn {
-  background: #d4926a !important;
-  color: #fff !important;
+  background: rgba(255, 140, 70, 0.2) !important;
+  color: #ffd7b8 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 180, 120, 0.28) !important;
 }
 .app-shell .dashboard-rail__market-link--bunjang {
-  background: #b87378 !important;
-  color: #fff !important;
+  background: rgba(220, 100, 110, 0.2) !important;
+  color: #f5c8cc !important;
+  box-shadow: inset 0 0 0 1px rgba(240, 160, 168, 0.28) !important;
 }
 .app-shell .dashboard-rail__market-link--joongna {
-  background: #6a9e7a !important;
-  color: #fff !important;
+  background: rgba(90, 180, 120, 0.2) !important;
+  color: #c6ebd3 !important;
+  box-shadow: inset 0 0 0 1px rgba(140, 210, 165, 0.28) !important;
 }
 .app-shell .dashboard-rail__market-link--daangn small,
 .app-shell .dashboard-rail__market-link--bunjang small,
 .app-shell .dashboard-rail__market-link--joongna small {
-  color: #fff !important;
+  color: inherit !important;
 }
 .app-shell .dashboard-rail__market-link--daangn:hover,
 .app-shell .dashboard-rail__market-link--daangn:focus-visible {
-  background: #c9845a !important;
-  color: #fff !important;
-  box-shadow: none !important;
+  background: rgba(255, 140, 70, 0.34) !important;
+  color: #ffe8d4 !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16) !important;
+  transform: translateY(-1px) !important;
 }
 .app-shell .dashboard-rail__market-link--bunjang:hover,
 .app-shell .dashboard-rail__market-link--bunjang:focus-visible {
-  background: #a8666b !important;
-  color: #fff !important;
-  box-shadow: none !important;
+  background: rgba(220, 100, 110, 0.34) !important;
+  color: #ffe0e3 !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16) !important;
+  transform: translateY(-1px) !important;
 }
 .app-shell .dashboard-rail__market-link--joongna:hover,
 .app-shell .dashboard-rail__market-link--joongna:focus-visible {
-  background: #5d9170 !important;
-  color: #fff !important;
-  box-shadow: none !important;
+  background: rgba(90, 180, 120, 0.34) !important;
+  color: #e2f6e9 !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16) !important;
+  transform: translateY(-1px) !important;
+}
+.app-shell .dashboard-rail__market-link:active {
+  transform: translateY(0) scale(0.97) !important;
 }
 
 /* sample demo thumbs */
@@ -16460,6 +16513,18 @@ body.theme-dark .market-shortcut:hover {
   align-items: center;
   gap: 0.7rem !important;
   padding: 0.72rem 0.8rem !important;
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 220ms ease !important;
+}
+.sample-demo-card:hover {
+  transform: translateY(-2px) !important;
+  border-color: rgba(196, 94, 18, 0.28) !important;
+  box-shadow: 0 14px 28px rgba(17, 24, 39, 0.1) !important;
+}
+.sample-demo-card:active {
+  transform: translateY(0) scale(0.99) !important;
 }
 .sample-demo-card__thumb {
   width: 48px;
@@ -16468,6 +16533,10 @@ body.theme-dark .market-shortcut:hover {
   object-fit: cover;
   background: #f3f4f6;
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sample-demo-card:hover .sample-demo-card__thumb {
+  transform: scale(1.04);
 }
 .sample-demo-card__copy {
   display: grid;
@@ -16485,5 +16554,20 @@ body.theme-dark .market-shortcut:hover {
 body.theme-dark .sample-demo-card__thumb {
   background: rgba(255, 255, 255, 0.06);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+body.theme-dark .market-shortcut--daangn {
+  background: rgba(255, 140, 70, 0.14) !important;
+  border-color: rgba(255, 180, 120, 0.28) !important;
+  color: #ffc89a !important;
+}
+body.theme-dark .market-shortcut--bunjang {
+  background: rgba(220, 100, 110, 0.14) !important;
+  border-color: rgba(240, 160, 168, 0.28) !important;
+  color: #f0b4ba !important;
+}
+body.theme-dark .market-shortcut--joongna {
+  background: rgba(90, 180, 120, 0.14) !important;
+  border-color: rgba(140, 210, 165, 0.28) !important;
+  color: #a8dfbb !important;
 }
 
