@@ -24,7 +24,6 @@ function searchUrls(q) {
   return {
     bunjang: `https://m.bunjang.co.kr/search/products?q=${encodeURIComponent(q)}&order=score`,
     daangn: `https://www.daangn.com/kr/search/buy-sell/?q=${encodeURIComponent(q)}`,
-    joongna: `https://web.joongna.com/search/${encodeURIComponent(q)}`,
   };
 }
 
@@ -149,54 +148,6 @@ async function scrapeDaangn(page, q) {
   });
 }
 
-async function scrapeJoongna(page, q) {
-  const url = searchUrls(q).joongna;
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-  await page.waitForTimeout(3500);
-  return page.evaluate(() => {
-    const out = [];
-    const seen = new Set();
-    const parsePrice = (raw) => {
-      const n = Number(String(raw ?? '').replace(/[^\d]/g, ''));
-      return Number.isFinite(n) && n > 0 ? n : null;
-    };
-    for (const a of document.querySelectorAll('a[href*="/product/"]')) {
-      const m = a.href.match(/\/product\/(\d+)/);
-      if (!m || seen.has(m[1])) continue;
-      const card = a.closest('article,li,div') || a;
-      const text = (card.innerText || '').trim();
-      const title = (
-        text.split('\n').find((l) => l.length > 2 && !/[\d,]+\s*원/.test(l)) || `매물 ${m[1]}`
-      )
-        .trim()
-        .slice(0, 120);
-      const priceM = text.replace(/\s+/g, ' ').match(/([\d,]+)\s*원/);
-      const price = parsePrice(priceM?.[1]);
-      let imageUrl = '';
-      for (const img of card.querySelectorAll('img')) {
-        const src = img.currentSrc || img.src || '';
-        if (/joongna|cloudinary|kakaocdn|media/i.test(src) && !/\.svg/i.test(src) && !/icon|logo/i.test(src)) {
-          imageUrl = src;
-          break;
-        }
-      }
-      seen.add(m[1]);
-      out.push({
-        platform: 'joongna',
-        platformLabel: '중고나라',
-        itemId: m[1],
-        title,
-        price,
-        priceLabel: price != null ? `${price.toLocaleString('ko-KR')}원` : priceM?.[0] || '—',
-        url: `https://web.joongna.com/product/${m[1]}`,
-        ...(imageUrl ? { imageUrl } : {}),
-      });
-      if (out.length >= 12) break;
-    }
-    return out;
-  });
-}
-
 function validateItem(item) {
   const missing = [];
   if (!item.platform) missing.push('platform');
@@ -226,7 +177,6 @@ async function main() {
   const started = Date.now();
   const bunjang = await scrapeBunjang(page, query);
   const daangn = await scrapeDaangn(page, query);
-  const joongna = await scrapeJoongna(page, query);
   await browser.close();
 
   const comps = {
@@ -236,10 +186,9 @@ async function main() {
     expectedQueries: [query],
     bunjang: { items: bunjang, count: bunjang.length, query, searchUrl: searchUrls(query).bunjang },
     daangn: { items: daangn, count: daangn.length, query, searchUrl: searchUrls(query).daangn },
-    joongna: { items: joongna, count: joongna.length, query, searchUrl: searchUrls(query).joongna },
   };
 
-  const all = [...bunjang, ...daangn, ...joongna];
+  const all = [...bunjang, ...daangn];
   const invalid = all
     .map((it) => ({ it, missing: validateItem(it) }))
     .filter((x) => x.missing.length);
@@ -251,20 +200,18 @@ async function main() {
     counts: {
       bunjang: bunjang.length,
       daangn: daangn.length,
-      joongna: joongna.length,
       total: all.length,
       withImage,
       invalid: invalid.length,
     },
     schemaCompatible: all.length > 0 && invalid.length === 0,
     canFeedExistingStep3:
-      bunjang.length + daangn.length + joongna.length >= 3 &&
+      bunjang.length + daangn.length >= 2 &&
       invalid.length === 0 &&
       (bunjang.length > 0 || daangn.length > 0),
     samples: {
       bunjang: bunjang.slice(0, 2),
       daangn: daangn.slice(0, 2),
-      joongna: joongna.slice(0, 2),
     },
     invalid: invalid.slice(0, 5).map((x) => ({
       platform: x.it.platform,

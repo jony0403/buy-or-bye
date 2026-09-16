@@ -1,15 +1,15 @@
 {
   "id": "galaxy-promo-photos",
   "listing": {
-    "platform": "joongna",
-    "platformLabel": "중고나라",
+    "platform": "bunjang",
+    "platformLabel": "번개장터",
     "itemId": "demo-galaxy-promo-photos",
     "title": "갤럭시 S24 256GB 자급제 미개봉급",
     "body": "갤럭시 S24 자급제 256GB입니다.\n사진처럼 상태 좋고 구성품 있습니다.\n액정 보호필름 부착 상태.\n잠금/계정 이슈 없습니다.",
     "priceLabel": "620,000원",
     "price": 620000,
     "shippingFeeLabel": "안전결제 가능",
-    "pageUrl": "https://web.joongna.com/product/demo-galaxy-promo-photos",
+    "pageUrl": "https://m.bunjang.co.kr/products/demo-galaxy-promo-photos",
     "exportedAt": "2026-09-12T11:10:00.000Z",
     "imageUrls": [
       "/demo-images/galaxy-promo-photos/1.png",

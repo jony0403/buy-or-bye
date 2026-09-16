@@ -26,7 +26,12 @@ const PROMPTS_DIR = path.join(__dirname, 'prompts');
 const DEMO_DIR = path.join(__dirname, 'demo');
 const DOWNLOADS_DIR = path.join(__dirname, 'public', 'downloads');
 const DEMO_SERVER_KEY_TOKEN = '__SERVER_DEMO__';
-const IMAGE_PROXY_SECRET = crypto.randomBytes(32);
+const IMAGE_PROXY_SECRET = (() => {
+  const fromEnv = String(process.env.IMAGE_PROXY_SECRET || '').trim();
+  if (/^[0-9a-f]{64}$/i.test(fromEnv)) return Buffer.from(fromEnv, 'hex');
+  const seed = String(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || 'buy-or-bye-image-proxy-v1');
+  return crypto.createHash('sha256').update(seed).digest();
+})();
 const MAX_PROXY_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES = Math.max(
   256 * 1024,
@@ -381,7 +386,11 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
 const DEFAULT_OPENAI_MODEL = DEFAULT_GEMINI_MODEL; // legacy alias
 
 const MAX_INLINE_IMAGES = 3;
-const LISTING_IMAGE_ANALYSIS_BATCH_SIZE = 10;
+const LISTING_IMAGE_ANALYSIS_BATCH_SIZE = Math.max(3, Number(process.env.LISTING_IMAGE_BATCH_SIZE) || 8);
+const MAX_LISTING_IMAGES_ANALYZED = Math.max(
+  3,
+  Number(process.env.MAX_LISTING_IMAGES_ANALYZED) || (DEMO_MODE ? 6 : 10)
+);
 const MAX_IMAGE_BYTES = 1.2 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 6_000;
 const IMAGE_SEARCH_TIMEOUT_MS = 8_000;
@@ -398,7 +407,9 @@ function resolveDemoImageLocalPath(u) {
     const raw = String(u || '').trim();
     if (!raw) return '';
     let pathname = raw;
-    if (/^https?:\/\//i.test(raw)) pathname = new URL(raw).pathname;
+    if (/^https?:\/\//i.test(raw) || raw.startsWith('/')) {
+      pathname = new URL(raw, 'http://127.0.0.1').pathname;
+    }
     if (!pathname.startsWith('/demo-images/')) return '';
     const rel = decodeURIComponent(pathname.slice('/demo-images/'.length));
     if (!/^[a-z0-9][a-z0-9/_./-]{0,180}$/i.test(rel) || rel.includes('..')) return '';
@@ -427,31 +438,20 @@ function isAllowedListingImageUrl(u) {
 
 function refererForImageUrl(u) {
   try {
-    const h = new URL(u).hostname.toLowerCase();
-    if (h.includes('bunjang')) return 'https://m.bunjang.co.kr/';
+    const x = new URL(String(u || '').trim());
+    const h = x.hostname.toLowerCase();
+    if (h.includes('bunjang') || h.includes('bgzt')) return 'https://m.bunjang.co.kr/';
     if (h.includes('daangn') || h.includes('karrot') || h.includes('gcp-karroter')) return 'https://www.daangn.com/';
-    if (h.includes('joongna')) return 'https://web.joongna.com/';
-    return 'https://m.bunjang.co.kr/';
+    // DuckDuckGo / 일반 CDN 제품 이미지는 출처 origin을 써야 403/502를 피한다.
+    // (예전엔 기본값이 번개장터라 Naver/Apple CDN이 전부 실패했음)
+    return `${x.origin}/`;
   } catch {
-    return 'https://m.bunjang.co.kr/';
+    return '';
   }
 }
 
 function optimizeImageUrlForAi(url) {
   let s = String(url || '').trim();
-  try {
-    const parsed = new URL(s);
-    const host = parsed.hostname.toLowerCase();
-    if (host.includes('joongna') && parsed.pathname.includes('/media/original/')) {
-      if (!parsed.searchParams.has('w') && !parsed.searchParams.has('width') && !parsed.searchParams.has('size')) {
-        parsed.searchParams.set('w', '800');
-      }
-      return parsed.href;
-    }
-  } catch {
-    /* keep raw */
-  }
-  // ?? ???? ???? ?? ???? ??? ??, ?? ???? ??? 400px??? ???.
   s = s.replace(/_w\d+\.(webp|jpg|jpeg|png)(?=$|[?#])/i, '_w400.$1');
   s = s.replace(/([?&](?:w|width|size)=)\d+/i, '$1400');
   return s;
@@ -459,25 +459,23 @@ function optimizeImageUrlForAi(url) {
 
 /** Gemini REST: { inline_data: { mime_type, data: base64 } } */
 async function fetchImageUrlToInlinePart(url) {
-  const local = resolveDemoImageLocalPath(url);
+  const unwrapped = unwrapImageProxyUrl(url);
+  const local = resolveDemoImageLocalPath(unwrapped);
   if (local) {
-    let buf = await fs.readFile(local);
-    if (buf.length > MAX_IMAGE_BYTES) {
-      buf = await sharp(buf, { animated: false }).rotate().jpeg({ quality: 82, mozjpeg: true }).toBuffer();
-    }
-    if (buf.length > MAX_IMAGE_BYTES) {
-      buf = await sharp(buf).resize({ width: 1200, withoutEnlargement: true }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
-    }
-    if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
-    const mime = buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : 'image/png';
+    const buf = await fs.readFile(local);
+    const prepared = await prepareListingImageForAi(buf);
     return {
       inline_data: {
-        mime_type: mime,
-        data: buf.toString('base64'),
+        mime_type: prepared.mime,
+        data: prepared.buf.toString('base64'),
       },
     };
   }
-  const imageUrl = optimizeImageUrlForAi(url);
+  // listing/search 공통: UI와 동일한 URL (다운스케일 금지)
+  const imageUrl = String(unwrapped || '').trim();
+  if (!/^https?:\/\//i.test(imageUrl)) {
+    throw new Error('지원하지 않는 이미지 URL');
+  }
   const res = await fetch(imageUrl, {
     redirect: 'follow',
     headers: {
@@ -490,7 +488,6 @@ async function fetchImageUrlToInlinePart(url) {
   });
   if (!res.ok) throw new Error(`이미지 HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
   let mime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
   if (!mime.startsWith('image/')) {
     const p = String(imageUrl).toLowerCase();
@@ -499,10 +496,11 @@ async function fetchImageUrlToInlinePart(url) {
     else if (p.includes('.gif')) mime = 'image/gif';
     else mime = 'image/jpeg';
   }
+  const prepared = await prepareListingImageForAi(buf, mime);
   return {
     inline_data: {
-      mime_type: mime,
-      data: buf.toString('base64'),
+      mime_type: prepared.mime,
+      data: prepared.buf.toString('base64'),
     },
   };
 }
@@ -657,7 +655,7 @@ function buildImageGridBoardOverlaySvg(imageWidth, imageHeight, pad, cols = 25, 
           ${labels.join('\n')}
         </g>
         <rect x="${Math.max(8, p * 0.16)}" y="${Math.max(7, p * 0.12)}" width="${Math.max(108, fontSize * 7.8)}" height="${fontSize * 1.9}" rx="${fontSize * 0.75}" fill="rgba(17,24,39,0.82)"/>
-        <text x="${Math.max(18, p * 0.34)}" y="${Math.max(7, p * 0.12) + fontSize * 1.34}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25?25 GRID</text>
+        <text x="${Math.max(18, p * 0.34)}" y="${Math.max(7, p * 0.12) + fontSize * 1.34}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25×25 GRID</text>
       </svg>
     `),
   };
@@ -719,10 +717,12 @@ function buildImageGridOverlaySvg(width, height, cols = 25, rows = 25) {
         ${labels.join('\n')}
       </g>
       <rect x="6" y="6" width="${Math.max(92, fontSize * 7.4)}" height="${fontSize * 1.85}" rx="${fontSize * 0.75}" fill="rgba(17,24,39,0.78)"/>
-      <text x="${fontSize}" y="${fontSize * 1.35}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25?25 GRID</text>
+      <text x="${fontSize}" y="${fontSize * 1.35}" font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#fff">25×25 GRID</text>
     </svg>
   `);
 }
+
+
 
 async function normalizeListingImageBuffer(buf) {
   const normalized = await sharp(buf, { animated: false }).rotate().jpeg({ quality: 92, mozjpeg: true }).toBuffer();
@@ -785,29 +785,62 @@ async function createImageGridPart(buf, preNormalized = null) {
   }
 }
 
-async function fetchImageUrlToInlineSource(url) {
-  const imageUrl = optimizeImageUrlForAi(url);
-  const res = await fetch(imageUrl, {
-    redirect: 'follow',
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36',
-      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-      Referer: refererForImageUrl(imageUrl),
-    },
-    signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`이미지 HTTP ${res.status}`);
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
-  let mime = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
-  if (!mime.startsWith('image/')) {
-    const p = String(imageUrl).toLowerCase();
-    if (p.includes('.png')) mime = 'image/png';
-    else if (p.includes('.webp')) mime = 'image/webp';
-    else if (p.includes('.gif')) mime = 'image/gif';
-    else mime = 'image/jpeg';
+function unwrapImageProxyUrl(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  try {
+    const u = new URL(s, 'http://127.0.0.1');
+    if (u.pathname === '/api/image-proxy') {
+      const inner = u.searchParams.get('url');
+      if (inner) return String(inner).trim();
+    }
+  } catch {
+    /* ignore */
   }
+  return s;
+}
+
+async function fetchImageUrlToInlineSource(url) {
+  const unwrapped = unwrapImageProxyUrl(url);
+  const local = resolveDemoImageLocalPath(unwrapped);
+  let buf;
+  let mimeHint = 'image/jpeg';
+  if (local) {
+    buf = await fs.readFile(local);
+    const ext = path.extname(local).toLowerCase();
+    if (ext === '.png') mimeHint = 'image/png';
+    else if (ext === '.webp') mimeHint = 'image/webp';
+    else if (ext === '.gif') mimeHint = 'image/gif';
+    else if (ext === '.jpg' || ext === '.jpeg') mimeHint = 'image/jpeg';
+    else if (buf[0] === 0xff && buf[1] === 0xd8) mimeHint = 'image/jpeg';
+    else mimeHint = 'image/png';
+  } else {
+    const imageUrl = optimizeImageUrlForAi(unwrapped);
+    if (!/^https?:\/\//i.test(imageUrl)) {
+      throw new Error('지원하지 않는 이미지 URL');
+    }
+    const res = await fetch(imageUrl, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36',
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        Referer: refererForImageUrl(imageUrl),
+      },
+      signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`이미지 HTTP ${res.status}`);
+    buf = Buffer.from(await res.arrayBuffer());
+    mimeHint = res.headers.get('content-type')?.split(';')[0]?.trim() || '';
+    if (!mimeHint.startsWith('image/')) {
+      const p = String(imageUrl).toLowerCase();
+      if (p.includes('.png')) mimeHint = 'image/png';
+      else if (p.includes('.webp')) mimeHint = 'image/webp';
+      else if (p.includes('.gif')) mimeHint = 'image/gif';
+      else mimeHint = 'image/jpeg';
+    }
+  }
+  if (buf.length > MAX_IMAGE_BYTES) throw new Error('이미지 용량 초과');
   const normalized = await normalizeListingImageBuffer(buf);
   const grid = await createImageGridPart(buf, normalized);
   return {
@@ -823,7 +856,7 @@ async function fetchImageUrlToInlineSource(url) {
     normalizedBuf: normalized.buf,
     width: normalized.width || grid?.width || 0,
     height: normalized.height || grid?.height || 0,
-  };
+  }
 }
 
 function listingImageAnalysisBatches(sources) {
@@ -840,7 +873,7 @@ async function fetchListingImageInlineParts(urls) {
   const targets = [];
   for (const raw of list) {
     if (targets.length >= MAX_INLINE_IMAGES) break;
-    const u = String(raw || '').trim();
+    const u = unwrapImageProxyUrl(raw);
     if (!u || !isAllowedListingImageUrl(u)) continue;
     targets.push(u);
   }
@@ -866,7 +899,7 @@ async function fetchListingImageSources(urls, maxImages = Infinity) {
   for (let sourceIndex = 0; sourceIndex < list.length; sourceIndex += 1) {
     const raw = list[sourceIndex];
     if (targets.length >= limit) break;
-    const u = String(raw || '').trim();
+    const u = unwrapImageProxyUrl(raw);
     if (!u || !isAllowedListingImageUrl(u)) continue;
     targets.push({ url: u, index: sourceIndex + 1 });
   }
@@ -1096,7 +1129,7 @@ function productImageProxySignature(url) {
 function isAllowlistedMarketplaceImageHost(rawUrl) {
   try {
     const host = new URL(String(rawUrl || '')).hostname.toLowerCase();
-    return /(?:^|\.)(daangn\.com|daangncdn\.com|karrotmarket\.com|karroter\.net|gcp-karroter\.net|bunjang\.co\.kr|bgzt\.link|joongna\.com|cloudfront\.net|cloudinary\.com|kakao(?:cdn)?\.net|kakaocdn\.net)$/i.test(host);
+    return /(?:^|\.)(daangn\.com|daangncdn\.com|karrotmarket\.com|karroter\.net|gcp-karroter\.net|bunjang\.co\.kr|bgzt\.link|cloudfront\.net|cloudinary\.com|kakao(?:cdn)?\.net|kakaocdn\.net)$/i.test(host);
   } catch {
     return false;
   }
@@ -1119,14 +1152,16 @@ async function isReachableProductImage(raw) {
   const u = normalizeProductImageUrl(raw);
   if (!u) return false;
   try {
+    const headers = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36',
+      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    };
+    const referer = refererForImageUrl(u);
+    if (referer) headers.Referer = referer;
     const res = await fetch(u, {
       redirect: 'follow',
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36',
-        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-        Referer: new URL(u).origin,
-      },
+      headers,
       signal: AbortSignal.timeout(PRODUCT_IMAGE_VALIDATE_TIMEOUT_MS),
     });
     if (!res.ok) return false;
@@ -1173,6 +1208,8 @@ async function fetchDuckDuckGoImageUrls(query) {
     if (await isReachableProductImage(imageUrl)) out.push(imageUrl);
     if (out.length >= 4) break;
   }
+  // 검증이 전부 전부 실패해도 상위 결과는 프록시로 시도 (Referer 불일치로 검증만 깨지는 경우 대비)
+  if (!out.length) return uniqueImageUrls(ranked.slice(0, 4));
   return uniqueImageUrls(out);
 }
 
@@ -1838,7 +1875,7 @@ function normalizeImageDefects(items) {
       )
         .replace(/\s+/g, '')
         .trim();
-      const description = String(defect.description || defect.detail || defect.label || '사진 확인')
+      const description = String(defect.description || defect.detail || defect.label || '하자 의심')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 80);
@@ -2592,7 +2629,7 @@ async function verifyGeminiApiKey(apiKey, modelId) {
       .filter(Boolean)
       .join(', ');
     throw new Error(
-      `??? ??(${mid})?(?) ? API ?? ? ? ????. ?? ??? ?????. (?: ${sample || '낮음'})`
+      `목록에 없는 모델(${mid})입니다. API 키는 유효합니다. 모델명을 확인하세요. (예: ${sample || 'gemini-2.5-flash-lite'})`
     );
   }
   return { ok: true, model: mid };
@@ -2658,7 +2695,7 @@ const server = http.createServer(async (req, res) => {
       }
       const target = classifyListingUrl(body.url);
       if (!target) {
-        json(res, 400, { ok: false, error: '지원하는 중고 매물 URL이 아닙니다. (당근·번개장터·중고나라)' });
+        json(res, 400, { ok: false, error: '지원하는 중고 매물 URL이 아닙니다. (당근·번개장터)' });
         return;
       }
       const listing = await importListingByUrl(body.url);
@@ -2761,7 +2798,11 @@ const server = http.createServer(async (req, res) => {
       const buf = await fs.readFile(abs);
       const ext = path.extname(abs).toLowerCase();
       const type = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
-      res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' });
+      res.writeHead(200, {
+        'Content-Type': type,
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        Pragma: 'no-cache',
+      });
       res.end(buf);
     } catch {
       res.writeHead(404);
@@ -3086,7 +3127,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls : [];
-      const imageSources = await fetchListingImageSources(imageUrls);
+      const imageSources = await fetchListingImageSources(imageUrls, MAX_LISTING_IMAGES_ANALYZED);
       const inlineParts = imageSources.map((s) => s.part);
       if (!inlineParts.length) {
         json(res, 200, {
@@ -3498,7 +3539,22 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/image-proxy') {
-    const target = normalizeProductImageUrl(url.searchParams.get('url'));
+    const targetRaw = String(url.searchParams.get('url') || '').trim();
+    const localDemo = resolveDemoImageLocalPath(targetRaw);
+    if (localDemo) {
+      try {
+        const buf = await fs.readFile(localDemo);
+        const ext = path.extname(localDemo).toLowerCase();
+        const type = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+        res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' });
+        res.end(buf);
+      } catch {
+        res.writeHead(404);
+        res.end('not found');
+      }
+      return;
+    }
+    const target = normalizeProductImageUrl(targetRaw);
     const signature = url.searchParams.get('sig');
     if (!target) {
       res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -3554,18 +3610,7 @@ const server = http.createServer(async (req, res) => {
   }
 
 
-  // Championship: do not expose trademark assets / extension install guide via static root.
-  if (
-    req.method === 'GET' &&
-    (/^\/market-logos(?:\/|$)/i.test(url.pathname) ||
-      /^\/install-guide(?:\/|$)/i.test(url.pathname) ||
-      /^\/icons\//i.test(url.pathname))
-  ) {
-    res.writeHead(404);
-    res.end('Not Found');
-    return;
-  }
-
+  // Allowlisted BoB app icons (favicon) — before trademark blocklist.
   if (req.method === 'GET' && /^\/icons\/icon(?:16|32|48|128)\.png$/.test(url.pathname)) {
     const iconName = path.basename(url.pathname);
     try {
@@ -3579,6 +3624,18 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404);
       res.end('Not Found');
     }
+    return;
+  }
+
+  // Championship: do not expose trademark assets / extension install guide via static root.
+  if (
+    req.method === 'GET' &&
+    (/^\/market-logos(?:\/|$)/i.test(url.pathname) ||
+      /^\/install-guide(?:\/|$)/i.test(url.pathname) ||
+      /^\/icons\//i.test(url.pathname))
+  ) {
+    res.writeHead(404);
+    res.end('Not Found');
     return;
   }
 

@@ -50,7 +50,7 @@ const emptyFn = `function renderChampionshipEmptyState() {
     <article class="mini-card mini-card--empty sample-landing" data-sample-landing>
       <img class="empty-extension-icon" src="/icons/icon128.png" alt="" width="72" height="72" />
       <h2>매물 대기</h2>
-      <p class="empty">왼쪽 URL로 중고나라·번개장터·당근 링크를 불러오거나, 아래 샘플로 바로 분석을 시작해 보세요.</p>
+      <p class="empty">왼쪽 URL로 번개장터·당근 링크를 불러오거나, 아래 샘플로 바로 분석을 시작해 보세요.</p>
       <div class="sample-demo-block">
         <p class="sample-section-label">샘플 매물</p>
         <div class="sample-demo-grid" data-demo-grid>
@@ -69,7 +69,7 @@ const emptyFn = `function renderChampionshipEmptyState() {
           <li>Chrome 주소창에 <code>chrome://extensions</code>를 입력합니다.</li>
           <li>오른쪽 위 <strong>개발자 모드</strong>를 켭니다.</li>
           <li><strong>압축해제된 확장 프로그램을 로드합니다</strong>에서 방금 푼 폴더를 선택합니다.</li>
-          <li>당근·번개·중고나라 매물 상세에서 확장 아이콘을 누르면 이 분석 화면으로 전송됩니다.</li>
+          <li>당근·번개 매물 상세에서 확장 아이콘을 누르면 이 분석 화면으로 전송됩니다.</li>
         </ol>
       </div>
     </article>

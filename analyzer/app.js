@@ -16,6 +16,8 @@ const $urlImportForm = document.getElementById('urlImportForm');
 const $urlImportInput = document.getElementById('urlImportInput');
 const $urlImportStatus = document.getElementById('urlImportStatus');
 const $btnUrlImport = document.getElementById('btnUrlImport');
+const $btnUrlPasteImport = document.getElementById('btnUrlPasteImport');
+const $btnRailPasteImport = document.getElementById('btnRailPasteImport');
 const $autoRunToggle = document.getElementById('autoRunToggle');
 const $dashboardRail = document.querySelector('.dashboard-rail');
 const $railPanel = document.querySelector('[data-rail-panel]');
@@ -41,6 +43,7 @@ let comps = null;
 let selectedKey = null;
 const lightboxState = { items: [], index: 0 };
 const productSummaries = new Map();
+const productSummaryLocks = new Set();
 const photoIndexes = new Map();
 const photoDirections = new Map();
 const relatedRequestedKeys = new Set();
@@ -109,7 +112,6 @@ const APP_SHORTCUT_GROUPS = [
       ['/', '매물 URL 입력 열기'],
       ['?', '단축키 패널 열기/닫기'],
       ['R', '전체 재분석'],
-      ['N', '새 분석 시작'],
     ],
   },
   {
@@ -162,9 +164,10 @@ const MIN_PRICE_REFERENCE_MATCHES = 5;
 const MAX_STAGE_THREE_AUTO_QUERY_RETRIES = 1;
 const STAGE_THREE_COLLECTION_TIMEOUT_MS = 32_000;
 const STAGE_THREE_COMPARISON_FILTER_TIMEOUT_MS = 8_000;
-const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v16';
-const LISTING_IMAGE_OVERLAY_VERSION = 25;
+const AI_CACHE_STORAGE_KEY = 'ulsa_ai_analysis_cache_v20';
+const LISTING_IMAGE_OVERLAY_VERSION = 28;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 6;
+const IMAGE_DEFECT_MARKER_MAX_PERCENT = 12;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
 const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
 const AUTO_RUN_STORAGE_KEY = 'ulsa_auto_run_next_steps';
@@ -180,11 +183,44 @@ const AI_CACHE_LEGACY_STORAGE_KEYS = [
   'ulsa_ai_analysis_cache_v11',
   'ulsa_ai_analysis_cache_v13',
   'ulsa_ai_analysis_cache_v15',
+  'ulsa_ai_analysis_cache_v16',
+  'ulsa_ai_analysis_cache_v17',
+  'ulsa_ai_analysis_cache_v18',
+  'ulsa_ai_analysis_cache_v19',
 ];
 
 function mapToPersistableObject(map) {
   return Object.fromEntries(
     [...map.entries()].filter(([, state]) => state?.status === 'done' || state?.status === 'error')
+  );
+}
+
+/** dataURL 그리드는 localStorage 한도를 넘겨 캐시 전체가  savе 실패한다. 저장 시 제거. */
+function sanitizeListingImageAnalysisForCache(state) {
+  if (!state || typeof state !== 'object') return state;
+  if (!state.analysis || typeof state.analysis !== 'object') return state;
+  const images = Array.isArray(state.analysis.images)
+    ? state.analysis.images.map((img) => {
+        if (!img || typeof img !== 'object') return img;
+        const next = { ...img };
+        delete next.debugGridImageUrl;
+        return next;
+      })
+    : state.analysis.images;
+  return {
+    ...state,
+    analysis: {
+      ...state.analysis,
+      images,
+    },
+  };
+}
+
+function listingImageAnalysesToPersistableObject() {
+  return Object.fromEntries(
+    [...listingImageAnalyses.entries()]
+      .filter(([, state]) => state?.status === 'done' || state?.status === 'error')
+      .map(([key, state]) => [key, sanitizeListingImageAnalysisForCache(state)])
   );
 }
 
@@ -442,7 +478,7 @@ function persistAiCaches() {
         productRiskAnalyses: mapToPersistableObject(productRiskAnalyses),
         productRiskYoutubeAnalyses: mapToPersistableObject(productRiskYoutubeAnalyses),
         listingTextAnalyses: mapToPersistableObject(listingTextAnalyses),
-        listingImageAnalyses: mapToPersistableObject(listingImageAnalyses),
+        listingImageAnalyses: listingImageAnalysesToPersistableObject(),
         accessoryChecks: mapToPersistableObject(accessoryChecks),
         comparisonFilters: mapToPersistableObject(comparisonFilters),
         stageThreeComparisonSkippedKeys: setToPersistableArray(stageThreeComparisonSkippedKeys),
@@ -883,17 +919,24 @@ function transitionStageThreeSearchToIdentifying(item) {
   const key = summaryKey(item);
   const progress = ensureStageThreeSearchProgress(item);
   if (!key || !progress) return null;
-  if (progress.phase === 'identifying' || progress.phase === 'complete') {
+  if (progress.phase === 'identifying') {
     noteStageThreeSearchHighWater(progress);
     return progress;
   }
-  const currentPercent = Math.max(noteStageThreeSearchHighWater(progress), 55);
+  // 수집→판별은 한 타임라인. 현재 %에서 96%까지 이어가고 0으로 되돌리지 않는다.
+  const currentPercent = Math.max(
+    noteStageThreeSearchHighWater(progress),
+    Number(progress.highWater) || 0,
+    Number(progress.startPercent) || 0,
+    12
+  );
   Object.assign(progress, {
     phase: 'identifying',
     startedAt: Date.now(),
     durationMs: 16000,
-    startPercent: Math.min(Math.max(currentPercent, 58), 88),
+    startPercent: Math.min(90, currentPercent),
     endPercent: 96,
+    highWater: currentPercent,
     forcePercent: undefined,
     finishStartedAt: undefined,
     finishFromPercent: undefined,
@@ -1160,6 +1203,7 @@ function cancelActiveAiWork() {
     }
   }
   activeAiAbortControllers.clear();
+  productSummaryLocks.clear();
   [
     productSummaries,
     productRiskAnalyses,
@@ -1199,11 +1243,36 @@ async function showAiLoadingComplete(store, key, refresh, kind = '') {
 async function finishAiLoadingState(store, key, nextState, refresh, kind = '') {
   await showAiLoadingComplete(store, key, refresh, kind);
   store.set(key, nextState);
+  if (typeof refresh === 'function') refresh();
 }
 
 function isStepOneDone(item) {
   const key = summaryKey(item);
-  return Boolean(key && productSummaries.get(key)?.status === 'done');
+  if (!key) return false;
+  const state = productSummaries.get(key) || getProductSummaryState(item);
+  return state?.status === 'done';
+}
+
+/** 매물 제목·본문·사진이 갖춰진 뒤에만 Step1 AI를 호출한다. */
+function isListingReadyForProductSummary(item) {
+  if (!item || typeof item !== 'object') return false;
+  const title = String(item.title || '').trim();
+  if (title.length < 2) return false;
+  const body = String(item.body || '').trim();
+  const images = Array.isArray(item.imageUrls) ? item.imageUrls.map((u) => String(u || '').trim()).filter(Boolean) : [];
+  if (body.length >= 12) return true;
+  if (images.length >= 1 && (body.length >= 1 || title.length >= 6)) return true;
+  return false;
+}
+
+function listingNotReadyMessage(item) {
+  const title = String(item?.title || '').trim();
+  const body = String(item?.body || '').trim();
+  const images = Array.isArray(item?.imageUrls) ? item.imageUrls.filter(Boolean) : [];
+  if (!title) return '매물 제목을 아직 가져오지 못했습니다. 링크를 다시 불러와 주세요.';
+  if (!body && !images.length) return '매물 본문·사진을 아직 가져오지 못했습니다. 링크를 다시 불러와 주세요.';
+  if (!body) return '매물 본문이 비어 있습니다. 링크를 다시 불러온 뒤 제품 정리를 시도하세요.';
+  return '매물 정보가 부족합니다. 링크를 다시 불러와 주세요.';
 }
 
 function isStepTwoStarted(item) {
@@ -1245,7 +1314,6 @@ function emptyComparisonComps(item) {
     forItemKey: itemKey(item),
     bunjang: { items: [] },
     daangn: { items: [] },
-    joongna: { items: [] },
   };
 }
 
@@ -1256,7 +1324,6 @@ function collectingComparisonComps(item) {
     startedAt: Date.now(),
     bunjang: null,
     daangn: null,
-    joongna: null,
   };
 }
 
@@ -1318,7 +1385,13 @@ function forceFinalizeStageThreeCollection(item) {
 function effectiveStageThreeComps(item, nextComps = comps) {
   if (nextComps && (isCompsCollected(nextComps) || nextComps.status === 'collecting')) return nextComps;
   const key = summaryKey(item);
-  if (key && stageThreeComparisonSkippedKeys.has(key)) return emptyComparisonComps(item);
+  if (!key) return nextComps;
+  if (stageThreeComparisonSkippedKeys.has(key)) return emptyComparisonComps(item);
+  // 새로고침·캐시 복원 등으로 live comps가 없어도 필터/시세 캐시가 있으면 Step4 진입용 빈 collected comps를 쓴다.
+  if (hasRestorableComparisonListings(key)) return emptyComparisonComps(item);
+  if (findListingStageCacheKey(comparisonFilters, key) || findListingStageCacheKey(usedPriceGuides, key)) {
+    return emptyComparisonComps(item);
+  }
   return nextComps;
 }
 
@@ -1334,7 +1407,8 @@ function isStepThreeDone(item) {
   const guideKey = findListingStageCacheKey(usedPriceGuides, listingKey, preferGuideKey);
   const comparisonSettled =
     Boolean(comparisonKey && isStageThreeCacheSettled(comparisonFilters.get(comparisonKey)?.status)) ||
-    stageThreeComparisonSkippedKeys.has(listingKey);
+    stageThreeComparisonSkippedKeys.has(listingKey) ||
+    hasRestorableComparisonListings(listingKey);
   const guideSettled = Boolean(guideKey && isStageThreeCacheSettled(usedPriceGuides.get(guideKey)?.status));
   return comparisonSettled && guideSettled;
 }
@@ -1342,9 +1416,10 @@ function isStepThreeDone(item) {
 /** 비교 필터·시세 가이드 중 한쪽이 늦게 끝나도 Step4/다음 단계 버튼이 풀리게 한다. */
 function maybeAdvanceAfterStageThreePart(item) {
   if (!item || selectedKey !== summaryKey(item)) return;
-  updateStageSlide();
+  // Step4 패널을 먼저 붙여야 stageSlideCount/다음 단계 버튼이 풀린다.
   if (isStepThreeDone(item)) refreshStageFourSection(item);
   else syncStagePanels(item);
+  updateStageSlide();
 }
 
 function isStepFourDone(item) {
@@ -1419,6 +1494,7 @@ function syncStagePanels(item) {
 function canOpenStage(index) {
   const item = currentRenderedItem();
   if (index <= 0) return true;
+  // Step 2 슬라이드(index 1)는 Step 1 매물 정리 완료 시 바로 연다.
   if (index === 1) return isStepOneDone(item);
   if (index === 2) return isStepTwoDone(item);
   if (index === 3) return isStepThreeDone(item);
@@ -1448,18 +1524,28 @@ function updateStageSlide() {
   const prev = controls.querySelector('[data-stage-slide-prev]');
   const next = controls.querySelector('[data-stage-slide-next]');
   const label = controls.querySelector('[data-stage-slide-label]');
+  // DOM에 Step4 패널이 아직 없어도 canOpenStage(3)면 다음 단계를 연다.
+  const canGoNext = canOpenStage(stageSlideIndex + 1);
+  const nextLocked = !canGoNext;
   if (prev) prev.disabled = stageSlideIndex <= 0;
-  if (next) next.disabled = stageSlideIndex >= count - 1 || !canOpenStage(stageSlideIndex + 1);
+  if (next) {
+    next.disabled = nextLocked;
+    next.setAttribute('aria-disabled', nextLocked ? 'true' : 'false');
+  }
   if (prev) prev.textContent = '<< 이전 단계';
   if (next) next.textContent = stageSlideIndex === 3 ? '다음 단계(선택) >>' : '다음 단계 >>';
   if (label) label.textContent = stageSlideIndex === 4 ? `선택 단계/${count}` : `Step ${stageSlideIndex + 1}/${count}`;
 }
 
 function moveStageSlide(dir) {
-  const count = stageSlideCount();
+  const count = Math.max(stageSlideCount(), 5);
   const nextIndex = Math.max(0, Math.min(stageSlideIndex + dir, count - 1));
   if (nextIndex === stageSlideIndex) return;
   if (!canOpenStage(nextIndex)) return;
+  const item = currentRenderedItem();
+  // Step4로 넘기기 전에 패널이 없으면 먼저 붙인다.
+  if (nextIndex === 3 && item) refreshStageFourSection(item);
+  if (nextIndex === 4 && item) refreshStageFiveSection(item);
   if (stageSlideAnimationTimer) window.clearTimeout(stageSlideAnimationTimer);
   $appShell?.classList.remove('is-stage-sliding');
   $appShell?.setAttribute('data-stage-slide-dir', dir > 0 ? 'next' : 'prev');
@@ -1467,10 +1553,7 @@ function moveStageSlide(dir) {
   stageSlideIndex = nextIndex;
   $appShell?.classList.add('is-stage-sliding');
   updateStageSlide();
-  if (stageSlideIndex === 1) {
-    const item = currentRenderedItem();
-    if (item) previewListingImageAnalysis(item);
-  }
+  if (stageSlideIndex === 1 && item) previewListingImageAnalysis(item);
   stageSlideAnimationTimer = window.setTimeout(() => {
     $appShell?.classList.remove('is-stage-sliding');
     stageSlideAnimationTimer = 0;
@@ -1580,9 +1663,8 @@ function playAiResultMotion(duration = 560) {
 }
 
 function renderStageSlideControls() {
-  const count = stageSlideCount();
   const prevDisabled = stageSlideIndex <= 0;
-  const nextDisabled = stageSlideIndex >= count - 1 || !canOpenStage(stageSlideIndex + 1);
+  const nextDisabled = !canOpenStage(stageSlideIndex + 1);
   return `
     <nav class="stage-slide-controls" data-stage-slide-controls aria-label="단계 이동">
       <button type="button" class="btn btn-secondary btn-small" data-stage-slide-prev title="이전 단계 (←/↑)" ${prevDisabled ? 'disabled' : ''}>&lt;&lt; 이전 단계</button>
@@ -1623,14 +1705,8 @@ function sellerLine(seller, platform) {
   const name = seller.nickname || seller.shopName || '';
   if (name) bits.push(name);
   if (platform === 'daangn' && seller.mannerScore != null) bits.push(`${seller.mannerScore}°C`);
-  if (platform === 'joongna' && seller.trustScore != null) {
-    bits.push(`신뢰지수 ${Number(seller.trustScore).toLocaleString('ko-KR')}${seller.trustMax != null ? `/${Number(seller.trustMax).toLocaleString('ko-KR')}` : ''}`);
-  }
-  if (platform === 'joongna' && seller.isSafePayment) bits.push('안심결제 가능');
-  if (platform === 'joongna' && seller.safePaymentCount != null) bits.push(`안심결제 ${Number(seller.safePaymentCount).toLocaleString('ko-KR')}건`);
   if (platform !== 'daangn' && seller.reviewRating != null) bits.push(`평점 ${seller.reviewRating}`);
-  if (seller.reviewCount != null) bits.push(`${platform === 'joongna' ? '거래후기' : '리뷰'} ${Number(seller.reviewCount).toLocaleString('ko-KR')}`);
-  if (platform === 'joongna' && seller.followerCount != null) bits.push(`단골 ${Number(seller.followerCount).toLocaleString('ko-KR')}`);
+  if (seller.reviewCount != null) bits.push(`리뷰 ${Number(seller.reviewCount).toLocaleString('ko-KR')}`);
   if (seller.salesCount != null) bits.push(`판매 ${seller.salesCount}`);
   if (seller.location) bits.push(seller.location);
   return bits.join(' · ') || '—';
@@ -1895,11 +1971,54 @@ function productSummaryImage(summary, item) {
   return summary?.productImageUrl || '';
 }
 
-function displayImageUrl(src) {
+function rawListingImageUrl(src) {
   const raw = String(src || '').trim();
-  if (!raw || raw.startsWith('/api/image-proxy')) return raw;
+  if (!raw) return '';
+  try {
+    const u = new URL(raw, location.origin);
+    if (u.pathname === '/api/image-proxy') {
+      const inner = u.searchParams.get('url');
+      if (inner) return inner;
+    }
+  } catch {
+    /* ignore */
+  }
+  return raw;
+}
+
+function displayImageUrl(src) {
+  const original = String(src || '').trim();
+  if (!original) return '';
+  // Keep signed proxy URLs intact — stripping sig causes 403 for DDG product images.
+  if (original.startsWith('/api/image-proxy')) return original;
+  try {
+    const asUrl = new URL(original, location.href);
+    if (asUrl.pathname === '/api/image-proxy') return `${asUrl.pathname}${asUrl.search}${asUrl.hash}`;
+  } catch {
+    /* ignore */
+  }
+  const raw = rawListingImageUrl(original);
+  if (!raw) return '';
+  if (raw.startsWith('/api/image-proxy')) return raw;
+  // Same-origin / demo assets must stay direct — image-proxy blocks private hosts.
+  if (raw.startsWith('/')) return raw;
+  try {
+    const u = new URL(raw, location.href);
+    if (u.origin === location.origin) return `${u.pathname}${u.search}${u.hash}`;
+    if (u.pathname.startsWith('/demo-images/')) return `${u.pathname}${u.search}`;
+  } catch {
+    /* ignore */
+  }
   if (/^https?:\/\//i.test(raw)) return `/api/image-proxy?url=${encodeURIComponent(raw)}`;
   return raw;
+}
+
+function normalizeListingItem(item) {
+  if (!item || typeof item !== 'object') return item;
+  const imageUrls = Array.isArray(item.imageUrls)
+    ? [...new Set(item.imageUrls.map((u) => rawListingImageUrl(u)).filter(Boolean))]
+    : item.imageUrls;
+  return imageUrls === item.imageUrls ? item : { ...item, imageUrls };
 }
 
 function imageUrlKey(src) {
@@ -1991,11 +2110,10 @@ function isSampleListing(item) {
 }
 
 function productSummaryImages(summary, item) {
-  const listingFirst = Array.isArray(item?.imageUrls) ? item.imageUrls[0] : '';
+  // DuckDuckGo product search images only — never listing photos.
   return uniqueImageList([
     summary?.productImageUrl,
     ...(Array.isArray(summary?.productImageUrls) ? summary.productImageUrls : []),
-    listingFirst,
   ]).slice(0, 1);
 }
 
@@ -2037,7 +2155,7 @@ function lightboxAnalysisItems(images) {
   return images
     .filter((image) => image.imageUrl)
     .map((image) => ({
-      src: image.imageUrl,
+      src: displayImageUrl(image.imageUrl),
       imageWidth: image.imageWidth,
       imageHeight: image.imageHeight,
       label: imageAnalysisLabel(image),
@@ -3206,24 +3324,49 @@ function startStageFourFromAssistant(item) {
 
 async function startRequestedStageFromAssistant(item, stage) {
   if (!item) return { message: '먼저 분석할 매물을 불러와 주세요.' };
+  // stage===0 은 "다음 단계" 의미. JS에서 0이 falsy라 || 로 넘기면 안 된다.
   const targetStage =
-    stage ||
-    (!isStepOneDone(item) ? 1 : !isStepTwoStarted(item) ? 2 : !isStepThreeUnlocked(item) ? 3 : !isStepFourDone(item) ? 4 : 0);
-  if (targetStage === 1) return { message: 'Step 1 매물 정리는 이미 자동으로 진행됩니다. 잠시만 기다려 주세요.' };
+    stage === 0 || stage == null
+      ? !isStepOneDone(item)
+        ? 1
+        : !isStepTwoStarted(item)
+          ? 2
+          : !isStepThreeUnlocked(item)
+            ? 3
+            : !isStepFourDone(item)
+              ? 4
+              : 0
+      : stage;
+  if (targetStage === 1) {
+    updateStageSlide();
+    return { message: 'Step 1 매물 정리는 이미 자동으로 진행됩니다. 잠시만 기다려 주세요.' };
+  }
   if (targetStage === 2) {
-    const block = directAiEarlierStageBlock(item, 2);
-    if (block && !block.includes('Step 2 리스크 판별 시작 전')) return { message: block };
-    return { message: startStageTwoFromAssistant(item) };
+    if (!isStepOneDone(item)) {
+      return { message: 'Step 1 매물 정리가 끝난 뒤 실행할 수 있습니다.' };
+    }
+    const message = startStageTwoFromAssistant(item);
+    moveStageSlideTo(1);
+    updateStageSlide();
+    return { message };
   }
   if (targetStage === 3) {
     const block = directAiEarlierStageBlock(item, 3);
     if (block && !block.includes('Step 3 가격 참고 시작 전')) return { message: block };
-    return { message: startStageThreeFromAssistant(item) };
+    const message = startStageThreeFromAssistant(item);
+    moveStageSlideTo(2);
+    updateStageSlide();
+    return { message };
   }
   if (targetStage === 4) {
-    const block = directAiEarlierStageBlock(item, 4);
-    if (block && !block.includes('Step 4 최종 판단 영수증 시작 전')) return { message: block };
-    return { message: startStageFourFromAssistant(item) };
+    if (!isStepThreeDone(item)) {
+      return { message: 'Step 3 가격 참고자료가 끝난 뒤 최종 판단을 시작할 수 있습니다.' };
+    }
+    refreshStageFourSection(item);
+    const message = startStageFourFromAssistant(item);
+    moveStageSlideTo(3);
+    updateStageSlide();
+    return { message };
   }
   return { message: '이미 Step 4 최종 판단까지 완료된 상태입니다.' };
 }
@@ -3257,6 +3400,12 @@ const DIRECT_AI_ACTIONS = [
     aliases: ['다음 단계', '다음단계', '다음 스텝', '다음step'],
     preconditions(item) {
       if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
+      if (!isStepOneDone(item)) {
+        return { ok: false, message: 'Step 1 매물 정리가 끝난 뒤 다음 단계를 실행할 수 있습니다.' };
+      }
+      if (isStepFourDone(item) && isStepTwoStarted(item) && isStepThreeUnlocked(item)) {
+        return { ok: false, message: '이미 마지막 단계까지 완료되었습니다.' };
+      }
       return { ok: true };
     },
     async run(item) {
@@ -3439,7 +3588,7 @@ const DIRECT_AI_ACTIONS = [
     label: '비교 매물 다시 검색',
     risk: 'safe',
     chipLabel: '매물 검색 다시',
-    aliases: ['비교 매물', '매물 검색', '번장', '당근', '중고나라 검색'],
+    aliases: ['비교 매물', '매물 검색', '번장', '당근'],
     preconditions(item) {
       if (!item) return { ok: false, message: '먼저 분석할 매물을 불러와 주세요.' };
       const block = directAiEarlierStageBlock(item, 3);
@@ -3453,7 +3602,7 @@ const DIRECT_AI_ACTIONS = [
       relatedRequestedKeys.add(key);
       openRelatedSearchForItem(item, stageThreeSearchQueries(item), null, { isolated: true, force: true });
       refreshDirectAiPanelIfOpen();
-      return { message: '번개·당근·중고나라 비교 매물 검색을 다시 시작합니다.' };
+      return { message: '번개·당근 비교 매물 검색을 다시 시작합니다.' };
     },
   },
   {
@@ -3743,19 +3892,6 @@ const DIRECT_AI_ACTIONS = [
     },
   },
   {
-    id: 'ui.openJoongna',
-    label: '중고나라 열기',
-    risk: 'safe',
-    chipLabel: '중고나라',
-    aliases: ['중나', '중고나라', 'joongna'],
-    preconditions() {
-      return { ok: true };
-    },
-    async run() {
-      return { message: openDirectAiMarket('https://web.joongna.com/', '중고나라') };
-    },
-  },
-  {
     id: 'ui.openImport',
     label: 'URL 불러오기 열기',
     risk: 'safe',
@@ -3780,7 +3916,7 @@ const DIRECT_AI_ACTIONS = [
     },
     async run(item, ctx = {}) {
       const url = ctx.url || extractSupportedListingUrlFromText(ctx.prompt || '');
-      if (!url) return { message: '분석할 중고나라·번개장터·당근마켓 URL을 같이 보내주세요.' };
+      if (!url) return { message: '분석할 번개장터·당근마켓 URL을 같이 보내주세요.' };
       requestListingUrlImport(url);
       return { message: 'URL을 열어 분석을 시작합니다.' };
     },
@@ -3959,7 +4095,6 @@ function matchDirectAiCommandRules(message) {
     { pattern: /다나와|신품가\s*검색|새상품\s*검색/, actionId: 'ui.openDanawa', confidence: 0.94 },
     { pattern: /당근(?:마켓)?\s*(?:켜|열|보여|가줘|이동)/, actionId: 'ui.openDaangn', confidence: 0.96 },
     { pattern: /번개(?:장터)?|번장/, actionId: 'ui.openBunjang', confidence: 0.9 },
-    { pattern: /중고나라|중나/, actionId: 'ui.openJoongna', confidence: 0.9 },
     { pattern: /최근\s*매물|히스토리/, actionId: 'ui.openHistory', confidence: 0.9 },
     { pattern: /ai\s*설정|api\s*설정|키\s*설정|api\s*키|gemini|제미나이/, actionId: 'ui.openSettings', confidence: 0.92 },
     { pattern: /단축키|키보드\s*단축키|shortcut|hotkey/, actionId: 'ui.shortcuts', confidence: 0.98 },
@@ -4052,7 +4187,7 @@ async function resolveDirectAiCommand(message, item = currentRenderedItem(), api
 
   const maybeCommand =
     DIRECT_AI_COMMAND_VERBS.test(String(message || '')) ||
-    /^(pdf|저장|열어|켜|최근|설정|api|키|url|당근|번개|번장|중고나라|중나|슬라이드|스크롤|판매글|원본|다나와|기록|히스토리|새\s*분석|다음|step|스텝|\d단계)/i.test(String(message || '').trim()) ||
+    /^(pdf|저장|열어|켜|최근|설정|api|키|url|당근|번개|번장|슬라이드|스크롤|판매글|원본|다나와|기록|히스토리|새\s*분석|다음|step|스텝|\d단계)/i.test(String(message || '').trim()) ||
     Boolean(extractSupportedListingUrlFromText(message));
   if (!maybeCommand) return null;
 
@@ -4342,7 +4477,7 @@ function directAiContext(item = currentRenderedItem(), opts = {}) {
         ? {
             stats: compStats(filteredComparisonItems(item, stageComps) || comparisonFilterCandidates(item, stageComps, 12) || []),
             sampleCount: comparisonItems(stageComps).length,
-            platforms: ['bunjang', 'daangn', 'joongna'].map((id) => ({
+            platforms: ['bunjang', 'daangn'].map((id) => ({
               id,
               count: Array.isArray(stageComps?.[id]?.items) ? stageComps[id].items.length : 0,
               query: stageComps?.[id]?.query || '',
@@ -4474,8 +4609,160 @@ function directAiKeywordPrompt(item = currentRenderedItem(), stage = currentDire
   ].join('\n');
 }
 
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, (ch) => `\\${ch}`);
+}
+
+function hardKeywordMatchVariants(term) {
+  const raw = String(term || '').trim();
+  if (raw.length < 2) return [];
+  const out = [];
+  const seen = new Set();
+  for (const candidate of [raw, raw.replace(/\s+/g, ''), raw.replace(/[·・･]/g, '')]) {
+    const value = String(candidate || '').trim();
+    if (value.length < 2 || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function askDirectAiAboutKeyword(keyword) {
+  const clean = String(keyword || '').trim();
+  if (!clean) return;
+  if (!directAiChat.open) toggleDirectAiPanel(true);
+  const submit = () => {
+    const form = $directAiPanel?.querySelector('.direct-chat-form');
+    const textarea = form?.querySelector('textarea[name="prompt"]');
+    if (!form || !textarea) return false;
+    textarea.value = directAiKeywordQuestion(clean);
+    form.requestSubmit?.();
+    return true;
+  };
+  if (submit()) return;
+  window.requestAnimationFrame(() => {
+    if (!submit()) window.setTimeout(submit, 60);
+  });
+}
+
+function clearInlineHardKeywordMarks(root = $current) {
+  if (!root) return;
+  root.querySelectorAll('button.inline-hard-keyword').forEach((btn) => {
+    const term = btn.getAttribute('data-inline-ask-term') || btn.querySelector('.inline-hard-keyword__text')?.textContent || '';
+    btn.replaceWith(document.createTextNode(term));
+  });
+  root.normalize();
+}
+
+function applyInlineHardKeywordMarks(root = $current) {
+  if (!root || root.querySelector('[data-sample-landing]')) return;
+  // 키워드마다 문서 최상단 1회만. 서로 다른 키워드는 각자 1회씩 표시.
+  const keywordDefs = uniqueDirectAiKeywords(currentDirectAiKeywordItems())
+    .map((term) => {
+      const variants = hardKeywordMatchVariants(term).sort((a, b) => b.length - a.length);
+      if (!variants.length) return null;
+      return {
+        term,
+        key: directAiKeywordKey(term),
+        variants,
+        pattern: new RegExp(variants.map(escapeRegExp).join('|'), 'gi'),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.term?.length || 0) - (a.term?.length || 0));
+  clearInlineHardKeywordMarks(root);
+  if (!keywordDefs.length) return;
+  const claimed = new Set();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (
+        parent.closest(
+          'button, a, script, style, textarea, input, kbd, code, .material-symbols-rounded, .inline-hard-keyword, .direct-chat-popover, .dashboard-rail, .shortcut-panel'
+        )
+      ) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      if (!String(node.nodeValue || '').trim()) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+
+  function earliestUnclaimedMatch(text, fromIndex) {
+    let best = null;
+    for (const def of keywordDefs) {
+      if (!def.key || claimed.has(def.key)) continue;
+      def.pattern.lastIndex = fromIndex;
+      const match = def.pattern.exec(text);
+      if (!match) continue;
+      const matched = match[0];
+      const index = match.index;
+      if (
+        !best ||
+        index < best.index ||
+        (index === best.index && matched.length > best.matched.length)
+      ) {
+        best = { def, matched, index, end: index + matched.length };
+      }
+    }
+    return best;
+  }
+
+  for (const textNode of nodes) {
+    if (claimed.size >= keywordDefs.length) break;
+    const text = textNode.nodeValue || '';
+    const frag = document.createDocumentFragment();
+    let cursor = 0;
+    let changed = false;
+    while (cursor < text.length) {
+      const hit = earliestUnclaimedMatch(text, cursor);
+      if (!hit) break;
+      if (hit.index > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, hit.index)));
+      claimed.add(hit.def.key);
+      changed = true;
+      const askTerm = hit.def.term || hit.matched;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'inline-hard-keyword';
+      btn.setAttribute('data-inline-ask-term', askTerm);
+      btn.setAttribute('data-direct-chat-keyword', askTerm);
+      btn.title = askTerm + ' 의미 물어보기';
+      btn.setAttribute('aria-label', askTerm + ' 의미 물어보기');
+      const label = document.createElement('span');
+      label.className = 'inline-hard-keyword__text';
+      label.textContent = hit.matched;
+      const icon = document.createElement('span');
+      icon.className = 'material-symbols-rounded inline-hard-keyword__icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = 'search';
+      btn.append(label, icon);
+      frag.appendChild(btn);
+      cursor = hit.end;
+    }
+    if (!changed) continue;
+    if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+    textNode.parentNode?.replaceChild(frag, textNode);
+  }
+  bindInlineHardKeywordButtons(root);
+}
+
+function bindInlineHardKeywordButtons(root = document) {
+  root?.querySelectorAll?.('[data-inline-ask-term]')?.forEach((btn) => {
+    if (btn.dataset.inlineAskBound === '1') return;
+    btn.dataset.inlineAskBound = '1';
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      askDirectAiAboutKeyword(btn.getAttribute('data-inline-ask-term') || '');
+    });
+  });
+}
+
 async function ensureDirectAiKeywords(item = currentRenderedItem()) {
-  if (!item || !directAiChat.open) return;
+  if (!item) return;
   const requestKey = summaryKey(item);
   if (directAiChat.keywordStatus === 'loading') return;
   const stages = directAiKeywordStages(item);
@@ -4505,7 +4792,8 @@ async function ensureDirectAiKeywords(item = currentRenderedItem()) {
     directAiChat.keywordStatus = 'error';
   }
   saveDirectAiChatState(requestKey);
-  updateDirectAiSuggestions();
+  if (directAiChat.open) updateDirectAiSuggestions();
+  applyInlineHardKeywordMarks();
 }
 
 function directAiPrompt(question, item = currentRenderedItem()) {
@@ -4560,10 +4848,7 @@ function bindDirectAiKeywordButtons(root = $directAiPanel) {
     btn.dataset.directChatKeywordBound = '1';
     btn.addEventListener('click', () => {
       const keyword = btn.getAttribute('data-direct-chat-keyword') || '';
-      const form = $directAiPanel.querySelector('.direct-chat-form');
-      const textarea = form?.querySelector('textarea[name="prompt"]');
-      if (textarea) textarea.value = directAiKeywordQuestion(keyword);
-      form?.requestSubmit?.();
+      askDirectAiAboutKeyword(keyword);
     });
   });
 }
@@ -4653,23 +4938,25 @@ function positionDirectAiPanel() {
 }
 
 function refreshDirectAiPanelIfOpen() {
-  if (!directAiChat.open) return;
   const item = currentRenderedItem();
-  const stage = $directAiPanel?.querySelector('[data-direct-chat-stage]');
-  if (stage) stage.textContent = directAiStepLabel(item);
-  const emptyStatus = $directAiPanel?.querySelector('[data-direct-chat-empty-status]');
-  if (emptyStatus) emptyStatus.textContent = directAiStatusText(item);
-  const commands = $directAiPanel?.querySelector('.direct-chat-commands');
-  if (commands) commands.outerHTML = renderDirectAiCommandChipsHtml(item);
-  bindDirectAiCommandButtons($directAiPanel);
-  updateDirectAiSuggestions();
-  void ensureDirectAiKeywords();
+  if (directAiChat.open) {
+    const stage = $directAiPanel?.querySelector('[data-direct-chat-stage]');
+    if (stage) stage.textContent = directAiStepLabel(item);
+    const emptyStatus = $directAiPanel?.querySelector('[data-direct-chat-empty-status]');
+    if (emptyStatus) emptyStatus.textContent = directAiStatusText(item);
+    const commands = $directAiPanel?.querySelector('.direct-chat-commands');
+    if (commands) commands.outerHTML = renderDirectAiCommandChipsHtml(item);
+    bindDirectAiCommandButtons($directAiPanel);
+    updateDirectAiSuggestions();
+  }
+  void ensureDirectAiKeywords(item);
+  applyInlineHardKeywordMarks();
 }
 
 function refreshDirectAiPanelForListingChange() {
-  if (!directAiChat.open) return;
-  renderDirectAiPanel();
+  if (directAiChat.open) renderDirectAiPanel();
   void ensureDirectAiKeywords();
+  applyInlineHardKeywordMarks();
 }
 
 function stripChatMarkdown(text) {
@@ -5780,7 +6067,7 @@ function renderStageThreeSection(item, comps) {
               <div>
                 <p class="stage-two-card-label">다음 단계 대기</p>
                 <h3>리스크 판별을 확인한 뒤 가격 참고자료 수집을 시작하세요.</h3>
-                <p>버튼을 눌러 신품가·번개·당근·중고나라 관련 매물을 모으고 구매 판단용 참고자료로 정리합니다.</p>
+                <p>버튼을 눌러 신품가·번개·당근 관련 매물을 모으고 구매 판단용 참고자료로 정리합니다.</p>
                 <span class="stage-start-card__cta">버튼 클릭으로 시작</span>
               </div>
             </div>
@@ -5836,7 +6123,16 @@ function renderStageThreeSearchCard(item, comps) {
       <div class="stage-three-comps">
         ${
           queryState?.status === 'loading'
-            ? renderCompsLoading('AI가 검색어를 다시 만들고 있습니다...', queryState, 'searchQuery')
+            ? renderCompsLoading(
+                'AI가 검색어를 다시 만들고 있습니다...',
+                stageThreeSearchProgressState(item, 'collecting', {
+                  startedAt: queryState.startedAt || Date.now(),
+                  startPercent: 0,
+                  endPercent: 28,
+                  durationMs: AI_LOADING_DURATIONS.searchQuery || 8000,
+                }),
+                STAGE_THREE_SEARCH_PROGRESS_KIND
+              )
             : renderCompsBlock(item, comps)
         }
       </div>
@@ -5874,17 +6170,36 @@ function activeCompsForItem(item, rawComps) {
   if (!item || !rawComps) return null;
   if (rawComps.forItemKey && rawComps.forItemKey !== itemKey(item)) return null;
   if (rawComps.status === 'collected') return rawComps;
-  if (rawComps.bunjang || rawComps.daangn || rawComps.joongna) return rawComps;
+  if (rawComps.bunjang || rawComps.daangn) return rawComps;
   if (rawComps.status === 'collecting') return rawComps;
   return null;
 }
 
 function renderProductSummaryBlock(item) {
+  const key = summaryKey(item);
   const state = getProductSummaryState(item);
   const summary = state?.summary;
   const images = productSummaryImages(summary, item);
   const danawaUrl = danawaPriceUrl(summary);
   const renderKey = productSummaryRenderKey(item);
+  const productName = summary?.productName || '제품 정리 대기';
+  const description = productSummaryDescription(summary, item);
+
+  if (!state) {
+    return `
+      <article class="mini-card mini-card--product mini-card--compact mini-card--loading" data-product-summary data-product-summary-render-key="${escapeAttr(renderKey)}">
+        <div class="summary-loading summary-loading--skeleton">
+          <div class="ai-loading-copy">
+            <p class="mini-value">매물 정보를 확인하는 중...</p>
+            <p class="mini-muted">제목·본문·사진이 준비되면 AI 제품 정리를 시작합니다.</p>
+          </div>
+          <div class="risk-loader">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </article>
+    `;
+  }
 
   if (state?.status === 'loading') {
     const loadingHint = '현재 선택한 모델로 제품명·신품 가격 참고자료·대표 이미지를 준비합니다.';
@@ -5920,30 +6235,43 @@ function renderProductSummaryBlock(item) {
         <div class="product-image-strip">
           ${
             images.length
-              ? images
-                  .map(
-                    (src) =>
-                      `<img class="zoomable product-summary-img" src="${escapeAttr(src)}" data-full="${escapeAttr(src)}" alt="" loading="lazy" />`
-                  )
-                  .join('')
-              : '<div class="product-image-placeholder">이미지 없음</div>'
+              ? (() => {
+                  const alts = uniqueImageList([
+                    ...(Array.isArray(summary?.productImageUrls) ? summary.productImageUrls : []),
+                    summary?.productImageUrl,
+                  ]);
+                  return images
+                    .map((src) => {
+                      const rest = alts.filter((u) => u && u !== src);
+                      const altAttr = rest.length ? ` data-alt-urls="${escapeAttr(JSON.stringify(rest))}"` : '';
+                      return `<div class="product-summary-img-wrap is-loading"><span class="product-image-skeleton" aria-hidden="true"></span><img class="zoomable product-summary-img" src="${escapeAttr(src)}" data-full="${escapeAttr(src)}"${altAttr} alt="" loading="eager" onload="this.closest('.product-summary-img-wrap')?.classList.remove('is-loading')" onerror="(function(el){try{var q=JSON.parse(el.getAttribute('data-alt-urls')||'[]');if(q.length){var n=q.shift();el.setAttribute('data-alt-urls',JSON.stringify(q));el.src=n;el.dataset.full=n;return;}el.closest('.product-summary-img-wrap')?.classList.remove('is-loading');}catch(err){}var wrap=el.closest('.product-summary-img-wrap'); if(wrap){wrap.replaceWith(Object.assign(document.createElement('div'),{className:'product-image-placeholder',textContent:'이미지 없음'}));}else{el.replaceWith(Object.assign(document.createElement('div'),{className:'product-image-placeholder',textContent:'이미지 없음'}));}})(this);" /></div>`;
+                    })
+                    .join('');
+                })()
+              : key && productImageSearches.has(key)
+                ? '<div class="product-summary-img-wrap is-loading" aria-busy="true" aria-label="제품 이미지 검색 중"><span class="product-image-skeleton" aria-hidden="true"></span></div>'
+                : '<div class="product-image-placeholder">이미지 없음</div>'
           }
           <button type="button" class="image-refresh-btn product-image-btn" title="제품 이미지 갱신" aria-label="제품 이미지 갱신">↻</button>
         </div>
         <div class="product-summary-text">
           <div class="product-summary-top">
-            <h2 class="hover-full" title="${escapeAttr(summary?.productName || '제품 정리 대기')}">${escapeHtml(summary?.productName || '제품 정리 대기')}</h2>
+            <h2 class="hover-full" title="${escapeAttr(productName)}">${escapeHtml(productName)}</h2>
             ${
               summary?.newPrice
-                ? `<p class="mini-value">추정 신품가: ${escapeHtml(summary.newPrice)}${
+                ? `<p class="mini-value" title="${escapeAttr(`추정 신품가: ${summary.newPrice}`)}">추정 신품가: ${escapeHtml(summary.newPrice)}${
                     danawaUrl ? ` <a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''
                   }</p>`
                 : ''
             }
             ${!summary?.newPrice && danawaUrl ? `<a class="price-source-link" href="${escapeAttr(danawaUrl)}" target="_blank" rel="noopener">다나와 검색 ↗</a>` : ''}
-            ${summary?.makerOrSeller ? `<p class="mini-muted">제조사/판매처: ${escapeHtml(summary.makerOrSeller)}</p>` : ''}
+            ${summary?.makerOrSeller ? `<p class="mini-muted" title="${escapeAttr(`제조사/판매처: ${summary.makerOrSeller}`)}">제조사/판매처: ${escapeHtml(summary.makerOrSeller)}</p>` : ''}
           </div>
-          ${renderScrollableText(productSummaryDescription(summary, item), 'product-desc', `summary-desc-${summaryKey(item)}`, 64)}
+          ${
+            description
+              ? `<p class="product-desc product-desc--clamp" title="${escapeAttr(description)}">${escapeHtml(description)}</p>`
+              : ''
+          }
         </div>
       </div>
       <button type="button" class="wrong-product-btn retry-product-summary-btn" title="제품을 다시 식별합니다">이게 아니에요</button>
@@ -5954,8 +6282,9 @@ function renderProductSummaryBlock(item) {
 function productSummaryRenderKey(item) {
   const state = getProductSummaryState(item);
   const summary = state?.summary || null;
+  const key = summaryKey(item);
   return [
-    summaryKey(item),
+    key,
     state?.status || 'idle',
     state?.error || '',
     summary?.productName || '',
@@ -5963,19 +6292,20 @@ function productSummaryRenderKey(item) {
     summary?.makerOrSeller || '',
     productSummaryDescription(summary, item),
     productSummaryImages(summary, item).join('|'),
+    key && productImageSearches.has(key) ? 'img-loading' : 'img-idle',
     danawaPriceUrl(summary),
   ].join('::');
 }
 
 function comparisonItems(comps) {
-  return [...(comps?.bunjang?.items || []), ...(comps?.daangn?.items || []), ...(comps?.joongna?.items || [])].map((item) => ({
+  return [...(comps?.bunjang?.items || []), ...(comps?.daangn?.items || [])].map((item) => ({
     ...item,
     key: comparisonItemKey(item),
   }));
 }
 
 function comparisonPlatformRank(item) {
-  return { joongna: 0, bunjang: 1, daangn: 2 }[item?.platform] ?? 1;
+  return { bunjang: 0, daangn: 1 }[item?.platform] ?? 1;
 }
 
 function comparisonItemKey(item) {
@@ -6061,8 +6391,7 @@ function scoreComparisonItems(item, comps) {
 const COMPARISON_LIST_LIMIT = 10;
 
 function balancedComparisonItems(scoredItems, limit = COMPARISON_LIST_LIMIT) {
-  // 번개·당근을 우선 균등 배분하고, 중고나라는 남는 칸만 채운다.
-  const platformOrder = ['bunjang', 'daangn', 'joongna'];
+  const platformOrder = ['bunjang', 'daangn'];
   const buckets = Object.fromEntries(platformOrder.map((id) => [id, []]));
   const fallback = [];
   for (const item of scoredItems) {
@@ -6071,11 +6400,7 @@ function balancedComparisonItems(scoredItems, limit = COMPARISON_LIST_LIMIT) {
     else fallback.push(item);
   }
   const half = Math.ceil(limit / 2);
-  const quotas = {
-    bunjang: half,
-    daangn: half,
-    joongna: Math.max(1, Math.floor(limit / 5)),
-  };
+  const quotas = { bunjang: half, daangn: half };
   const selected = [];
   const seen = new Set();
   const take = (entry) => {
@@ -6088,7 +6413,6 @@ function balancedComparisonItems(scoredItems, limit = COMPARISON_LIST_LIMIT) {
   for (const id of platformOrder) {
     for (const entry of buckets[id].slice(0, quotas[id])) take(entry);
   }
-  // 라운드로빈으로 플랫폼을 번갈아 채워 한쪽에 몰리지 않게 한다.
   let cursor = 0;
   while (selected.length < limit) {
     let progressed = false;
@@ -6101,19 +6425,17 @@ function balancedComparisonItems(scoredItems, limit = COMPARISON_LIST_LIMIT) {
     cursor += 1;
   }
   for (const entry of fallback) take(entry);
-  // 최종 표시 순서도 번개↔당근 교차
-  const byPlatform = { bunjang: [], daangn: [], joongna: [], other: [] };
+  const byPlatform = { bunjang: [], daangn: [], other: [] };
   for (const entry of selected) {
     const id = entry.candidate?.platform;
     if (byPlatform[id]) byPlatform[id].push(entry);
     else byPlatform.other.push(entry);
   }
   const interleaved = [];
-  const maxLen = Math.max(byPlatform.bunjang.length, byPlatform.daangn.length, byPlatform.joongna.length);
+  const maxLen = Math.max(byPlatform.bunjang.length, byPlatform.daangn.length);
   for (let i = 0; i < maxLen; i += 1) {
     if (byPlatform.bunjang[i]) interleaved.push(byPlatform.bunjang[i]);
     if (byPlatform.daangn[i]) interleaved.push(byPlatform.daangn[i]);
-    if (byPlatform.joongna[i]) interleaved.push(byPlatform.joongna[i]);
   }
   for (const entry of byPlatform.other) interleaved.push(entry);
   return interleaved.slice(0, limit).map(({ candidate }) => candidate);
@@ -6266,7 +6588,7 @@ function comparisonImageUrl(item) {
     return '';
   if (/\.svg(?:$|[?#&])/i.test(decoded)) return '';
   // 당근/번개 실매물 썸네일은 통과
-  if (/karrot|daangn|bunjang|bgzt|joongna|cloudfront|media\.|img\./i.test(decoded)) return url;
+  if (/karrot|daangn|bunjang|bgzt|cloudfront|media\.|img\./i.test(decoded)) return url;
   if (/\/origin\/article\//i.test(decoded) && /karrotmarket|karroter|daangn|cloudfront/i.test(decoded)) return url;
   if (
     /\/_next\/static\/|\/static\/media\/|open[\s._-]*graph|opengraph|og[\s._-]*image|share[\s._-]*image|(?:^|[\/_.-])landing(?:[\/_.-]|$)|home[\s._-]*banner|(?:^|[\/_.-])intro(?:[\/_.-]|$)|(?:^|[\/_.-])brand(?:[\/_.-]|$)|(?:^|[\/_.-])marketing(?:[\/_.-]|$)|(?:^|[\/_.-])promotion(?:[\/_.-]|$)|(?:^|[\/_.-])promo(?:[\/_.-]|$)|(?:^|[\/_.-])download(?:[\/_.-]|$)|(?:^|[\/_.-])advert(?:[\/_.-]|$)|(?:^|[\/_.-])banner(?:[\/_.-]|$)/i.test(
@@ -6913,6 +7235,7 @@ const reportIssuedAt = new Date().toLocaleString('ko-KR');
         </div>
         <main class="report-doc">
           <section class="report-cover">
+            <div class="report-logo"><img src="${escapeAttr(typeof logoUrl !== 'undefined' ? logoUrl : new URL('/logo-buyorbye-orange.png', location.href).href)}" alt="Buy or Bye" /></div>
             <div class="report-cover-copy">
               <span>BUY OR BYE 구매 판단 리포트 · ${escapeHtml(reportIssuedAt)}</span>
               <h1>${escapeHtml(reportTitle)}</h1>
@@ -7007,16 +7330,7 @@ function renderStaticReportObjectList(
 function renderReportDefectMarkers(image) {
   const markers = (Array.isArray(image?.defects) ? image.defects : [])
     .map((defect) => {
-      const rawGridCell =
-        defect?.gridCell ||
-        defect?.gridRange ||
-        defect?.range ||
-        defect?.cell ||
-        (defect?.startCell && defect?.endCell ? `${defect.startCell}-${defect.endCell}` : '');
-      const rect =
-        defectBoxToRect(defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area) ||
-        gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
-      const marker = defectToCenterMarker(defect) || defectRectToCenterMarker(rect) || defectGridToCenterMarker(defect);
+      const marker = resolveDefectCenterMarker(defect);
       if (!marker) return '';
       const label = reportValue(defect?.description || defect?.detail || '하자 의심', '하자 의심').slice(0, 42);
       const severity = String(defect?.severity || 'caution').toLowerCase();
@@ -7614,7 +7928,8 @@ function renderPurchaseReportDocumentStatic(item, comps) {
         <div class="print-actions"><button type="button" onclick="window.print()">전체 분석 PDF로 저장 / 인쇄</button></div>
         <main>
           <section class="report-cover">
-<div class="report-cover-copy">
+            <div class="report-logo"><img src="${escapeAttr(typeof logoUrl !== 'undefined' ? logoUrl : new URL('/logo-buyorbye-orange.png', location.href).href)}" alt="Buy or Bye" /></div>
+            <div class="report-cover-copy">
               <span class="report-kicker">BUY OR BYE 구매 판단 리포트 · ${escapeHtml(issuedAt)}</span>
               <h1>${escapeHtml(title)}</h1>
               <span class="verdict">${escapeHtml(receiptVerdictLabel(receipt.verdict))}</span>
@@ -8064,6 +8379,7 @@ return `<!doctype html>
         </div>
         <main>
           <section class="report-cover">
+            <div class="report-logo"><img src="${escapeAttr(typeof logoUrl !== 'undefined' ? logoUrl : new URL('/logo-buyorbye-orange.png', location.href).href)}" alt="Buy or Bye" /></div>
             <div>
               <span class="report-kicker">BUY OR BYE 구매 판단 리포트 · ${escapeHtml(reportIssuedAt)}</span>
               <h1>${escapeHtml(reportTitle)}</h1>
@@ -8110,12 +8426,25 @@ async function openPurchaseReportPdf(item, comps) {
 }
 
 function renderPurchaseReceiptBlock(item, comps) {
-  if (!item || !comps || !isCompsCollected(comps)) return '';
-  const { state: filterState } = resolvedComparisonFilterState(item, comps);
-  if (!isStageThreeCacheSettled(filterState?.status)) return '';
-  const { state: guideState } = resolvedUsedPriceGuideState(item, comps);
-  if (!isStageThreeCacheSettled(guideState?.status)) return '';
-  const { key, state } = resolvedPurchaseReceiptState(item, comps);
+  const listingKey = summaryKey(item);
+  const stageComps =
+    effectiveStageThreeComps(item, comps) ||
+    (listingKey && isStepThreeUnlocked(item) ? emptyComparisonComps(item) : null);
+  if (!item || !stageComps) return '';
+  // 비교 스킵·캐시 복원 시에도 Step4 시작 카드는 반드시 노출한다.
+  if (!isCompsCollected(stageComps) && !stageThreeComparisonSkippedKeys.has(listingKey)) return '';
+  const { key: filterKey, state: filterState } = resolvedComparisonFilterState(item, stageComps);
+  const filterSettled =
+    isStageThreeCacheSettled(filterState?.status) ||
+    stageThreeComparisonSkippedKeys.has(listingKey) ||
+    Boolean(findListingStageCacheKey(comparisonFilters, listingKey, filterKey));
+  if (!filterSettled) return '';
+  const { state: guideState } = resolvedUsedPriceGuideState(item, stageComps);
+  const guideSettled =
+    isStageThreeCacheSettled(guideState?.status) ||
+    Boolean(findListingStageCacheKey(usedPriceGuides, listingKey));
+  if (!guideSettled) return '';
+  const { key, state } = resolvedPurchaseReceiptState(item, stageComps);
   if (state?.status === 'loading') {
     return `
       <article class="mini-card stage-three-card purchase-receipt-card is-loading">
@@ -8275,7 +8604,7 @@ function renderCompsBlock(item, comps) {
     if (comps?.status === 'collecting') {
       scheduleStageThreeCollectionTimeoutRefresh(item, comps);
       return renderCompsLoading(
-        '번개·당근·중고나라 검색 결과를 수집 중입니다...',
+        '번개·당근 검색 결과를 수집 중입니다...',
         stageThreeSearchProgressState(item, 'collecting', { startedAt: comps?.startedAt || Date.now() }),
         STAGE_THREE_SEARCH_PROGRESS_KIND
       );
@@ -8459,7 +8788,7 @@ function renderUsedPriceGuideBlock(item, comps) {
     return `
       <article class="mini-card stage-three-card used-price-guide-card is-loading">
         <p class="stage-two-card-label">중고 시세 참고표</p>
-        <h4>번개·중고나라 기반 가격표를 정리하는 중입니다...</h4>
+        <h4>번개·당근 기반 가격표를 정리하는 중입니다...</h4>
         <p class="mini-muted">자동 매물검색과는 별개로, 제품 정보를 바탕으로 상태별 참고가를 정리합니다.</p>
         ${renderAiLoadingProgress(loadingState, 'usedPriceGuide')}
         <div class="risk-loader"><span></span><span></span><span></span></div>
@@ -8479,7 +8808,7 @@ function renderUsedPriceGuideBlock(item, comps) {
     return `
       <article class="mini-card stage-three-card used-price-guide-card is-loading">
         <p class="stage-two-card-label">중고 시세 참고표</p>
-        <h4>번개·중고나라 기반 가격표를 정리하는 중입니다...</h4>
+        <h4>번개·당근 기반 가격표를 정리하는 중입니다...</h4>
         <p class="mini-muted">자동 매물검색과는 별개로, 제품 정보를 바탕으로 상태별 참고가를 정리합니다.</p>
         ${renderAiLoadingProgress(loadingState, 'usedPriceGuide')}
         <div class="risk-loader"><span></span><span></span><span></span></div>
@@ -8530,7 +8859,7 @@ function renderUsedPriceGuideBlock(item, comps) {
 }
 
 function renderPhotoSlider(item) {
-  const urls = item.imageUrls || [];
+  const urls = uniqueImageList(item.imageUrls || []);
   if (!urls.length) return '<span class="empty">없음</span>';
   const key = itemKey(item);
   const idx = Math.min(Math.max(photoIndexes.get(key) || 0, 0), urls.length - 1);
@@ -8577,7 +8906,7 @@ function imageAnalysisEntries(item) {
       .map((img, idx) => ({
         ...img,
         index: Number(img.index) || idx + 1,
-        imageUrl: img.imageUrl || '',
+        imageUrl: displayImageUrl(img.imageUrl || ''),
         label: imageAnalysisLabel(img),
         comment: img.comment || '사진 상태 확인이 필요합니다.',
       }))
@@ -8589,7 +8918,7 @@ function imageAnalysisEntries(item) {
     return {
       ...img,
       index,
-      imageUrl: url,
+      imageUrl: displayImageUrl(url),
       label: imageAnalysisLabel(img),
       comment: img.comment || '사진 상태 확인이 필요합니다.',
     };
@@ -8813,8 +9142,8 @@ function enforceDefectMarkerMinimum(marker) {
   const centerY = Math.max(0, Math.min(100, Number(marker.centerY)));
   const rawWidth = Math.max(1, Math.min(80, Number(marker.width) || 0));
   const rawHeight = Math.max(1, Math.min(80, Number(marker.height) || rawWidth));
-  const width = Math.max(rawWidth, IMAGE_DEFECT_MARKER_MIN_PERCENT);
-  const height = Math.max(rawHeight, IMAGE_DEFECT_MARKER_MIN_PERCENT);
+  const width = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, Math.max(rawWidth, IMAGE_DEFECT_MARKER_MIN_PERCENT));
+  const height = Math.min(IMAGE_DEFECT_MARKER_MAX_PERCENT, Math.max(rawHeight, IMAGE_DEFECT_MARKER_MIN_PERCENT));
   if (![centerX, centerY, width, height].every(Number.isFinite)) return null;
   return { centerX, centerY, width, height };
 }
@@ -8852,6 +9181,29 @@ function gridCellToRect(cell, gridCols = 25, gridRows = 25) {
     width: ((right - left) / cols) * 100,
     height: ((bottom - top) / rows) * 100,
   };
+}
+
+function resolveDefectCenterMarker(defect) {
+  // 프롬프트는 gridCenter 기준. bbox/center%가 같이 오면 그리드를 우선한다.
+  const gridMarker = defectGridToCenterMarker(defect);
+  if (gridMarker) return enforceDefectMarkerMinimum(gridMarker);
+
+  const rawGridCell =
+    defect?.gridCell ||
+    defect?.gridRange ||
+    defect?.range ||
+    defect?.cell ||
+    (defect?.startCell && defect?.endCell ? `${defect.startCell}-${defect.endCell}` : '');
+  const gridRect = gridCellToRect(rawGridCell, defect?.gridCols, defect?.gridRows);
+  if (gridRect) return enforceDefectMarkerMinimum(defectRectToCenterMarker(gridRect));
+
+  const centerMarker = defectToCenterMarker(defect);
+  if (centerMarker) return enforceDefectMarkerMinimum(centerMarker);
+
+  const bboxRect = defectBoxToRect(
+    defect?.bbox || defect?.bboxPercent || defect?.box || defect?.rect || defect?.area
+  );
+  return enforceDefectMarkerMinimum(defectRectToCenterMarker(bboxRect));
 }
 
 function renderImageDefectMarkers(image) {
@@ -9046,7 +9398,7 @@ function renderItem(item, comps) {
     return;
   }
   clearAllYoutubePlayers();
-  const plat = ['daangn', 'joongna'].includes(item.platform) ? item.platform : 'bunjang';
+  const plat = item.platform === 'daangn' ? 'daangn' : 'bunjang';
   const seller = sellerLine(item.seller, item.platform);
   const shipping = shippingLine(item);
   const hasStageTwo = Boolean(renderStageTwoSection(item));
@@ -9475,7 +9827,10 @@ function openRelatedSearchForItem(item, queries, btn = null, opts = {}) {
       )
     : Number.isFinite(Number(opts.resumeProgress))
       ? Math.max(0, Math.min(90, Number(opts.resumeProgress)))
-      : 0;
+      : Math.max(
+          0,
+          Math.min(40, Number(priorProgress?.highWater) || stageThreeSearchProgressPercent(priorProgress || {}) || 0)
+        );
   resetStageThreeComparisonWork(item, { clearGuide: !isolated, clearReceipt: !isolated, clearSearchQuery: true });
   stageThreeComparisonSkippedKeys.delete(key);
   if (!opts.preserveAutoRetryCount) stageThreeAutoQueryRetryCounts.delete(key);
@@ -9670,6 +10025,15 @@ async function regenerateStageThreeSearchQueries(item, btn = null, opts = {}) {
     return;
   }
   searchQueryRegenerations.set(key, { status: 'loading', startedAt: Date.now() });
+  // 검색어 재생성도 비교매물 로딩바 타임라인(0→100)의 앞구간으로 이어지게 한다.
+  stageThreeSearchProgresses.set(key, {
+    phase: 'collecting',
+    startedAt: Date.now(),
+    durationMs: AI_LOADING_DURATIONS.searchQuery || 8000,
+    startPercent: 0,
+    endPercent: 28,
+    highWater: 0,
+  });
   if (btn) btn.disabled = true;
   refreshStageThreeSearchCard(item);
   try {
@@ -10680,6 +11044,7 @@ async function ensureProductImage(item) {
   if (!productName) return;
 
   productImageSearches.add(key);
+  if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
   try {
     const data = await globalThis.UlsaAi.fetchProductImage({ productName, searchQuery });
     const imageUrls = uniqueImageList(data.imageUrls);
@@ -10696,6 +11061,9 @@ async function ensureProductImage(item) {
     if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
   } catch (e) {
     console.warn('제품 이미지 자동 검색 실패:', e);
+  } finally {
+    productImageSearches.delete(key);
+    if (selectedKey === key) refreshProductSummaryBlock(item, { refreshStageTwo: false });
   }
 }
 
@@ -10787,6 +11155,7 @@ function resetCurrentAnalysisRuntimeState() {
 
 function activateListingItem(item, opts = {}) {
   if (!item) return;
+  item = normalizeListingItem(item);
   const key = itemKey(item);
   const currentKey = selectedKey || (latest ? itemKey(latest) : '');
   if (
@@ -11126,8 +11495,9 @@ async function ensureUsedPriceGuide(item, opts = {}) {
 }
 
 async function ensurePurchaseReceipt(item, opts = {}) {
-  const stageComps = effectiveStageThreeComps(item);
-  if (!item || !stageComps || !isCompsCollected(stageComps)) return;
+  const stageComps = effectiveStageThreeComps(item) || emptyComparisonComps(item);
+  if (!item || !stageComps) return;
+  if (!isCompsCollected(stageComps) && !stageThreeComparisonSkippedKeys.has(summaryKey(item))) return;
   const key = purchaseReceiptKey(item, stageComps);
   if (!key) return;
   const { key: existingKey, state: existing } = resolvedPurchaseReceiptState(item, stageComps);
@@ -11562,30 +11932,29 @@ function refreshProductSummaryBlock(item, opts = {}) {
   if (stageTwo) {
     if (shouldKeepExistingLoadingBlock(stageTwo, stageTwoHtml)) {
       updateAiLoadingProgressNodes('', null, stageTwo);
-      return;
+    } else {
+      destroyStageTwoYoutubePlayers(stageTwo);
+      stageTwo.outerHTML = stageTwoHtml;
+      bindStageTwoFlow($current, item);
+      bindImageAnalysisSlider($current, item);
+      bindImageZoom($current);
+      syncStageTwoYoutubePlayers($current);
     }
-    destroyStageTwoYoutubePlayers(stageTwo);
-    stageTwo.outerHTML = stageTwoHtml;
-    bindStageTwoFlow($current, item);
-    bindImageAnalysisSlider($current, item);
-    bindImageZoom($current);
-    syncStageTwoYoutubePlayers($current);
-    updateStageSlide();
-  } else {
+  } else if (stageTwoHtml) {
     const stageOne = $current.querySelector('[data-stage-one-zone]');
     const product = $current.querySelector('[data-product-summary]');
-    if (stageTwoHtml && stageOne) stageOne.insertAdjacentHTML('afterend', stageTwoHtml);
-    else if (stageTwoHtml && product) product.insertAdjacentHTML('afterend', stageTwoHtml);
+    if (stageOne) stageOne.insertAdjacentHTML('afterend', stageTwoHtml);
+    else if (product) product.insertAdjacentHTML('afterend', stageTwoHtml);
     bindStageTwoFlow($current, item);
     bindImageAnalysisSlider($current, item);
     bindImageZoom($current);
     syncStageTwoYoutubePlayers($current);
-    updateStageSlide();
   }
   maybeMarkStageTwoComplete(item);
   ensureCachedStageTwoFollowups(item);
   refreshStageThreeSection(item);
   refreshDirectAiPanelIfOpen();
+  updateStageSlide();
 }
 
 $lightbox?.addEventListener('click', (e) => {
@@ -11730,8 +12099,7 @@ function isVisibleElement(el) {
 
 function moveStageSlideTo(index) {
   if (!isSlideLayout()) return false;
-  const count = stageSlideCount();
-  const nextIndex = Math.max(0, Math.min(Number(index) || 0, count - 1));
+  const nextIndex = Math.max(0, Math.min(Number(index) || 0, 4));
   if (nextIndex === stageSlideIndex || !canOpenStage(nextIndex)) return false;
   moveStageSlide(nextIndex - stageSlideIndex);
   return true;
@@ -12238,49 +12606,71 @@ async function ensureProductSummary(item, opts = {}) {
     void ensureProductImage(item);
     return;
   }
-  const apiKey = getAiApiKey();
-  if (!apiKey || typeof globalThis.UlsaAi?.fetchProductSummary !== 'function') {
-    const err = 'AI 설정이 필요합니다. 배포 환경에서는 서버 GEMINI_API_KEY를 확인하세요.';
-    productSummaries.set(key, { status: 'error', error: err });
-    reportAiFailure(err, 'API 키 오류');
-    if (selectedKey === key) refreshProductSummaryBlock(item);
-    return;
-  }
+  if (productSummaryLocks.has(key)) return;
+  productSummaryLocks.add(key);
 
-  productSummaries.set(key, { status: 'loading', model: summaryModel || null, startedAt: Date.now() });
-  if (selectedKey === key) refreshProductSummaryBlock(item);
-
-  const aiScope = createAiRequestScope();
   try {
-    const data = await globalThis.UlsaAi.fetchProductSummary({
-      title: item.title || '',
-      body: item.body || '',
-      imageUrls: item.imageUrls || [],
-      apiKey,
-      model: summaryModel,
-      signal: aiScope.signal,
+    // 매물 카드(제목·본문·사진)가 먼저 그려진 뒤에 AI를 호출한다.
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
     });
-    if (shouldIgnoreAiScope(aiScope)) return;
-    const summary = await enrichSummaryWithProductImage(data.summary || null, item);
-    if (shouldIgnoreAiScope(aiScope)) return;
-    await finishAiLoadingState(productSummaries, key, { status: 'done', summary }, () => {
-      if (selectedKey === key) refreshProductSummaryBlock(item);
-    }, 'productSummary');
-    persistAiCaches();
-  } catch (e) {
-    if (shouldIgnoreAiScope(aiScope, e)) return;
-    productSummaries.set(key, {
-      status: 'error',
-      error: e instanceof Error ? e.message : String(e),
-    });
-    reportAiFailure(e);
-    persistAiCaches();
-    await maybeHydrateDemoFallback(e);
-  } finally {
-    aiScope.release();
-  }
+    if (selectedKey !== key) return;
+    if (productSummaries.has(key)) return;
 
-  if (selectedKey === key) refreshProductSummaryBlock(item);
+    const liveItem = latest && summaryKey(latest) === key ? latest : item;
+    if (!isListingReadyForProductSummary(liveItem)) {
+      const err = listingNotReadyMessage(liveItem);
+      productSummaries.set(key, { status: 'error', error: err });
+      if (selectedKey === key) refreshProductSummaryBlock(liveItem);
+      return;
+    }
+
+    const apiKey = getAiApiKey();
+    if (!apiKey || typeof globalThis.UlsaAi?.fetchProductSummary !== 'function') {
+      const err = 'AI 설정이 필요합니다. 배포 환경에서는 서버 GEMINI_API_KEY를 확인하세요.';
+      productSummaries.set(key, { status: 'error', error: err });
+      reportAiFailure(err, 'API 키 오류');
+      if (selectedKey === key) refreshProductSummaryBlock(liveItem);
+      return;
+    }
+
+    productSummaries.set(key, { status: 'loading', model: summaryModel || null, startedAt: Date.now() });
+    if (selectedKey === key) refreshProductSummaryBlock(liveItem);
+
+    const aiScope = createAiRequestScope();
+    try {
+      const data = await globalThis.UlsaAi.fetchProductSummary({
+        title: liveItem.title || '',
+        body: liveItem.body || '',
+        imageUrls: liveItem.imageUrls || [],
+        apiKey,
+        model: summaryModel,
+        signal: aiScope.signal,
+      });
+      if (shouldIgnoreAiScope(aiScope)) return;
+      const summary = await enrichSummaryWithProductImage(data.summary || null, liveItem);
+      if (shouldIgnoreAiScope(aiScope)) return;
+      await finishAiLoadingState(productSummaries, key, { status: 'done', summary }, () => {
+        if (selectedKey === key) refreshProductSummaryBlock(liveItem);
+      }, 'productSummary');
+      persistAiCaches();
+    } catch (e) {
+      if (shouldIgnoreAiScope(aiScope, e)) return;
+      productSummaries.set(key, {
+        status: 'error',
+        error: e instanceof Error ? e.message : String(e),
+      });
+      reportAiFailure(e);
+      persistAiCaches();
+      await maybeHydrateDemoFallback(e);
+    } finally {
+      aiScope.release();
+    }
+
+    if (selectedKey === key) refreshProductSummaryBlock(liveItem);
+  } finally {
+    productSummaryLocks.delete(key);
+  }
 }
 
 async function ensureProductRisk(item) {
@@ -12633,26 +13023,57 @@ async function ensureListingImageAnalysis(item, opts = {}) {
 }
 
 
+
 function renderChampionshipEmptyState() {
   return `
     <article class="mini-card mini-card--empty sample-landing" data-sample-landing>
       <header class="sample-landing__hero">
+        <img class="sample-landing__logo" src="logo-buyorbye-orange.png" width="128" height="128" alt="BUY OR BYE" decoding="async" />
         <div class="sample-landing__hero-copy">
-          <p class="sample-landing__eyebrow">BUY OR BYE</p>
           <h2>중고 매물, 링크 하나로 판단까지</h2>
-          <p>상단 URL에 매물 링크를 붙여넣거나, 아래 샘플로 바로 체험하세요.</p>
+          <p>입력창에 매물 링크를 붙여넣거나, 아래 샘플로 바로 체험하세요.</p>
         </div>
+            <form class="hero-url-import" data-hero-url-form autocomplete="off">
+              <button
+                type="button"
+                class="hero-url-import__paste"
+                data-hero-url-paste
+                data-tooltip="클립보드 링크를 붙여넣고 바로 분석"
+                title="클립보드 링크를 붙여넣고 바로 분석"
+                aria-label="클립보드 링크를 붙여넣고 바로 분석"
+              >
+                <span class="material-symbols-rounded" aria-hidden="true">content_paste</span>
+              </button>
+              <label class="visually-hidden" for="heroUrlImportInput">매물 URL</label>
+              <input
+                id="heroUrlImportInput"
+                class="hero-url-import__input"
+                type="url"
+                inputmode="url"
+                placeholder="매물 URL 붙여넣고 바로 분석"
+                aria-label="매물 URL"
+                data-hero-url-input
+              />
+              <button type="submit" class="hero-url-import__submit" title="매물 불러오기" aria-label="매물 불러오기">
+                <span class="material-symbols-rounded" aria-hidden="true">search</span>
+              </button>
+            </form>
       </header>
       <div class="sample-copy-guide" data-sample-copy-guide hidden aria-hidden="true"></div>
       <nav class="market-shortcuts" data-market-shortcuts aria-label="중고마켓 바로가기">
-        <a class="market-shortcut market-shortcut--daangn" href="https://www.daangn.com/" target="_blank" rel="noopener noreferrer">당근</a>
-        <a class="market-shortcut market-shortcut--bunjang" href="https://m.bunjang.co.kr/" target="_blank" rel="noopener noreferrer">번개장터</a>
-        <a class="market-shortcut market-shortcut--joongna" href="https://web.joongna.com/" target="_blank" rel="noopener noreferrer">중고나라</a>
+        <a class="market-shortcut market-shortcut--daangn" href="https://www.daangn.com/" target="_blank" rel="noopener noreferrer" aria-label="당근마켓 바로가기" title="당근마켓 바로가기">
+          <span class="market-shortcut__glyph" aria-hidden="true"><svg class="market-shortcut__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 1.4c-1.7 2.1-2.5 4-2.4 5.5 1.1-.55 1.95-.85 2.4-.85.45 0 1.3.3 2.4.85.1-1.5-.7-3.4-2.4-5.5Zm-4.7 1.9c.05 1.85.75 3.4 1.85 4.5.95-.85 1.6-2 1.85-3.25-1.15-.65-2.55-1.15-3.7-1.25Zm9.4 0c-1.15.1-2.55.6-3.7 1.25.25 1.25.9 2.4 1.85 3.25 1.1-1.1 1.8-2.65 1.85-4.5ZM9 8.15c-2.05.9-3.35 3.25-3.1 5.95.35 3.7 3.25 7.35 5.45 8.9.4.28.9.28 1.3 0 2.2-1.55 5.1-5.2 5.45-8.9.25-2.7-1.05-5.05-3.1-5.95-1.3-.55-2.95-.55-4.15 0-.3.15-.6.3-.85.5Z"/></svg></span>
+          <span class="market-shortcut__label">당근마켓 바로가기</span>
+        </a>
+        <a class="market-shortcut market-shortcut--bunjang" href="https://m.bunjang.co.kr/" target="_blank" rel="noopener noreferrer" aria-label="번개장터 바로가기" title="번개장터 바로가기">
+          <span class="market-shortcut__glyph" aria-hidden="true"><svg class="market-shortcut__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M13.15.7 3.2 14.2h7.35l-1.15 9.1L20.8 9.05h-7.4L13.15.7Z"/></svg></span>
+          <span class="market-shortcut__label">번개장터 바로가기</span>
+        </a>
       </nav>
       <ol class="sample-flow" aria-label="시작 방법">
-        <li><strong>샘플</strong>로 흐름 보기</li>
-        <li><strong>URL</strong>로 매물 불러오기</li>
-        <li><strong>Step 1~5</strong>에서 판단·협상 확인</li>
+        <li><span><strong>샘플</strong>로 흐름 보기</span></li>
+        <li><span><strong>URL</strong>로 매물 불러오기</span></li>
+        <li><span><strong>Step 1~5</strong>에서 판단·협상 확인</span></li>
       </ol>
       <div class="sample-demo-block">
         <div class="sample-section-heading">
@@ -12676,6 +13097,15 @@ async function fetchDemoCatalog() {
 }
 
 async function bindChampionshipEmptyState(root) {
+  const heroForm = root.querySelector('[data-hero-url-form]');
+  const heroInput = root.querySelector('[data-hero-url-input]');
+  heroForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    requestListingUrlImport(heroInput?.value || '');
+  });
+  root.querySelector('[data-hero-url-paste]')?.addEventListener('click', () => {
+    void pasteAndImportListingUrl(heroInput || null);
+  });
   const grid = root.querySelector('[data-demo-grid]');
   const helpBtn = root.querySelector('[data-ext-help]');
   const steps = root.querySelector('[data-ext-steps]');
@@ -12745,9 +13175,21 @@ async function loadChampionshipDemo(id) {
   hideDemoFallbackBanner();
   listing.imageUrls = (Array.isArray(listing.imageUrls) ? listing.imageUrls : []).map((u) => {
     const s = String(u || '').trim();
-    if (s.startsWith('/')) return `${location.origin}${s}`;
-    return s;
-  });
+    if (!s) return '';
+    let pathOnly = s;
+    if (!s.startsWith('/')) {
+      try {
+        const abs = new URL(s, location.href);
+        if (abs.origin === location.origin) pathOnly = `${abs.pathname}${abs.search}`;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (pathOnly.startsWith('/demo-images/') && !/[?&]v=/.test(pathOnly)) {
+      pathOnly += (pathOnly.includes('?') ? '&' : '?') + 'v=20260916-sampleimg1';
+    }
+    return pathOnly;
+  }).filter(Boolean);
   const key = summaryKey(listing) || itemKey(listing);
   if (key) {
     clearProductSummaryCaches(key);
@@ -12853,10 +13295,11 @@ function setUrlImportBusy(busy, message = '') {
   if ($btnUrlImport) {
     $btnUrlImport.disabled = Boolean(busy);
     $btnUrlImport.setAttribute('aria-busy', busy ? 'true' : 'false');
-    if (!$btnUrlImport.dataset.idleLabel) {
-      $btnUrlImport.dataset.idleLabel = String($btnUrlImport.textContent || '불러오기').trim();
-    }
-    $btnUrlImport.textContent = busy ? '불러오는 중…' : ($btnUrlImport.dataset.idleLabel || '불러오기');
+    $btnUrlImport.setAttribute('aria-label', busy ? '매물 불러오는 중' : '매물 불러오기');
+    $btnUrlImport.title = busy ? '매물 불러오는 중…' : '매물 불러오기';
+    const icon = $btnUrlImport.querySelector('.material-symbols-rounded');
+    if (icon) icon.textContent = busy ? 'progress_activity' : 'search';
+    $btnUrlImport.classList.toggle('is-busy', Boolean(busy));
   }
   if (overlay) {
     overlay.hidden = !busy;
@@ -12884,14 +13327,21 @@ function setUrlImportStatus(message = '', tone = '') {
   setUrlImportBusy(tone === 'loading', message || '매물을 불러오는 중…');
 }
 
+function normalizeListingInputUrl(rawUrl) {
+  let s = String(rawUrl || '').trim();
+  if (!s) return '';
+  const match = s.match(/https:\/\/[^\s<>"')\]}]+/i);
+  if (match) s = match[0].replace(/[.,;)\]}>]+$/g, '');
+  return s.trim();
+}
+
 function supportedListingUrl(rawUrl) {
   try {
-    const url = new URL(String(rawUrl || '').trim());
+    const url = new URL(normalizeListingInputUrl(rawUrl));
     if (url.protocol !== 'https:') return null;
     const host = url.hostname.toLowerCase();
     if (/(^|\.)bunjang\.co\.kr$/i.test(host)) return url.href;
     if (/(^|\.)daangn\.com$/i.test(host)) return url.href;
-    if (/(^|\.)joongna\.com$/i.test(host)) return url.href;
     // 공유하기 → 링크 복사 단축 URL (탭에서 리다이렉트 후 수집)
     if (/(^|\.)bgzt\.link$/i.test(host)) return url.href;
     if (/(^|\.)karrot\.link$/i.test(host)) return url.href;
@@ -12902,11 +13352,30 @@ function supportedListingUrl(rawUrl) {
   }
 }
 
+async function pasteAndImportListingUrl(targetInput = null) {
+  let text = '';
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    showAppToast?.('클립보드 접근이 거부됐습니다. 링크를 직접 붙여넣어 주세요.');
+    return;
+  }
+  const cleaned = normalizeListingInputUrl(text);
+  if ($urlImportInput) $urlImportInput.value = cleaned;
+  if ($railUrlInput) $railUrlInput.value = cleaned;
+  if (targetInput) targetInput.value = cleaned;
+  if (!cleaned) {
+    showAppToast?.('클립보드에 링크가 없습니다.');
+    return;
+  }
+  requestListingUrlImport(cleaned);
+}
+
 function requestListingUrlImport(rawUrl) {
   const url = supportedListingUrl(rawUrl);
   if (!url) {
-    setUrlImportStatus('지원 URL 아님 (당근·번개·중고나라)', 'error');
-    showAppToast?.('지원 URL 아님 (당근·번개·중고나라)');
+    setUrlImportStatus('지원하지 않는 링크입니다. (당근·번개장터만 가능)', 'error');
+    showAppToast?.('지원하지 않는 링크입니다. (당근·번개장터만 가능)');
     return;
   }
   pendingImportUrl = url;
@@ -12990,7 +13459,7 @@ function initMain() {
   extensionPresent = true;
   applyExtensionUiState();
 
-  const localHistory = loadLocalListingHistory();
+  const localHistory = loadLocalListingHistory().map((item) => normalizeListingItem(item));
   if (localHistory.length && !history.length) {
     history = localHistory;
     renderHistoryList();
@@ -12999,6 +13468,13 @@ function initMain() {
   $urlImportForm?.addEventListener('submit', (e) => {
     e.preventDefault();
     requestListingUrlImport($urlImportInput?.value || '');
+  });
+
+  $btnUrlPasteImport?.addEventListener('click', () => {
+    void pasteAndImportListingUrl();
+  });
+  $btnRailPasteImport?.addEventListener('click', () => {
+    void pasteAndImportListingUrl();
   });
 
   $railImportForm?.addEventListener('submit', (e) => {

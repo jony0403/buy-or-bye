@@ -18,7 +18,6 @@ function platformOf(url) {
   const host = new URL(url).hostname.toLowerCase();
   if (host.includes('bunjang') || host.includes('bgzt')) return 'bunjang';
   if (host.includes('daangn') || host.includes('karrot')) return 'daangn';
-  if (host.includes('joongna')) return 'joongna';
   return 'unknown';
 }
 
@@ -60,23 +59,6 @@ async function discoverListingUrls(page) {
               return false;
             }
           });
-          return a?.href?.split('?')[0] || '';
-        });
-      },
-    },
-    {
-      id: 'joongna',
-      search: 'https://web.joongna.com/search/%EC%95%84%EC%9D%B4%ED%8F%B0',
-      pick: async () => {
-        await page.goto('https://web.joongna.com/search/%EC%95%84%EC%9D%B4%ED%8F%B0', {
-          waitUntil: 'domcontentloaded',
-          timeout: 45_000,
-        });
-        await page.waitForTimeout(3000);
-        return page.evaluate(() => {
-          const a = [...document.querySelectorAll('a[href*="/product/"]')].find((el) =>
-            /\/product\/\d+/.test(el.href)
-          );
           return a?.href?.split('?')[0] || '';
         });
       },
@@ -149,7 +131,6 @@ async function extractListing(page, url) {
         .filter((u) => {
           if (plat === 'bunjang') return /bunjang|bgzt|media\.bunjang/i.test(u);
           if (plat === 'daangn') return /karrot|daangn|gcp-karroter|cloudfront/i.test(u);
-          if (plat === 'joongna') return /joongna|cloudinary|kakaocdn/i.test(u);
           return true;
         });
 

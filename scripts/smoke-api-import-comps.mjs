@@ -19,7 +19,6 @@ console.log(
   {
     bunjang: compsJson.comps?.bunjang?.count,
     daangn: compsJson.comps?.daangn?.count,
-    joongna: compsJson.comps?.joongna?.count,
   },
   compsJson.error || ''
 );

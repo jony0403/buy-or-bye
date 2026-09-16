@@ -1,15 +1,15 @@
 {
   "id": "helinox-chair",
   "listing": {
-    "platform": "joongna",
-    "platformLabel": "중고나라",
+    "platform": "bunjang",
+    "platformLabel": "번개장터",
     "itemId": "demo-helinox-chair",
     "title": "헬리녹스 체어원 캠핑 의자",
     "body": "캠핑용 접이식 의자입니다.\n수납백 포함, 프레임·원단 상태 양호합니다.\n야외에서 10회 내외 사용.\n얼룩 거의 없고 다리 흔들림 없습니다.\n직거래·택배 모두 가능합니다.",
     "priceLabel": "55,000원",
     "price": 55000,
     "shippingFeeLabel": "배송비 포함",
-    "pageUrl": "https://web.joongna.com/product/demo-helinox-chair",
+    "pageUrl": "https://m.bunjang.co.kr/products/demo-helinox-chair",
     "exportedAt": "2026-09-16T05:00:00.000Z",
     "imageUrls": [
       "/demo-images/helinox-chair/1.png",

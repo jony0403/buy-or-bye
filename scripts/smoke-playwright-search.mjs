@@ -104,23 +104,4 @@ await scrape(
   }
 );
 
-await scrape('joongna', `https://web.joongna.com/search/${encodeURIComponent(q)}`, () => {
-  const out = [];
-  const seen = new Set();
-  for (const a of document.querySelectorAll('a[href*="/product/"]')) {
-    const m = a.href.match(/\/product\/(\d+)/);
-    if (!m || seen.has(m[1])) continue;
-    const card = a.closest('article,li,div') || a;
-    const text = (card.innerText || '').trim();
-    const title = (
-      text.split('\n').find((l) => l.length > 2 && !/[\d,]+\s*원/.test(l)) || ''
-    ).slice(0, 100);
-    const price = (text.match(/([\d,]+)\s*원/) || [])[0] || '';
-    seen.add(m[1]);
-    out.push({ title, price, url: a.href.split('?')[0], img: false });
-    if (out.length >= 8) break;
-  }
-  return out;
-});
-
 await browser.close();
