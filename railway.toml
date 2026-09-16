@@ -1,7 +1,5 @@
 [build]
-builder = "NIXPACKS"
-# Playwright Chromium required for /api/import-listing and /api/collect-comps
-buildCommand = "npm install --omit=dev && npx playwright install --with-deps chromium"
+builder = "RAILPACK"
 
 [deploy]
 startCommand = "npm start"
@@ -13,3 +11,4 @@ restartPolicyMaxRetries = 5
 [variables]
 HOST = "0.0.0.0"
 DEMO_MODE = "true"
+RAILPACK_NODE_PLAYWRIGHT_INSTALL = "1"
