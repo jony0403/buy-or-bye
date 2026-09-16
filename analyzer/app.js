@@ -123,7 +123,6 @@ const APP_SHORTCUT_GROUPS = [
     title: '보기',
     items: [
       ['L', '스크롤식/슬라이드식 전환'],
-      ['D', '다크모드 전환'],
       ['H', '최근 매물 열기/닫기'],
       ['T', '자동진행 켜기/끄기'],
     ],
@@ -174,7 +173,6 @@ const LISTING_IMAGE_OVERLAY_VERSION = 34;
 const IMAGE_DEFECT_MARKER_MIN_PERCENT = 4;
 const IMAGE_DEFECT_MARKER_MAX_PERCENT = 72;
 const LAYOUT_MODE_STORAGE_KEY = 'ulsa_layout_mode';
-const THEME_MODE_STORAGE_KEY = 'ulsa_theme_mode';
 const AUTO_RUN_STORAGE_KEY = 'ulsa_auto_run_next_steps';
 const FAVORITE_LISTINGS_STORAGE_KEY = 'ulsa_favorite_listing_keys_v1';
 const AI_CACHE_LEGACY_STORAGE_KEYS = [
@@ -668,34 +666,6 @@ function showAppToast(message = '') {
   }, 1800);
 }
 
-function storedThemeMode() {
-  try {
-    return localStorage.getItem(THEME_MODE_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
-  } catch {
-    return 'light';
-  }
-}
-
-function isDarkModeEnabled() {
-  return document.documentElement.classList.contains('theme-dark') || document.body.classList.contains('theme-dark');
-}
-
-function setThemeMode(mode, opts = {}) {
-  const normalized = mode === 'dark' ? 'dark' : 'light';
-  const isDark = normalized === 'dark';
-  document.documentElement.classList.toggle('theme-dark', isDark);
-  document.body.classList.toggle('theme-dark', isDark);
-  document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
-  if (opts.persist !== false) {
-    try {
-      localStorage.setItem(THEME_MODE_STORAGE_KEY, normalized);
-    } catch {
-      /* localStorage may be unavailable */
-    }
-  }
-  updateRailThemeToggle();
-}
-
 function updateRailLayoutToggle() {
   const btn = globalThis.document?.querySelector?.('[data-rail-action="layout"]');
   if (!btn) return;
@@ -705,19 +675,6 @@ function updateRailLayoutToggle() {
   if (icon) icon.textContent = isSlide ? 'view_carousel' : 'view_agenda';
   if (label) label.textContent = isSlide ? '슬라이드' : '스크롤';
   btn.setAttribute('aria-label', isSlide ? '현재 슬라이드식 보기, 누르면 스크롤식 전환' : '현재 스크롤식 보기, 누르면 슬라이드식 전환');
-}
-
-function updateRailThemeToggle() {
-  const btn = globalThis.document?.querySelector?.('[data-rail-action="theme"]');
-  if (!btn) return;
-  const isDark = isDarkModeEnabled();
-  const icon = btn.querySelector('.material-symbols-rounded');
-  const label = btn.querySelector('small');
-  btn.classList.toggle('is-on', isDark);
-  btn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
-  btn.setAttribute('aria-label', isDark ? '다크모드 켜짐, 누르면 라이트모드 전환' : '다크모드 꺼짐, 누르면 다크모드 전환');
-  if (icon) icon.textContent = isDark ? 'light_mode' : 'dark_mode';
-  if (label) label.textContent = isDark ? '라이트' : '다크';
 }
 
 function stageSlideCount() {
@@ -3957,34 +3914,6 @@ const DIRECT_AI_ACTIONS = [
     },
   },
   {
-    id: 'ui.darkModeOn',
-    label: '다크모드 켜기',
-    risk: 'safe',
-    chipLabel: '다크모드 켜기',
-    aliases: ['다크모드', '다크 모드', '다크모드 실행', '다크 모드 실행', '다크모드 켜기', '다크 모드 켜기', '어두운 모드', 'dark mode', 'dark mode on'],
-    preconditions() {
-      return { ok: true };
-    },
-    async run() {
-      setThemeMode('dark');
-      return { message: '다크모드를 켰습니다.' };
-    },
-  },
-  {
-    id: 'ui.darkModeOff',
-    label: '다크모드 끄기',
-    risk: 'safe',
-    chipLabel: '다크모드 끄기',
-    aliases: ['다크모드 끄기', '다크 모드 끄기', '라이트모드', '밝은 모드', 'dark mode off'],
-    preconditions() {
-      return { ok: true };
-    },
-    async run() {
-      setThemeMode('light');
-      return { message: '다크모드를 껐습니다.' };
-    },
-  },
-  {
     id: 'ui.openDaangn',
     label: '당근마켓 열기',
     risk: 'safe',
@@ -4221,8 +4150,6 @@ function matchDirectAiCommandRules(message) {
     { pattern: /(?:자동\s*진행|자동진행|auto\s*run|autorun).*(?:꺼|꺼줘|끄|off|해제|비활성)/, actionId: 'ui.autoRunOff', confidence: 0.98 },
     { pattern: /(?:자동\s*진행|자동진행|auto\s*run|autorun).*(?:켜|켜줘|on|활성|시작)/, actionId: 'ui.autoRunOn', confidence: 0.98 },
     { pattern: /^(?:자동\s*진행|자동진행|auto\s*run|autorun)(?:\s*(?:전환|토글|toggle))?$/, actionId: 'ui.toggleAutoRun', confidence: 0.96 },
-    { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode).*(꺼|꺼줘|off|해제|비활성)|라이트\s*모드|밝은\s*모드/, actionId: 'ui.darkModeOff', confidence: 0.96 },
-    { pattern: /(다크\s*모드|어두운\s*모드|dark\s*mode)(?:\s*(?:실행|켜|켜줘|on|적용|활성|해줘|해|전환|바꿔)?)?$/, actionId: 'ui.darkModeOn', confidence: 0.96 },
     { pattern: /url\s*불러|링크\s*불러|매물\s*url/, actionId: 'ui.openImport', confidence: 0.88 },
     { pattern: /(구성품|구성\s*체크|부속품|악세사리|액세서리)\s*(다시\s*)?(체크|재분석|분석|생성|확인)/, actionId: 'regen.accessoryCheck', confidence: 0.95 },
     { pattern: /(이미지|사진)\s*분석/, actionId: 'regen.listingImage', confidence: 0.93 },
@@ -11202,7 +11129,6 @@ function bindDashboardRail() {
   if (!$dashboardRail || $dashboardRail.dataset.bound === '1') return;
   $dashboardRail.dataset.bound = '1';
   updateRailLayoutToggle();
-  updateRailThemeToggle();
   $dashboardRail.addEventListener('click', (e) => {
     const home = e.target.closest('[data-home-action]');
     if (home && $dashboardRail.contains(home)) {
@@ -11219,7 +11145,6 @@ function bindDashboardRail() {
     closeRailPanel();
     closeShortcutPanel();
     if (action === 'layout') $btnLayoutMode?.click();
-    if (action === 'theme') setThemeMode(isDarkModeEnabled() ? 'light' : 'dark');
     if (action === 'import') openRailPanel('import');
     if (action === 'history') $btnHistory?.click();
     if (action === 'shortcuts') openShortcutPanel();
@@ -11247,7 +11172,6 @@ function bindDashboardRail() {
   }
 }
 
-setThemeMode(storedThemeMode(), { persist: false });
 bindDashboardRail();
 
 document.querySelectorAll('[data-home-action]').forEach((el) => {
@@ -12674,10 +12598,6 @@ function handleAppShortcut(e) {
     if (typeof globalThis.__ulsaOpenDevSettings === 'function') globalThis.__ulsaOpenDevSettings();
     else document.getElementById('btnAiSettings')?.click();
     return;
-  }
-  if (isShortcutCode(e, 'KeyD')) {
-    e.preventDefault();
-    setThemeMode(isDarkModeEnabled() ? 'light' : 'dark');
   }
 }
 
