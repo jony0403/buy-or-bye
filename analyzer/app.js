@@ -12920,7 +12920,7 @@ function requestListingUrlImport(rawUrl) {
         return;
       }
       pendingImportUrl = '';
-      setUrlImportStatus('불러옴', 'success');
+      setUrlImportStatus('', '');
       if ($urlImportInput) $urlImportInput.value = '';
       if ($railUrlInput) $railUrlInput.value = '';
       releaseLandingHold();
