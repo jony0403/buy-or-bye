@@ -16367,3 +16367,123 @@ body.theme-dark .market-shortcut:hover {
   background: rgba(255, 255, 255, 0.08) !important;
 }
 
+/* —— platform colors + sample thumbs —— */
+/* landing market chips */
+.market-shortcut--daangn {
+  background: #ff6f0f !important;
+  border-color: #ff6f0f !important;
+  color: #fff !important;
+}
+.market-shortcut--bunjang {
+  background: #d0021b !important;
+  border-color: #d0021b !important;
+  color: #fff !important;
+}
+.market-shortcut--joongna {
+  background: #0055ff !important;
+  border-color: #0055ff !important;
+  color: #fff !important;
+}
+.market-shortcut--daangn:hover,
+.market-shortcut--bunjang:hover,
+.market-shortcut--joongna:hover {
+  filter: brightness(1.06);
+  background: inherit !important;
+}
+
+/* sidebar rail action buttons */
+.app-shell .dashboard-rail__btn:not(.dashboard-rail__market-link) {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: rgba(255, 255, 255, 0.96) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+}
+.app-shell .dashboard-rail__btn--accent:not(.dashboard-rail__market-link) {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #fff7ed !important;
+}
+.app-shell .dashboard-rail__logo.dashboard-rail__home {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+  border-radius: 20px !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+.app-shell .dashboard-rail__btn:hover,
+.app-shell .dashboard-rail__btn:focus-visible,
+.app-shell .dashboard-rail__btn.is-active,
+.app-shell .dashboard-rail__btn--accent:hover,
+.app-shell .dashboard-rail__btn--accent:focus-visible {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #e85d04 !important;
+}
+
+/* sidebar market shortcuts */
+.app-shell .dashboard-rail__market-link--daangn {
+  background: #ff6f0f !important;
+  color: #fff !important;
+}
+.app-shell .dashboard-rail__market-link--bunjang {
+  background: #d0021b !important;
+  color: #fff !important;
+}
+.app-shell .dashboard-rail__market-link--joongna {
+  background: #0055ff !important;
+  color: #fff !important;
+}
+.app-shell .dashboard-rail__market-link--daangn small,
+.app-shell .dashboard-rail__market-link--bunjang small,
+.app-shell .dashboard-rail__market-link--joongna small {
+  color: #fff !important;
+}
+.app-shell .dashboard-rail__market-link--daangn:hover,
+.app-shell .dashboard-rail__market-link--daangn:focus-visible {
+  background: #ff8129 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.app-shell .dashboard-rail__market-link--bunjang:hover,
+.app-shell .dashboard-rail__market-link--bunjang:focus-visible {
+  background: #e3122d !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.app-shell .dashboard-rail__market-link--joongna:hover,
+.app-shell .dashboard-rail__market-link--joongna:focus-visible {
+  background: #1a66ff !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+/* sample demo thumbs */
+.sample-demo-card {
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem !important;
+  padding: 0.72rem 0.8rem !important;
+}
+.sample-demo-card__thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #f3f4f6;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+.sample-demo-card__copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.sample-demo-card__copy strong {
+  font-size: 0.86rem;
+}
+.sample-demo-card__copy span {
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--ui-text-muted, #727984);
+}
+body.theme-dark .sample-demo-card__thumb {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+

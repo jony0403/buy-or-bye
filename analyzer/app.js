@@ -12690,8 +12690,11 @@ async function bindChampionshipEmptyState(root) {
       .map(
         (s) => `
         <button type="button" class="sample-demo-card" data-demo-id="${escapeAttr(s.id)}">
-          <strong>${escapeHtml(s.label || s.id)}</strong>
-          <span>${escapeHtml(s.blurb || '')}</span>
+          <img class="sample-demo-card__thumb" src="${escapeAttr(s.thumb || ('/demo-images/' + s.id + '/1.png'))}" alt="" width="48" height="48" loading="lazy" />
+          <span class="sample-demo-card__copy">
+            <strong>${escapeHtml(s.label || s.id)}</strong>
+            <span>${escapeHtml(s.blurb || '')}</span>
+          </span>
         </button>
       `
       )
