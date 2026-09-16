@@ -17948,3 +17948,28 @@ body.theme-dark .app-shell #directAiPanel .direct-chat-suggestions button {
   left: 0 !important;
   top: 0 !important;
 }
+
+/* Seller image analysis: hide inactive slides completely. A later img rule
+   used visibility:visible !important, so the photo stayed while only the circle changed. */
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active),
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .photo-main,
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .image-analysis-main,
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .image-defect-markers,
+.stage-two-card--image-analysis .annotated-photo-box:not(.is-active) .image-analysis-badge {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
+}
+.stage-two-card--image-analysis .annotated-photo-box.is-active {
+  z-index: 2 !important;
+  pointer-events: auto !important;
+}
+.stage-two-card--image-analysis .annotated-photo-box.is-active,
+.stage-two-card--image-analysis .annotated-photo-box.is-active .photo-main,
+.stage-two-card--image-analysis .annotated-photo-box.is-active .image-analysis-main,
+.stage-two-card--image-analysis .annotated-photo-box.is-active .image-defect-markers,
+.stage-two-card--image-analysis .annotated-photo-box.is-active .image-analysis-badge {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
