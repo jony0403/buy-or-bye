@@ -1,0 +1,25 @@
+{
+  "id": "nike-dunk-low",
+  "listing": {
+    "platform": "bunjang",
+    "platformLabel": "번개장터",
+    "itemId": "demo-nike-dunk-low",
+    "title": "나이키 덩크 로우 275 중고",
+    "body": "사이즈 275입니다.\n실착용 15회 정도, 굽·주름 사용감 있습니다.\n박스·여분 끈 있어요.\n세탁 후 보관 중이었고 직거래 우선입니다.\n가품 아닙니다.",
+    "priceLabel": "95,000원",
+    "price": 95000,
+    "shippingFeeLabel": "배송비 별도",
+    "pageUrl": "https://www.bunjang.co.kr/products/demo-nike-dunk-low",
+    "exportedAt": "2026-09-16T05:00:00.000Z",
+    "imageUrls": [
+      "/demo-images/nike-dunk-low/1.png",
+      "/demo-images/nike-dunk-low/2.png"
+    ],
+    "seller": {
+      "nickname": "슈즈정리함",
+      "reviewRating": 4.8,
+      "reviewCount": 210,
+      "salesCount": 156
+    }
+  }
+}

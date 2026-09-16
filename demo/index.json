@@ -1,47 +1,47 @@
 {
   "version": 1,
   "title": "샘플 매물",
-  "description": "샘플로 바로 분석 흐름을 볼 수 있는 선별 매물입니다. Step 1부터 실시간 AI로 분석합니다.",
+  "description": "전자기기·가구·패션·캠핑 등 다양한 품목으로 분석 흐름을 바로 체험할 수 있습니다.",
   "scenarios": [
     {
       "id": "airpods-pro2-chronic",
-      "label": "고질병 체크",
-      "blurb": "에어팟 프로 — 배터리·연결 이슈가 알려진 매물",
+      "label": "에어팟 프로 2",
+      "blurb": "배터리·연결 이슈가 거론되는 중고 이어폰",
       "highlight": "chronic",
       "thumb": "/demo-images/airpods-pro2-chronic/1.png"
     },
     {
-      "id": "switch-oled-accessories",
-      "label": "구성품 체크",
-      "blurb": "스위치 OLED — 독·케이블 포함 여부가 애매한 세트",
-      "highlight": "accessory",
-      "thumb": "/demo-images/switch-oled-accessories/1.png"
+      "id": "sidiz-t50-chair",
+      "label": "시디즈 T50",
+      "blurb": "생활 기스 있는 메쉬 사무용 의자",
+      "highlight": "furniture",
+      "thumb": "/demo-images/sidiz-t50-chair/1.png"
     },
     {
-      "id": "galaxy-promo-photos",
-      "label": "사진 판별",
-      "blurb": "갤럭시 — 쇼핑몰 캡처와 실물 사진이 섞인 매물",
-      "highlight": "image",
-      "thumb": "/demo-images/galaxy-promo-photos/1.png"
+      "id": "nike-dunk-low",
+      "label": "나이키 덩크 로우",
+      "blurb": "착용감 있는 275 사이즈 스니커즈",
+      "highlight": "fashion",
+      "thumb": "/demo-images/nike-dunk-low/1.png"
     },
     {
       "id": "macbook-price-compare",
-      "label": "가격 비교",
-      "blurb": "맥북 에어 — 시세 대조가 핵심인 인기 품목",
+      "label": "맥북 에어",
+      "blurb": "시세 대조가 중요한 인기 노트북",
       "highlight": "price",
       "thumb": "/demo-images/macbook-price-compare/1.png"
     },
     {
-      "id": "ipad-body-gaps",
-      "label": "본문 누락",
-      "blurb": "아이패드 — 상태·잠금·구성 설명이 빈약한 판매글",
-      "highlight": "listing-text",
-      "thumb": "/demo-images/ipad-body-gaps/1.png"
+      "id": "helinox-chair",
+      "label": "헬리녹스 체어원",
+      "blurb": "수납백 포함 캠핑용 접이식 의자",
+      "highlight": "outdoor",
+      "thumb": "/demo-images/helinox-chair/1.png"
     },
     {
       "id": "phone-screen-crack",
-      "label": "파손·하자 표시",
-      "blurb": "아이폰 — 액정 금간 사진으로 하자 표시를 체험",
+      "label": "아이폰 14",
+      "blurb": "액정 금간 사진으로 하자 표시를 체험",
       "highlight": "damage",
       "thumb": "/demo-images/phone-screen-crack/1.png"
     }

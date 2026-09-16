@@ -1,0 +1,25 @@
+{
+  "id": "sidiz-t50-chair",
+  "listing": {
+    "platform": "daangn",
+    "platformLabel": "당근마켓",
+    "itemId": "demo-sidiz-t50-chair",
+    "title": "시디즈 T50 메쉬 의자 중고",
+    "body": "2년 정도 쓴 시디즈 T50 계열 메쉬 의자입니다.\n팔걸이·좌판에 생활 기스 있고 등판 메쉬는 양호합니다.\n가스 실린더 정상, 바퀴 굴러갑니다.\n분해해서 택배 가능하고 직거래 환영합니다.\n책상·모니터 팔면서 같이 내놓습니다.",
+    "priceLabel": "120,000원",
+    "price": 120000,
+    "shippingFeeLabel": "배송비 별도",
+    "pageUrl": "https://www.daangn.com/articles/demo-sidiz-t50-chair",
+    "exportedAt": "2026-09-16T05:00:00.000Z",
+    "imageUrls": [
+      "/demo-images/sidiz-t50-chair/1.png",
+      "/demo-images/sidiz-t50-chair/2.png"
+    ],
+    "seller": {
+      "nickname": "책상정리중",
+      "reviewRating": 4.5,
+      "reviewCount": 42,
+      "salesCount": 18
+    }
+  }
+}
