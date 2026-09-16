@@ -16368,26 +16368,26 @@ body.theme-dark .market-shortcut:hover {
 }
 
 /* —— platform colors + sample thumbs —— */
-/* landing market chips */
+/* landing market chips — muted brand tints */
 .market-shortcut--daangn {
-  background: #ff6f0f !important;
-  border-color: #ff6f0f !important;
+  background: #d4926a !important;
+  border-color: #c9845a !important;
   color: #fff !important;
 }
 .market-shortcut--bunjang {
-  background: #d0021b !important;
-  border-color: #d0021b !important;
+  background: #b87378 !important;
+  border-color: #a8666b !important;
   color: #fff !important;
 }
 .market-shortcut--joongna {
-  background: #0055ff !important;
-  border-color: #0055ff !important;
+  background: #6a9e7a !important;
+  border-color: #5d9170 !important;
   color: #fff !important;
 }
 .market-shortcut--daangn:hover,
 .market-shortcut--bunjang:hover,
 .market-shortcut--joongna:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.05);
   background: inherit !important;
 }
 
@@ -16416,17 +16416,17 @@ body.theme-dark .market-shortcut:hover {
   color: #e85d04 !important;
 }
 
-/* sidebar market shortcuts */
+/* sidebar market shortcuts — muted brand tints */
 .app-shell .dashboard-rail__market-link--daangn {
-  background: #ff6f0f !important;
+  background: #d4926a !important;
   color: #fff !important;
 }
 .app-shell .dashboard-rail__market-link--bunjang {
-  background: #d0021b !important;
+  background: #b87378 !important;
   color: #fff !important;
 }
 .app-shell .dashboard-rail__market-link--joongna {
-  background: #0055ff !important;
+  background: #6a9e7a !important;
   color: #fff !important;
 }
 .app-shell .dashboard-rail__market-link--daangn small,
@@ -16436,19 +16436,19 @@ body.theme-dark .market-shortcut:hover {
 }
 .app-shell .dashboard-rail__market-link--daangn:hover,
 .app-shell .dashboard-rail__market-link--daangn:focus-visible {
-  background: #ff8129 !important;
+  background: #c9845a !important;
   color: #fff !important;
   box-shadow: none !important;
 }
 .app-shell .dashboard-rail__market-link--bunjang:hover,
 .app-shell .dashboard-rail__market-link--bunjang:focus-visible {
-  background: #e3122d !important;
+  background: #a8666b !important;
   color: #fff !important;
   box-shadow: none !important;
 }
 .app-shell .dashboard-rail__market-link--joongna:hover,
 .app-shell .dashboard-rail__market-link--joongna:focus-visible {
-  background: #1a66ff !important;
+  background: #5d9170 !important;
   color: #fff !important;
   box-shadow: none !important;
 }
