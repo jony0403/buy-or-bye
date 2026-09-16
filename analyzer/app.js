@@ -12843,15 +12843,39 @@ function applyPayload(payload, opts = {}) {
   renderHistoryList();
 }
 
+function setUrlImportBusy(busy, message = '') {
+  const shell = document.getElementById('appShell');
+  const form = $urlImportForm;
+  const overlay = document.getElementById('urlImportOverlay');
+  const overlayText = overlay?.querySelector('[data-url-import-overlay-text]');
+  shell?.classList.toggle('is-url-importing', Boolean(busy));
+  form?.classList.toggle('is-importing', Boolean(busy));
+  if ($btnUrlImport) {
+    $btnUrlImport.disabled = Boolean(busy);
+    $btnUrlImport.setAttribute('aria-busy', busy ? 'true' : 'false');
+    if (!$btnUrlImport.dataset.idleLabel) {
+      $btnUrlImport.dataset.idleLabel = String($btnUrlImport.textContent || '불러오기').trim();
+    }
+    $btnUrlImport.textContent = busy ? '불러오는 중…' : ($btnUrlImport.dataset.idleLabel || '불러오기');
+  }
+  if (overlay) {
+    overlay.hidden = !busy;
+    overlay.setAttribute('aria-hidden', busy ? 'false' : 'true');
+  }
+  if (overlayText && message) overlayText.textContent = message;
+}
+
 function setUrlImportStatus(message = '', tone = '') {
   if ($urlImportStatus) {
     $urlImportStatus.textContent = message;
-    $urlImportStatus.dataset.tone = tone;
+    $urlImportStatus.dataset.tone = tone || '';
+    $urlImportStatus.hidden = !message;
   }
   if ($railStatus) {
-    $railStatus.textContent = message || 'URL을 붙여넣으면 탭을 열어 매물 정보를 가져옵니다.';
-    $railStatus.dataset.tone = tone;
+    $railStatus.textContent = message || '링크를 붙여넣으면 기존 분석 흐름으로 바로 전달됩니다.';
+    $railStatus.dataset.tone = tone || '';
   }
+  setUrlImportBusy(tone === 'loading', message || '매물을 불러오는 중…');
 }
 
 function supportedListingUrl(rawUrl) {
@@ -12879,7 +12903,7 @@ function requestListingUrlImport(rawUrl) {
     return;
   }
   pendingImportUrl = url;
-  setUrlImportStatus('매물 불러오는 중…', 'loading');
+  setUrlImportStatus('매물 페이지에서 사진·가격을 가져오는 중…', 'loading');
   void (async () => {
     try {
       const res = await fetch('/api/import-listing', {

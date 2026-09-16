@@ -16571,3 +16571,100 @@ body.theme-dark .market-shortcut--joongna {
   color: #a8dfbb !important;
 }
 
+/* —— url import loading feedback —— */
+.url-import__status {
+  display: none;
+  grid-column: 1 / -1;
+  margin: 0.15rem 0.35rem 0.2rem;
+  padding: 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+.url-import__status:not([hidden]):not(:empty) {
+  display: block;
+}
+.url-import__status[data-tone='loading'] {
+  color: #0f766e;
+}
+.url-import__status[data-tone='success'] {
+  color: #07855c;
+}
+.url-import__status[data-tone='error'] {
+  color: #d80027;
+}
+.url-import.is-importing {
+  box-shadow: 0 0 0 1px rgba(15, 118, 110, 0.22), 0 12px 30px rgba(17, 24, 39, 0.08);
+}
+.url-import.is-importing .url-import__submit {
+  position: relative;
+  min-width: 7.2rem;
+  opacity: 0.92;
+  pointer-events: none;
+}
+.url-import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(17, 24, 39, 0.28);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.url-import-overlay[hidden] {
+  display: none !important;
+}
+.url-import-overlay__card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: min(360px, 92vw);
+  padding: 1.05rem 1.2rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+.url-import-overlay__spinner {
+  flex: none;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  border: 2.5px solid rgba(15, 118, 110, 0.18);
+  border-top-color: #0f766e;
+  animation: url-import-spin 0.75s linear infinite;
+}
+.url-import-overlay__copy strong {
+  display: block;
+  margin: 0 0 0.18rem;
+  color: #111827;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+}
+.url-import-overlay__copy p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.app-shell.is-url-importing {
+  pointer-events: none;
+}
+@keyframes url-import-spin {
+  to { transform: rotate(360deg); }
+}
+body.theme-dark .url-import-overlay {
+  background: rgba(2, 6, 23, 0.48);
+}
+body.theme-dark .url-import-overlay__card {
+  background: rgba(30, 41, 59, 0.96);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+}
+body.theme-dark .url-import-overlay__copy strong {
+  color: #f8fafc;
+}
+body.theme-dark .url-import-overlay__copy p {
+  color: #94a3b8;
+}
+
